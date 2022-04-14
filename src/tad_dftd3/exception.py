@@ -13,17 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Type annotations for this project.
+Possible exceptions which can be raised by this module.
 """
 
-import torch
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
-
-Size = Optional[Union[Tuple[int], torch.Size]]
-Tensor = torch.Tensor
-MaybeTensor = Union[Tensor, Optional[Tensor]]
-Sliceable = Union[List[Tensor], Tuple[Tensor]]
-
-CountingFunction = Callable[[Tensor, Tensor, Any], Tensor]
-WeightingFunction = Callable[[Tensor, Any], Tensor]
-DampingFunction = Callable[[int, Tensor, Tensor, Tensor, Any], Tensor]
+class DFTD3Error(Exception):
+    """Base class for exceptions raised by this module."""
+    pass

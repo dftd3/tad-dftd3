@@ -16,7 +16,7 @@
 import pytest
 import torch
 
-from tad_dftd3 import data, disp, util
+from tad_dftd3 import dftd3, util
 from . import samples
 
 
@@ -25,9 +25,6 @@ def test_disp_single(dtype):
     sample = samples.structures["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
-    c6 = sample["c6"].type(dtype)
-    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.sqrt_z_r4_over_r2[numbers]
     param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
     ref = torch.tensor(
         [
@@ -43,9 +40,7 @@ def test_disp_single(dtype):
         ]
     ).type(dtype)
 
-    energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
-    )
+    energy = dftd3(numbers, positions, param)
 
     assert energy.dtype == dtype
     assert torch.allclose(energy, ref)
@@ -69,14 +64,6 @@ def test_disp_batch(dtype):
             sample2["positions"].type(dtype),
         )
     )
-    c6 = util.pack(
-        (
-            sample1["c6"].type(dtype),
-            sample2["c6"].type(dtype),
-        )
-    )
-    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.sqrt_z_r4_over_r2[numbers]
     param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
     ref = torch.tensor(
         [
@@ -123,9 +110,7 @@ def test_disp_batch(dtype):
         ]
     ).type(dtype)
 
-    energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
-    )
+    energy = dftd3(numbers, positions, param)
 
     assert energy.dtype == dtype
     assert torch.allclose(energy, ref)

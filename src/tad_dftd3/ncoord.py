@@ -22,8 +22,8 @@ from .typing import Tensor, CountingFunction
 
 
 def coordination_number(
-    positions: Tensor,
     numbers: Tensor,
+    positions: Tensor,
     rcov: Tensor,
     counting_function: CountingFunction,
     **kwargs,
@@ -33,10 +33,10 @@ def coordination_number(
 
     Parameters
     ----------
-    positions : Tensor
-        The positions of the atoms in the system.
     numbers : Tensor
         The atomic numbers of the atoms in the system.
+    positions : Tensor
+        The positions of the atoms in the system.
     rcov : Tensor
         Covalent radii for all atoms in the system.
     counting_function : Callable
@@ -49,7 +49,7 @@ def coordination_number(
         Tensor: The coordination number of each atom in the system.
     """
     if numbers.shape != rcov.shape:
-        raise ValueError("Shape of covalent radii is not consisten with atomic numbers")
+        raise ValueError("Shape of covalent radii is not consistent with atomic numbers")
     if numbers.shape != positions.shape[:-1]:
         raise ValueError("Shape of positions is not consistent with atomic numbers")
 

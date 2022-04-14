@@ -40,7 +40,7 @@ def test_cn_single(dtype):
         ],
     ).type(dtype)
 
-    cn = ncoord.coordination_number(positions, numbers, rcov, ncoord.exp_count)
+    cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
     assert cn.dtype == dtype
     assert torch.allclose(cn, ref)
 
@@ -109,6 +109,6 @@ def test_cn_batch(dtype):
         ],
     ).type(dtype)
 
-    cn = ncoord.coordination_number(positions, numbers, rcov, ncoord.exp_count)
+    cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
     assert cn.dtype == dtype
     assert torch.allclose(cn, ref)

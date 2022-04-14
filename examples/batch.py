@@ -1,29 +1,10 @@
-# Torch autodiff for DFT-D3
+# SPDX-Identifier: CC0-1.0
 
-Implementation of the DFT-D3 dispersion model in PyTorch.
-
-
-## Installation
-
-Install this project with pip
-
-```
-pip install .
-```
-
-The following dependencies are required
-
-- [torch](https://pytorch.org/)
-
-
-## Example
-
-```python
 import torch
-from tad_dftd3 import data, disp, ncoord, model, reference, util
+import tad_dftd3 as d3
 
 sample1 = dict(
-    numbers=util.to_number("Pb H H H H Bi H H H".split()),
+    numbers=d3.util.to_number("Pb H H H H Bi H H H".split()),
     positions=torch.tensor(
         [
             [-0.00000020988889, -4.98043478877778, +0.00000000000000],
@@ -39,7 +20,7 @@ sample1 = dict(
     ),
 )
 sample2 = dict(
-    numbers=util.to_number("C C C C C C I H H H H H S H C H H H".split(" ")),
+    numbers=d3.util.to_number("C C C C C C I H H H H H S H C H H H".split(" ")),
     positions=torch.tensor(
         [
             [-1.42754169820131, -1.50508961850828, -1.93430551124333],
@@ -63,51 +44,30 @@ sample2 = dict(
         ]
     ),
 )
-numbers = util.pack(
+numbers = d3.util.pack(
     (
         sample1["numbers"],
         sample2["numbers"],
     )
 )
-positions = util.pack(
+positions = d3.util.pack(
     (
         sample1["positions"],
         sample2["positions"],
     )
 )
-ref = reference.Reference()
-rcov = data.covalent_rad_d3[numbers]
-rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-r4r2 = data.sqrt_z_r4_over_r2[numbers]
+ref = d3.reference.Reference()
+rcov = d3.data.covalent_rad_d3[numbers]
+rvdw = d3.data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+r4r2 = d3.data.sqrt_z_r4_over_r2[numbers]
 param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
 
-cn = ncoord.coordination_number(positions, numbers, rcov, ncoord.exp_count)
-weights = model.weight_references(numbers, cn, ref, model.weight_cn)
-c6 = model.atomic_c6(numbers, weights, ref)
-energy = disp.dispersion(
-    numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
+cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
+weights = d3.model.weight_references(numbers, cn, ref, d3.model.weight_cn)
+c6 = d3.model.atomic_c6(numbers, weights, ref)
+energy = d3.disp.dispersion(
+    numbers, positions, c6, rvdw, r4r2, d3.disp.rational_damping, **param
 )
 
 torch.set_printoptions(precision=10)
 print(torch.sum(energy, dim=-1))
-# tensor([-0.0014092578, -0.0057840119])
-```
-
-
-## License
-
-Licensed under the Apache License, Version 2.0 (the “License”);
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an *“as is” basis*,
-*without warranties or conditions of any kind*, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in this project by you, as defined in the
-Apache-2.0 license, shall be licensed as above, without any additional
-terms or conditions.
