@@ -3,11 +3,19 @@ Torch autodiff for DFT-D3
 
 .. image:: https://img.shields.io/github/license/awvwgk/tad-dftd3
    :target: LICENSE
-   :alt: GitHub
+   :alt: Apache-2.0
+
+.. image:: https://github.com/awvwgk/tad-dftd3/actions/workflows/python.yaml/badge.svg
+   :target: https://github.com/awvwgk/tad-dftd3/actions/workflows/python.yaml
+   :alt: CI
 
 .. image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
    :target: https://tad-dftd3.readthedocs.io
    :alt: Documentation Status
+
+.. image:: https://codecov.io/gh/awvwgk/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
+   :target: https://codecov.io/gh/awvwgk/tad-dftd3
+   :alt: Coverage
 
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
@@ -36,7 +44,7 @@ Install the required dependencies from the conda-forge channel.
 
 .. code::
 
-   mamba env create -f environment.yml
+   mamba env create -n torch -f environment.yml
    mamba activate torch
 
 Install this project with pip in the environment

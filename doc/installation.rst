@@ -14,7 +14,7 @@ Install the required dependencies from the conda-forge channel.
 
 .. code::
 
-   mamba env create -f environment.yml
+   mamba env create -n torch -f environment.yml
    mamba activate torch
 
 Install this project with pip in the environment

@@ -6,3 +6,5 @@ dependencies:
   - python
   - pytorch
   - pytest
+  - pytest-cov
+  - coverage
