@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
+Reference model
+===============
+
 This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
@@ -21,29 +24,6 @@ import os.path as op
 import torch
 
 from .typing import Optional, Tensor
-
-
-def _load_n_ref(dtype=torch.int):
-    return torch.tensor(
-        [
-            *[0],  # None
-            *[2, 1],  # H,He
-            *[2, 3, 5, 5, 4, 3, 2, 1],  # Li-Ne
-            *[2, 3, 4, 5, 4, 3, 2, 1],  # Na-Ar
-            *[2, 3],  # K,Ca
-            *[3, 3, 3, 3, 3, 3, 4, 4, 2, 2],  # Sc-Zn
-            *[4, 5, 4, 3, 2, 1],  # Ga-Kr
-            *[2, 3],  # Rb,Sr
-            *[3, 3, 3, 3, 3, 3, 3, 3, 2, 2],  # Y-Cd
-            *[4, 5, 4, 3, 2, 1],  # In-Xe
-            *[2, 3],  # Cs,Ba
-            *[3, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],  # La-Eu
-            *[2, 3, 3, 3, 3, 3, 3, 3, 2, 2],  # Lu-Hg
-            *[4, 5, 4, 3, 2, 1],  # Tl-Rn
-            *[2, 3],  # Fr,Ra
-            *[2, 2, 2, 2, 2, 2],  # Ac-Pu
-        ]
-    )
 
 
 def _load_cn(dtype=torch.float):
@@ -175,9 +155,6 @@ class Reference:
     Reference systems for the D3 dispersion model
     """
 
-    n_ref: Tensor
-    """Number of reference systems for each species"""
-
     c6: Tensor
     """C6 coefficients for all pairs of reference systems"""
 
@@ -185,7 +162,6 @@ class Reference:
     """Coordination numbers for all reference systems"""
 
     __slots__ = [
-        "n_ref",
         "c6",
         "cn",
         "__dtype",
@@ -194,14 +170,10 @@ class Reference:
 
     def __init__(
         self,
-        n_ref: Optional[Tensor] = None,
         cn: Optional[Tensor] = None,
         c6: Optional[Tensor] = None,
     ):
 
-        if n_ref is None:
-            n_ref = _load_n_ref()
-        self.n_ref = n_ref
         if cn is None:
             cn = _load_cn()
         self.cn = cn
@@ -212,7 +184,7 @@ class Reference:
         self.__dtype = self.c6.dtype
         self.__device = self.c6.device
 
-        if self.n_ref.device != self.cn.device != self.c6.device != self.device:
+        if self.cn.device != self.c6.device != self.device:
             raise RuntimeError("All tensors must be on the same device!")
 
         if self.cn.dtype != self.c6.dtype:
@@ -264,7 +236,6 @@ class Reference:
             return self
 
         return self.__class__(
-            self.n_ref.to(device=device),
             self.cn.to(device=device),
             self.c6.to(device=device),
         )
@@ -293,7 +264,6 @@ class Reference:
             return self
 
         return self.__class__(
-            self.n_ref,
             self.cn.type(dtype),
             self.c6.type(dtype),
         )

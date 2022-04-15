@@ -12,6 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+Atomic data
+===========
+
+Data arrays for atomic constants like covalent radii or van-der-Waals radii.
+"""
 
 import torch
 
@@ -19,8 +25,6 @@ from . import constants
 
 
 # fmt: off
-# Covalent radii (taken from Pyykko and Atsumi, Chem. Eur. J. 15, 2009,
-#  188-197), values for metals decreased by 10 %
 covalent_rad_2009 = constants.ANGSTROM_TO_BOHR * torch.Tensor([ 
     0.00,  # None
     0.32,0.46,  # H,He
@@ -47,6 +51,10 @@ covalent_rad_2009 = constants.ANGSTROM_TO_BOHR * torch.Tensor([
     1.21,1.16,1.15,1.09,1.22,  # -Cn
     1.36,1.43,1.46,1.58,1.48,1.57 ]) # Nh-Og
 # fmt: on
+"""
+Covalent radii (taken from Pyykko and Atsumi, Chem. Eur. J. 15, 2009, 188-197).
+Values for metals decreased by 10 %.
+"""
 
 
 covalent_rad_d3 = 4.0 / 3.0 * covalent_rad_2009
@@ -81,14 +89,9 @@ r4_over_r2 = torch.Tensor([
     6.7286, 6.5144,10.9169,10.3600, 9.4723, 8.6641,  # Nh-Og
 ])  # fmt: on
 """
-PBE0/def2-QZVP atomic values calculated by S. Grimme in Gaussian (2010)
-rare gases recalculated by J. Mewes with PBE0/aug-cc-pVQZ in Dirac (2018)
-He: 3.4698 -> 3.5544, Ne: 3.1036 -> 3.7943, Ar: 5.6004 -> 5.6638,
-Kr: 6.1971 -> 6.2312, Xe: 7.5152 -> 8.8367
-not replaced but recalculated (PBE0/cc-pVQZ) were
- H: 8.0589 ->10.9359, Li:29.0974 ->39.7226, Be:14.8517 ->17.7460
-also new super heavies Cn,Nh,Fl,Lv,Og
-Am-Rg calculated at 4c-PBE/Dyall-AE4Z (Dirac 2022)
+PBE0/def2-QZVP atomic values calculated by S. Grimme in Gaussian (2010),
+rare gases recalculated by J. Mewes with PBE0/aug-cc-pVQZ in Dirac (2018).
+Also new super heavies Cn,Nh,Fl,Lv,Og and Am-Rg calculated at 4c-PBE/Dyall-AE4Z (Dirac 2022)
 """
 
 sqrt_z_r4_over_r2 = torch.sqrt(0.5*(r4_over_r2*torch.sqrt(torch.arange(r4_over_r2.shape[0]))) )

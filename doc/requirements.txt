@@ -1,0 +1,6 @@
+sphinx
+sphinx-book-theme
+sphinx-copybutton
+sphinx-design
+numpy
+torch

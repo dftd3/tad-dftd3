@@ -114,3 +114,24 @@ def test_disp_batch(dtype):
 
     assert energy.dtype == dtype
     assert torch.allclose(energy, ref)
+
+
+@pytest.mark.grad
+def test_param_grad():
+    dtype = torch.float64
+    sample = samples.structures["C4H5NCS"]
+    numbers = sample["numbers"]
+    positions = sample["positions"].type(dtype)
+    param = (
+        torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
+        torch.tensor(0.78981345, requires_grad=True, dtype=dtype),
+        torch.tensor(0.49484001, requires_grad=True, dtype=dtype),
+        torch.tensor(5.73083694, requires_grad=True, dtype=dtype),
+    )
+    label = ("s6", "s8", "a1", "a2")
+
+    def func(*inputs):
+        input_param = {label[i]: inputs[i] for i in range(len(inputs))}
+        return dftd3(numbers, positions, input_param)
+
+    assert torch.autograd.gradcheck(func, param)

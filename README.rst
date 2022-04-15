@@ -1,6 +1,15 @@
 Torch autodiff for DFT-D3
 =========================
 
+.. image:: https://img.shields.io/github/license/awvwgk/tad-dftd3
+   :target: LICENSE
+   :alt: GitHub
+
+.. image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
+   :target: https://tad-dftd3.readthedocs.io
+   :alt: Documentation Status
+
+
 Implementation of the DFT-D3 dispersion model in PyTorch.
 This module allows to process a single structure or a batch of structures for the calculation of atom-resolved dispersion energies.
 
@@ -23,10 +32,11 @@ Installation
 
 We recommend using a `conda <https://conda.io/>`__ environment to install the package.
 You can setup the environment manager using a `mambaforge <https://github.com/conda-forge/miniforge>`__ installer.
+Install the required dependencies from the conda-forge channel.
 
 .. code::
 
-   mamba create -n torch pytorch numpy pytest
+   mamba env create -f environment.yml
    mamba activate torch
 
 Install this project with pip in the environment
@@ -47,7 +57,7 @@ You can check your installation by running the test suite with
 
 .. code::
 
-   pytest tests/ -v
+   pytest tests/ --pyargs tad_dftd3 --doctest-modules
 
 
 Example
@@ -155,7 +165,7 @@ The next example shows the calculation of dispersion energies for a batch of str
    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
 
    cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
-   weights = d3.model.weight_references(numbers, cn, ref, d3.model.weight_cn)
+   weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
    c6 = d3.model.atomic_c6(numbers, weights, ref)
    energy = d3.disp.dispersion(
        numbers, positions, c6, rvdw, r4r2, d3.disp.rational_damping, **param

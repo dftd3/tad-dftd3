@@ -13,7 +13,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
+Dispersion model
+================
+
 Implementation of D3 model to obtain atomic C6 coefficients for a given geometry.
+
+Examples
+--------
+>>> import torch
+>>> import tad_dftd3 as d3
+>>> numbers = d3.util.to_number(["O", "H", "H"])
+>>> positions = torch.Tensor([
+...     [+0.00000000000000, +0.00000000000000, -0.73578586109551],
+...     [+1.44183152868459, +0.00000000000000, +0.36789293054775],
+...     [-1.44183152868459, +0.00000000000000, +0.36789293054775],
+... ])
+>>> ref = d3.reference.Reference()
+>>> rcov = d3.data.covalent_rad_d3[numbers]
+>>> cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
+>>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
+>>> c6 = d3.model.atomic_c6(numbers, weights, ref)
+>>> torch.set_printoptions(precision=7)
+>>> print(c6)
+tensor([[10.4130478,  5.4368815,  5.4368815],
+        [ 5.4368811,  3.0930152,  3.0930152],
+        [ 5.4368811,  3.0930152,  3.0930152]])
 """
 
 import torch
@@ -51,11 +75,31 @@ def atomic_c6(
     return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
 
 
+def gaussian_weight(dcn: Tensor, factor: float = 4.0):
+    """
+    Calculate weight of indivdual reference system.
+
+    Parameters
+    ----------
+    dcn : Tensor
+        Difference of coordination numbers.
+    factor : float
+        Factor to calculate weight.
+
+    Returns
+    -------
+    Tensor
+        Weight of individual reference system.
+    """
+
+    return torch.exp(-factor * dcn.pow(2))
+
+
 def weight_references(
     numbers: Tensor,
     cn: Tensor,
     reference: Reference,
-    weighting_function,
+    weighting_function: WeightingFunction = gaussian_weight,
     epsilon = 1.0e-20,
     **kwargs
 ) -> Tensor:
@@ -86,23 +130,3 @@ def weight_references(
     norms = torch.add(torch.sum(weights, dim=-1), epsilon)
 
     return weights / norms.unsqueeze(-1)
-
-
-def weight_cn(dcn: Tensor, factor: float = 4.0):
-    """
-    Calculate weight of indivdual reference system.
-
-    Parameters
-    ----------
-    dcn : Tensor
-        Difference of coordination numbers.
-    factor : float
-        Factor to calculate weight.
-
-    Returns
-    -------
-    Tensor
-        Weight of individual reference system.
-    """
-
-    return torch.exp(-factor * dcn.pow(2))

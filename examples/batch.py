@@ -63,7 +63,7 @@ r4r2 = d3.data.sqrt_z_r4_over_r2[numbers]
 param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
 
 cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
-weights = d3.model.weight_references(numbers, cn, ref, d3.model.weight_cn)
+weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
 c6 = d3.model.atomic_c6(numbers, weights, ref)
 energy = d3.disp.dispersion(
     numbers, positions, c6, rvdw, r4r2, d3.disp.rational_damping, **param

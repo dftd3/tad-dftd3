@@ -29,7 +29,7 @@ def test_gw_single(dtype):
     cn = sample["cn"].type(dtype)
     refgw = sample["weights"].type(dtype)
 
-    weights = model.weight_references(numbers, cn, ref, model.weight_cn)
+    weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
     assert torch.allclose(weights, refgw)
@@ -67,7 +67,7 @@ def test_gw_batch(dtype):
         )
     )
 
-    weights = model.weight_references(numbers, cn, ref, model.weight_cn)
+    weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
     assert torch.allclose(weights, refgw)

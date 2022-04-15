@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
+Miscellaneous functions
+=======================
+
 Utilities for working with tensors as well as translating between element symbols and
 atomic numbers.
 """
@@ -76,6 +79,9 @@ def pack(
 
 
 def to_number(symbols: List[str]) -> Tensor:
+    """
+    Obtain atomic numbers from element symbols.
+    """
     return torch.flatten(
         torch.tensor([PSE.get(symbol.capitalize(), 0) for symbol in symbols])
     )

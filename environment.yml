@@ -1,0 +1,8 @@
+name: tad-dftd3
+channels:
+  - conda-forge
+dependencies:
+  - numpy
+  - python
+  - pytorch
+  - pytest
