@@ -135,3 +135,23 @@ def test_param_grad():
         return dftd3(numbers, positions, input_param)
 
     assert torch.autograd.gradcheck(func, param)
+
+
+@pytest.mark.grad
+def test_positions_grad():
+    dtype = torch.float64
+    sample = samples.structures["C4H5NCS"]
+    numbers = sample["numbers"]
+    positions = sample["positions"].type(dtype)
+    positions.requires_grad_(True)
+    param = {
+        "s6": torch.tensor(1.00000000, dtype=dtype),
+        "s8": torch.tensor(0.78981345, dtype=dtype),
+        "a1": torch.tensor(0.49484001, dtype=dtype),
+        "a2": torch.tensor(5.73083694, dtype=dtype),
+    }
+
+    def func(positions):
+        return dftd3(numbers, positions, param)
+
+    assert torch.autograd.gradcheck(func, positions)

@@ -91,6 +91,7 @@ def coordination_number(
     positions: Tensor,
     rcov: Optional[Tensor] = None,
     counting_function: CountingFunction = exp_count,
+    cutoff: Optional[Tensor] = None,
     **kwargs,
 ) -> Tensor:
     """
@@ -108,11 +109,15 @@ def coordination_number(
         Calculates counting value in range 0 to 1 from a batch of
         distances and covalent radii, additional parameters can
         be passed through via key-value arguments.
+    cutoff : float
+        Real-space cutoff for the evaluation of counting function
 
     Returns
     -------
         Tensor: The coordination number of each atom in the system.
     """
+    if cutoff is None:
+        cutoff = torch.tensor(25.0, dtype=positions.dtype)
     if rcov is None:
         rcov = data.covalent_rad_d3[numbers].type(positions.dtype)
     if numbers.shape != rcov.shape:
@@ -120,13 +125,20 @@ def coordination_number(
     if numbers.shape != positions.shape[:-1]:
         raise ValueError("Shape of positions is not consistent with atomic numbers")
 
+    eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
     real = numbers != 0
-    mask = ~(real.unsqueeze(-2) * real.unsqueeze(-1))
-    distances = torch.cdist(positions, positions, p=2)
-    distances[mask] = 0.0
-    mask.diagonal(dim1=-2, dim2=-1).fill_(True)
+    mask = real.unsqueeze(-2) * real.unsqueeze(-1)
+    mask.diagonal(dim1=-2, dim2=-1).fill_(False)
+    distances = torch.where(
+        mask,
+        torch.cdist(positions, positions, p=2),
+        eps,
+    )
 
     rc = rcov.unsqueeze(-2) + rcov.unsqueeze(-1)
-    cf = counting_function(distances, rc.type(distances.dtype), **kwargs)
-    cf[mask] = 0
+    cf = torch.where(
+        mask * (distances <= cutoff),
+        counting_function(distances, rc.type(distances.dtype), **kwargs),
+        torch.tensor(0.0, dtype=distances.dtype),
+    )
     return torch.sum(cf, dim=-1)

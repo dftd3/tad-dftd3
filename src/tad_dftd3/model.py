@@ -123,10 +123,13 @@ def weight_references(
         Weights of all reference systems
     """
 
-    mask = reference.cn[numbers] < 0
+    mask = reference.cn[numbers] >= 0
 
-    weights = weighting_function(reference.cn[numbers] - cn.unsqueeze(-1), **kwargs)
-    weights[mask] = 0
+    weights = torch.where(
+        mask,
+        weighting_function(reference.cn[numbers] - cn.unsqueeze(-1), **kwargs),
+        torch.tensor(0.0, dtype=cn.dtype),
+    )
     norms = torch.add(torch.sum(weights, dim=-1), epsilon)
 
     return weights / norms.unsqueeze(-1)

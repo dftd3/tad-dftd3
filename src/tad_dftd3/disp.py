@@ -93,6 +93,7 @@ def dispersion(
     rvdw: Optional[Tensor] = None,
     r4r2: Optional[Tensor] = None,
     damping_function: DampingFunction = rational_damping,
+    cutoff: Optional[Tensor] = None,
     s6: float = 1.0,
     s8: float = 1.0,
     **kwargs
@@ -120,6 +121,8 @@ def dispersion(
     s8 : float
         Scaling factor for the C8 interaction.
     """
+    if cutoff is None:
+        cutoff = torch.tensor(50.0, dtype=positions.dtype)
     if r4r2 is None:
         r4r2 = data.sqrt_z_r4_over_r2[numbers].type(positions.dtype)
     if rvdw is None:
@@ -133,19 +136,29 @@ def dispersion(
             "Shape of expectation values is not consistent with atomic numbers"
         )
 
+    eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
     real = numbers != 0
-    mask = ~(real.unsqueeze(-2) * real.unsqueeze(-1))
-    distances = torch.cdist(positions, positions, p=2)
-    distances[mask] = 0
-    mask.diagonal(dim1=-2, dim2=-1).fill_(True)
+    mask = real.unsqueeze(-2) * real.unsqueeze(-1)
+    mask.diagonal(dim1=-2, dim2=-1).fill_(False)
+    distances = torch.where(
+        mask,
+        torch.cdist(positions, positions, p=2),
+        eps,
+    )
 
     qq = 3 * r4r2.unsqueeze(-1) * r4r2.unsqueeze(-2)
     c8 = c6 * qq
 
-    t6 = damping_function(6, distances, rvdw, qq, **kwargs)
-    t8 = damping_function(8, distances, rvdw, qq, **kwargs)
-    t6[mask] = 0
-    t8[mask] = 0
+    t6 = torch.where(
+        mask * (distances <= cutoff),
+        damping_function(6, distances, rvdw, qq, **kwargs),
+        torch.tensor(0.0, dtype=distances.dtype),
+    )
+    t8 = torch.where(
+        mask * (distances <= cutoff),
+        damping_function(8, distances, rvdw, qq, **kwargs),
+        torch.tensor(0.0, dtype=distances.dtype),
+    )
 
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
     e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
