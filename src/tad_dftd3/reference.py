@@ -138,7 +138,7 @@ def _load_c6(dtype=torch.float) -> Tensor:
         np.load(op.join(op.dirname(__file__), "reference-c6.npy"))
     ).type(dtype)
 
-    n_element = (math.isqrt(8*ref.shape[0]+1)-1)//2
+    n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
     c6 = torch.zeros((n_element, n_element, n_reference, n_reference), dtype=dtype)
 
@@ -184,15 +184,19 @@ class Reference:
         self.__dtype = self.c6.dtype
         self.__device = self.c6.device
 
-        if self.cn.device != self.c6.device != self.device:
+        if any([tensor.device != self.device for tensor in (self.cn, self.c6)]):
             raise RuntimeError("All tensors must be on the same device!")
 
-        if self.cn.dtype != self.c6.dtype:
+        if any([tensor.dtype != self.dtype for tensor in (self.cn, self.c6)]):
             raise RuntimeError("All tensors must have the same dtype!")
 
-        if (
-            self.c6.shape[-2] != self.c6.shape[-1] != self.cn.shape[-1]
-            or self.c6.shape[-4] != self.c6.shape[-3] != self.cn.shape[-2]
+        if any(
+            (
+                self.c6.shape[-2] != self.c6.shape[-1],
+                self.c6.shape[-1] != self.cn.shape[-1],
+                self.c6.shape[-4] != self.c6.shape[-3],
+                self.c6.shape[-3] != self.cn.shape[-2],
+            )
         ):
             raise RuntimeError("`c6` & `cn` size mismatch found")
 
