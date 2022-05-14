@@ -1,11 +1,11 @@
 Installation
 ============
 
-Clone the repository from the GitHub `repository <https://github.com/awvwgk/tad-dftd3>`__:
+Clone the repository from the GitHub `repository <https://github.com/dftd3/tad-dftd3>`__:
 
 .. code::
 
-   git clone https://github.com/awvwgk/tad-dftd3
+   git clone https://github.com/dftd3/tad-dftd3
    cd tad-dftd3
 
 We recommend using a `conda <https://conda.io/>`__ environment to install the package.

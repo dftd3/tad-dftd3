@@ -1,28 +1,28 @@
 Torch autodiff for DFT-D3
 =========================
 
-.. image:: https://img.shields.io/github/v/release/awvwgk/tad-dftd3
-   :target: https://github.com/awvwgk/tad-dftd3/releases/latest
+.. image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
+   :target: https://github.com/dftd3/tad-dftd3/releases/latest
    :alt: Release
 
 .. image:: https://img.shields.io/pypi/v/tad-dftd3
    :target: https://pypi.org/project/tad-dftd3/
    :alt: PyPI
 
-.. image:: https://img.shields.io/github/license/awvwgk/tad-dftd3
+.. image:: https://img.shields.io/github/license/dftd3/tad-dftd3
    :target: LICENSE
    :alt: Apache-2.0
 
-.. image:: https://github.com/awvwgk/tad-dftd3/actions/workflows/python.yaml/badge.svg
-   :target: https://github.com/awvwgk/tad-dftd3/actions/workflows/python.yaml
+.. image:: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml
    :alt: CI
 
 .. image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
    :target: https://tad-dftd3.readthedocs.io
    :alt: Documentation Status
 
-.. image:: https://codecov.io/gh/awvwgk/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
-   :target: https://codecov.io/gh/awvwgk/tad-dftd3
+.. image:: https://codecov.io/gh/dftd3/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
+   :target: https://codecov.io/gh/dftd3/tad-dftd3
    :alt: Coverage
 
 
@@ -46,12 +46,12 @@ For alternative implementations also check out
 Installation
 ------------
 
-This project is hosted on GitHub at `awvwgk/tad-dftd3 <https://github.com/awvwgk/tad-dftd3>`__.
+This project is hosted on GitHub at `dftd3/tad-dftd3 <https://github.com/dftd3/tad-dftd3>`__.
 Obtain the source by cloning the repository with
 
 .. code::
 
-   git clone https://github.com/awvwgk/tad-dftd3
+   git clone https://github.com/dftd3/tad-dftd3
    cd tad-dftd3
 
 We recommend using a `conda <https://conda.io/>`__ environment to install the package.

@@ -23,7 +23,7 @@ This module allows to process a single structure or a batch of structures for th
 
    This project is still in early development and the API is subject to change.
    Contributions are welcome, please checkout our
-   `contributing guidelines <https://github.com/awvwgk/tad-dftd3/blob/main/CONTRIBUTING.md>`_.
+   `contributing guidelines <https://github.com/dftd3/tad-dftd3/blob/main/CONTRIBUTING.md>`_.
 
 
 Example

@@ -41,7 +41,7 @@ html_logo = "_static/tad-dftd3.svg"
 html_favicon = "_static/tad-dftd3-favicon.svg"
 
 html_theme_options = {
-    "repository_url": "https://github.com/awvwgk/tad-dftd3",
+    "repository_url": "https://github.com/dftd3/tad-dftd3",
     "repository_branch": "main",
     "use_repository_button": True,
     "use_edit_page_button": True,
