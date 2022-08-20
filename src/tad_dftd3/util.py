@@ -25,12 +25,10 @@ import torch
 from .typing import Any, List, MaybeTensor, Sliceable, Size, Tensor, Tuple, Union
 
 
-@torch.jit.script
 def real_atoms(numbers: Tensor) -> Tensor:
     return numbers != 0
 
 
-@torch.jit.script
 def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
     real = real_atoms(numbers)
     mask = real.unsqueeze(-2) * real.unsqueeze(-1)

@@ -42,6 +42,9 @@ For alternative implementations also check out
 `torch-dftd <https://tech.preferred.jp/en/blog/oss-pytorch-dftd3/>`__:
   PyTorch implementation of DFT-D2 and DFT-D3
 
+`dispax <https://github.com/awvwgk/dispax>`__:
+  Implementation of the DFT-D3 dispersion model in Jax M.D.
+
 
 Installation
 ------------
