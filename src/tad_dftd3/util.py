@@ -25,6 +25,18 @@ import torch
 from .typing import Any, List, MaybeTensor, Sliceable, Size, Tensor, Tuple, Union
 
 
+def real_atoms(numbers: Tensor) -> Tensor:
+    return numbers != 0
+
+
+def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
+    real = real_atoms(numbers)
+    mask = real.unsqueeze(-2) * real.unsqueeze(-1)
+    if not diagonal:
+        mask *= ~torch.diag_embed(torch.ones_like(real))
+    return mask
+
+
 def pack(
     tensors: Sliceable,
     axis: int = 0,
