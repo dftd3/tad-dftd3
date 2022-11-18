@@ -69,7 +69,7 @@ tensor(-0.0034288)
 
 import torch
 
-from . import data, disp, ncoord, model, reference, util
+from . import data, disp, damping, ncoord, model, reference, util
 from .typing import (
     Dict,
     Tensor,
@@ -91,7 +91,7 @@ def dftd3(
     r4r2: Optional[Tensor] = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
-    damping_function: DampingFunction = disp.rational_damping,
+    damping_function: DampingFunction = damping.rational_damping,
 ) -> Tensor:
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
@@ -140,7 +140,13 @@ def dftd3(
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, damping_function, **param
+        numbers,
+        positions,
+        param,
+        c6,
+        rvdw,
+        r4r2,
+        damping_function,
     )
 
     return energy

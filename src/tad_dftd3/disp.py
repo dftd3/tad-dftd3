@@ -52,51 +52,20 @@ tensor(-0.0003964)
 import torch
 
 from . import data
-from .typing import Optional, Tensor, DampingFunction
+from .damping import rational_damping
+from .typing import Dict, Optional, Tensor, DampingFunction
 from .util import real_pairs
-
-
-def rational_damping(
-    order: int,
-    distances: Tensor,
-    rvdw: Tensor,
-    qq: Tensor,
-    a1: float = 0.4,
-    a2: float = 5.0,
-) -> Tensor:
-    """
-    Rational damped dispersion interaction between pairs
-
-    Parameters
-    ----------
-    order : int
-        Order of the dispersion interaction, e.g.
-        6 for dipole-dipole, 8 for dipole-quadrupole and so on.
-    distances : Tensor
-        Pairwise distances between atoms in the system.
-    rvdw : Tensor
-        Van der Waals radii of the atoms in the system.
-    qq : Tensor
-        Quotient of C8 and C6 dispersion coefficients.
-    a1 : float
-        Scaling for the C8 / C6 ratio in the critical radius.
-    a2 : float
-        Offset parameter for the critical radius.
-    """
-
-    return 1.0 / (distances.pow(order) + (a1 * torch.sqrt(qq) + a2).pow(order))
 
 
 def dispersion(
     numbers: Tensor,
     positions: Tensor,
+    param: Dict[str, float],
     c6: Tensor,
     rvdw: Optional[Tensor] = None,
     r4r2: Optional[Tensor] = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: Optional[Tensor] = None,
-    s6: float = 1.0,
-    s8: float = 1.0,
     **kwargs
 ) -> Tensor:
     """
@@ -137,6 +106,52 @@ def dispersion(
             "Shape of expectation values is not consistent with atomic numbers"
         )
 
+    energy = dispersion2(
+        numbers, positions, param, c6, rvdw, r4r2, damping_function, cutoff
+    )
+
+    if "s9" in param and param["s9"] != 0.0:
+        energy += dispersion3(
+            numbers, positions, param, c6, rvdw, r4r2, damping_function, cutoff
+        )
+
+    return energy
+
+
+def dispersion2(
+    numbers: Tensor,
+    positions: Tensor,
+    param: Dict[str, float],
+    c6: Tensor,
+    rvdw: Tensor,
+    r4r2: Tensor,
+    damping_function: DampingFunction,
+    cutoff: Tensor,
+    **kwargs
+) -> Tensor:
+    """
+    Calculate dispersion energy between pairs of atoms.
+
+    Parameters
+    ----------
+    numbers : Tensor
+        Atomic numbers of the atoms in the system.
+    positions : Tensor
+        Cartesian coordinates of the atoms in the system.
+    c6 : Tensor
+        Atomic C6 dispersion coefficients.
+    rvdw : Tensor
+        Van der Waals radii of the atoms in the system.
+    r4r2 : Tensor
+        r⁴ over r² expectation values of the atoms in the system.
+    damping_function : Callable
+        Damping function evaluate distance dependent contributions.
+        Additional arguments are passed through to the function.
+    s6 : float
+        Scaling factor for the C6 interaction.
+    s8 : float
+        Scaling factor for the C8 interaction.
+    """
     eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
@@ -150,16 +165,38 @@ def dispersion(
 
     t6 = torch.where(
         mask * (distances <= cutoff),
-        damping_function(6, distances, rvdw, qq, **kwargs),
+        damping_function(6, distances, rvdw, qq, param),
         torch.tensor(0.0, dtype=distances.dtype),
     )
     t8 = torch.where(
         mask * (distances <= cutoff),
-        damping_function(8, distances, rvdw, qq, **kwargs),
+        damping_function(8, distances, rvdw, qq, param),
         torch.tensor(0.0, dtype=distances.dtype),
     )
 
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
     e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
 
-    return s6 * e6 + s8 * e8
+    return param.get("s6", 1.0) * e6 + param.get("s8", 1.0) * e8
+
+
+def dispersion3(
+    numbers: Tensor,
+    positions: Tensor,
+    param: Dict[str, float],
+    c6: Tensor,
+    rvdw: Tensor,
+    r4r2: Tensor,
+    damping_function: DampingFunction,
+    cutoff: Tensor,
+) -> Tensor:
+    s9 = param.get("s9", 1.0)
+    rs9 = 1.0  # 4.0 / 3.0
+
+    srvdw = rs9 * rvdw
+    print(c6)
+
+    c9 = -s9 * torch.sqrt(torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2)))
+    print(c6.unsqueeze(-1) * c6.unsqueeze(-2))
+
+    return torch.zeros_like(numbers)

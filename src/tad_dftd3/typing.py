@@ -17,7 +17,7 @@ Type annotations for this project.
 """
 
 import torch
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, Union
 
 Size = Optional[Union[Tuple[int], torch.Size]]
 Tensor = torch.Tensor
@@ -27,3 +27,13 @@ Sliceable = Union[List[Tensor], Tuple[Tensor]]
 CountingFunction = Callable[[Tensor, Tensor, Any], Tensor]
 WeightingFunction = Callable[[Tensor, Any], Tensor]
 DampingFunction = Callable[[int, Tensor, Tensor, Tensor, Any], Tensor]
+
+
+class Molecule(TypedDict):
+    """Representation of fundamental molecular structure (atom types and postions)."""
+
+    numbers: Tensor
+    """Tensor of atomic numbers"""
+
+    positions: Tensor
+    """Tensor of 3D coordinates of shape (n, 3)"""
