@@ -17,7 +17,8 @@ Torch autodiff DFT-D3
 =====================
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
-This module allows to process a single structure or a batch of structures for the calculation of atom-resolved dispersion energies.
+This module allows to process a single structure or a batch of structures for
+the calculation of atom-resolved dispersion energies.
 
 .. note::
 
@@ -58,7 +59,11 @@ Example
 ...         [-2.63139587595376, +0.96447869452240, 0.00000000000000],
 ...     ]),
 ... ))
->>> param = dict(a1=0.5660, s8=0.3908, a2=3.1280)  # ωB97M-D3(BJ) parameters
+>>> param = dict( # ωB97M-D3(BJ) parameters
+...     a1=torch.tensor(0.5660),
+...     s8=torch.tensor(0.3908),
+...     a2=torch.tensor(3.1280),
+... )
 >>> energy = torch.sum(d3.dftd3(numbers, positions, param), -1)
 >>> torch.set_printoptions(precision=7)
 >>> print(energy)  # Energies in Hartree

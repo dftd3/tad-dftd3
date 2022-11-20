@@ -39,11 +39,15 @@ Example
 ...     [+1.404422261, -2.365753991, -1.503620411],
 ... ]).repeat(numbers.shape[0], 1, 1)
 >>> ref = d3.reference.Reference()
->>> param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)  # r²SCAN-D3(BJ)
+>>> param = dict( # r²SCAN-D3(BJ)
+...     a1=torch.tensor(0.49484001),
+...     s8=torch.tensor(0.78981345),
+...     a2=torch.tensor(5.73083694),
+... )
 >>> cn = d3.ncoord.coordination_number(numbers, positions)
 >>> weights = d3.model.weight_references(numbers, cn, ref)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
->>> energy = d3.disp.dispersion(numbers, positions, c6, **param)
+>>> energy = d3.disp.dispersion(numbers, positions, param, c6)
 >>> torch.set_printoptions(precision=7)
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
 tensor(-0.0003964)
@@ -54,7 +58,7 @@ import torch
 
 from . import data, defaults
 from .damping import dispersion_atm, rational_damping
-from .typing import DampingFunction, Optional, Tensor
+from .typing import DampingFunction, Tensor
 from .util import real_pairs
 
 
