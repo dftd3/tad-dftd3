@@ -12,13 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 from math import sqrt
 
 import pytest
 import torch
 
-from tad_dftd3 import data, ncoord, model, damping, reference, util
+from tad_dftd3 import damping, data, model, ncoord, reference, util
+
 from .samples import samples
 
 

@@ -15,11 +15,11 @@
 """
 Type annotations for this project.
 """
-
 from __future__ import annotations
 
-import torch
 from typing import Any, Callable, Optional, TypedDict, Union
+
+import torch
 
 Size = Optional[Union[tuple[int], torch.Size]]
 Tensor = torch.Tensor

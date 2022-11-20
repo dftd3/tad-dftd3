@@ -16,6 +16,7 @@
 try:
     import tad_dftd3
 except ImportError:
-    import sys, os.path as op
+    import os.path as op
+    import sys
 
     sys.path.insert(0, op.join(op.dirname(__file__), "..", "src"))

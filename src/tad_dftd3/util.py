@@ -16,15 +16,14 @@
 Miscellaneous functions
 =======================
 
-Utilities for working with tensors as well as translating between element 
+Utilities for working with tensors as well as translating between element
 symbols and atomic numbers.
 """
-
 from __future__ import annotations
 
 import torch
 
-from .typing import Any, Sliceable, Size, Tensor
+from .typing import Any, Size, Sliceable, Tensor
 
 
 def real_atoms(numbers: Tensor) -> Tensor:

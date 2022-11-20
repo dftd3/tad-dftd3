@@ -1,6 +1,7 @@
 """
 Three-body (Axilrod-Teller-Muto, ATM) dispersion term.
 """
+from __future__ import annotations
 
 import torch
 

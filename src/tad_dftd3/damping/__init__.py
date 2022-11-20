@@ -1,6 +1,7 @@
 """
 Collection of damping schemes.
 """
+from __future__ import annotations
 
-from .rational import *
 from .atm import *
+from .rational import *

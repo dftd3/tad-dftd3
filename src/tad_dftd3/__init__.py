@@ -66,18 +66,17 @@ tensor([-0.0124292, -0.0045002])
 >>> print(energy[0] - 2*energy[1])
 tensor(-0.0034288)
 """
-
 from __future__ import annotations
 
 import torch
 
-from . import data, disp, damping, ncoord, model, reference, util
+from . import damping, data, disp, model, ncoord, reference, util
 from .typing import (
-    Tensor,
-    Optional,
     CountingFunction,
-    WeightingFunction,
     DampingFunction,
+    Optional,
+    Tensor,
+    WeightingFunction,
 )
 
 

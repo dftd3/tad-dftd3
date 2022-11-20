@@ -48,14 +48,13 @@ Example
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
 tensor(-0.0003964)
 """
-
 from __future__ import annotations
 
 import torch
 
 from . import data, defaults
-from .damping import rational_damping, dispersion_atm
-from .typing import Optional, Tensor, DampingFunction
+from .damping import dispersion_atm, rational_damping
+from .typing import DampingFunction, Optional, Tensor
 from .util import real_pairs
 
 
@@ -64,10 +63,10 @@ def dispersion(
     positions: Tensor,
     param: dict[str, Tensor],
     c6: Tensor,
-    rvdw: Optional[Tensor] = None,
-    r4r2: Optional[Tensor] = None,
+    rvdw: Tensor | None = None,
+    r4r2: Tensor | None = None,
     damping_function: DampingFunction = rational_damping,
-    cutoff: Optional[Tensor] = None,
+    cutoff: Tensor | None = None,
     **kwargs,
 ) -> Tensor:
     """

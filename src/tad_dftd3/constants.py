@@ -15,6 +15,7 @@
 """
 This module contains fundamental constants and conversion factors.
 """
+from __future__ import annotations
 
 BOHR_TO_ANGSTROM = 0.529177210903
 """Bohr radius in Angstroms."""

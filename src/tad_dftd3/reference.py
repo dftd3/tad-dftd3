@@ -19,8 +19,10 @@ Reference model
 This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
+from __future__ import annotations
 
 import os.path as op
+
 import torch
 
 from .typing import Optional, Tensor
@@ -132,7 +134,9 @@ def _load_c6(dtype=torch.float) -> Tensor:
     """
     Load reference C6 coefficients from file and fill them into a tensor
     """
-    import math, numpy as np
+    import math
+
+    import numpy as np
 
     ref = torch.from_numpy(
         np.load(op.join(op.dirname(__file__), "reference-c6.npy"))
@@ -215,7 +219,7 @@ class Reference:
         """Floating point dtype used by reference object."""
         return self.__dtype
 
-    def to(self, device: torch.device) -> "Reference":
+    def to(self, device: torch.device) -> Reference:
         """
         Returns a copy of the `Reference` instance on the specified device.
 
@@ -244,7 +248,7 @@ class Reference:
             self.c6.to(device=device),
         )
 
-    def type(self, dtype: torch.dtype) -> "Reference":
+    def type(self, dtype: torch.dtype) -> Reference:
         """
         Returns a copy of the `Reference` instance with specified floating point type.
         This method creates and returns a new copy of the `Reference` instance
