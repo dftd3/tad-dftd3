@@ -26,7 +26,7 @@ Sliceable = Union[List[Tensor], Tuple[Tensor]]
 
 CountingFunction = Callable[[Tensor, Tensor, Any], Tensor]
 WeightingFunction = Callable[[Tensor, Any], Tensor]
-DampingFunction = Callable[[int, Tensor, Tensor, Tensor, Any], Tensor]
+DampingFunction = Callable[[int, Tensor, Tensor, Any], Tensor]
 
 
 class Molecule(TypedDict):

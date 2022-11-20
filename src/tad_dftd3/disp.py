@@ -52,7 +52,7 @@ tensor(-0.0003964)
 import torch
 
 from . import data
-from .damping import rational_damping
+from .damping import rational_damping, disp_atm
 from .typing import Dict, Optional, Tensor, DampingFunction
 from .util import real_pairs
 
@@ -77,6 +77,8 @@ def dispersion(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
+    param : dict[str, float]
+        DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
     rvdw : Tensor
@@ -86,19 +88,11 @@ def dispersion(
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
-    s6 : float
-        Scaling factor for the C6 interaction.
-    s8 : float
-        Scaling factor for the C8 interaction.
     """
     if cutoff is None:
         cutoff = torch.tensor(50.0, dtype=positions.dtype)
     if r4r2 is None:
         r4r2 = data.sqrt_z_r4_over_r2[numbers].type(positions.dtype)
-    if rvdw is None:
-        rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(
-            positions.dtype
-        )
     if numbers.shape != positions.shape[:-1]:
         raise ValueError("Shape of positions is not consistent with atomic numbers")
     if numbers.shape != r4r2.shape:
@@ -106,14 +100,20 @@ def dispersion(
             "Shape of expectation values is not consistent with atomic numbers"
         )
 
+    # two-body dispersion
     energy = dispersion2(
-        numbers, positions, param, c6, rvdw, r4r2, damping_function, cutoff
+        numbers, positions, param, c6, r4r2, damping_function, cutoff, **kwargs
     )
 
+    # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
-        energy += dispersion3(
-            numbers, positions, param, c6, rvdw, r4r2, damping_function, cutoff
-        )
+        if rvdw is None:
+            rvdw = data.vdw_rad_d3[
+                numbers.unsqueeze(-1),
+                numbers.unsqueeze(-2),
+            ].type(positions.dtype)
+
+        energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 
     return energy
 
@@ -123,7 +123,6 @@ def dispersion2(
     positions: Tensor,
     param: Dict[str, float],
     c6: Tensor,
-    rvdw: Tensor,
     r4r2: Tensor,
     damping_function: DampingFunction,
     cutoff: Tensor,
@@ -138,19 +137,15 @@ def dispersion2(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
+    param : dict[str, float]
+        DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
-    rvdw : Tensor
-        Van der Waals radii of the atoms in the system.
     r4r2 : Tensor
         r⁴ over r² expectation values of the atoms in the system.
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
-    s6 : float
-        Scaling factor for the C6 interaction.
-    s8 : float
-        Scaling factor for the C8 interaction.
     """
     eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
     mask = real_pairs(numbers, diagonal=False)
@@ -165,13 +160,13 @@ def dispersion2(
 
     t6 = torch.where(
         mask * (distances <= cutoff),
-        damping_function(6, distances, rvdw, qq, param),
-        torch.tensor(0.0, dtype=distances.dtype),
+        damping_function(6, distances, qq, param, **kwargs),
+        positions.new_tensor(0.0),
     )
     t8 = torch.where(
         mask * (distances <= cutoff),
-        damping_function(8, distances, rvdw, qq, param),
-        torch.tensor(0.0, dtype=distances.dtype),
+        damping_function(8, distances, qq, param, **kwargs),
+        positions.new_tensor(0.0),
     )
 
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
@@ -186,17 +181,37 @@ def dispersion3(
     param: Dict[str, float],
     c6: Tensor,
     rvdw: Tensor,
-    r4r2: Tensor,
-    damping_function: DampingFunction,
     cutoff: Tensor,
+    rs9: float = 4.0 / 3.0,
 ) -> Tensor:
-    s9 = param.get("s9", 1.0)
-    rs9 = 1.0  # 4.0 / 3.0
+    """
+    Three-body dispersion term. Currently this is only a wrapper for the
+    Axilrod-Teller-Muto dispersion term.
 
-    srvdw = rs9 * rvdw
-    print(c6)
+    Parameters
+    ----------
+    numbers : Tensor
+        Atomic numbers of the atoms in the system.
+    positions : Tensor
+        Cartesian coordinates of the atoms in the system.
+    param : dict[str, float]
+        Dictionary of dispersion parameters. Default values are used for
+        missing keys.
+    c6 : Tensor
+        Atomic C6 dispersion coefficients.
+    rvdw : Tensor
+        Van der Waals radii of the atoms in the system.
+    cutoff : Tensor
+        Real-space cutoff.
+    rs9 : float, optional
+        Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
 
-    c9 = -s9 * torch.sqrt(torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2)))
-    print(c6.unsqueeze(-1) * c6.unsqueeze(-2))
+    Returns
+    -------
+    Tensor
+        Atom-resolved three-body dispersion energy.
+    """
+    alp = param.get("alp", 14.0)  # exponent of zero damping function
+    s9 = param.get("s9", 1.0)  # scaling for dispersion coefficients
 
-    return torch.zeros_like(numbers)
+    return disp_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)

@@ -37,13 +37,20 @@ def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
     return mask
 
 
+def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
+    real = real_pairs(numbers, diagonal=True)
+    mask = real.unsqueeze(-3) * real.unsqueeze(-2) * real.unsqueeze(-1)
+    if not diagonal:
+        mask *= ~torch.diag_embed(torch.ones_like(real))
+    return mask
+
+
 def pack(
     tensors: Sliceable,
     axis: int = 0,
     value: Any = 0,
     size: Size = None,
-    return_mask: bool = False,
-) -> MaybeTensor:
+) -> Tensor:
     """
     Pad a list of variable length tensors with zeros, or some other value, and
     pack them into a single tensor.

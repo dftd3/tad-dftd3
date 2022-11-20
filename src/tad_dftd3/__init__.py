@@ -102,8 +102,8 @@ def dftd3(
         Atomic numbers of the atoms in the system.
     positions : torch.Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict
-        DFT-D3 damping parameters
+    param : dict[str, float]
+        DFT-D3 damping parameters.
     ref : reference.Reference, optional
         Reference C6 coefficients.
     rcov : torch.Tensor, optional

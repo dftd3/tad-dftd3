@@ -44,7 +44,7 @@ def test_disp_single(dtype):
     ).type(dtype)
 
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
+        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
     )
 
     assert energy.dtype == dtype
@@ -124,7 +124,7 @@ def test_disp_batch(dtype):
     ).type(dtype)
 
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
+        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
     )
 
     assert energy.dtype == dtype

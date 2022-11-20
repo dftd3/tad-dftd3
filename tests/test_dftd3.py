@@ -125,10 +125,11 @@ def test_param_grad():
     param = (
         torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
         torch.tensor(0.78981345, requires_grad=True, dtype=dtype),
+        torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
         torch.tensor(0.49484001, requires_grad=True, dtype=dtype),
         torch.tensor(5.73083694, requires_grad=True, dtype=dtype),
     )
-    label = ("s6", "s8", "a1", "a2")
+    label = ("s6", "s8", "s9", "a1", "a2")
 
     def func(*inputs):
         input_param = {label[i]: inputs[i] for i in range(len(inputs))}
@@ -147,6 +148,7 @@ def test_positions_grad():
     param = {
         "s6": torch.tensor(1.00000000, dtype=dtype),
         "s8": torch.tensor(0.78981345, dtype=dtype),
+        "s9": torch.tensor(1.00000000, dtype=dtype),
         "a1": torch.tensor(0.49484001, dtype=dtype),
         "a2": torch.tensor(5.73083694, dtype=dtype),
     }
