@@ -16,13 +16,15 @@
 Miscellaneous functions
 =======================
 
-Utilities for working with tensors as well as translating between element symbols and
-atomic numbers.
+Utilities for working with tensors as well as translating between element 
+symbols and atomic numbers.
 """
+
+from __future__ import annotations
 
 import torch
 
-from .typing import Any, List, MaybeTensor, Sliceable, Size, Tensor, Tuple, Union
+from .typing import Any, Sliceable, Size, Tensor
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -32,7 +34,7 @@ def real_atoms(numbers: Tensor) -> Tensor:
 def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
     real = real_atoms(numbers)
     mask = real.unsqueeze(-2) * real.unsqueeze(-1)
-    if not diagonal:
+    if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
     return mask
 
@@ -40,7 +42,7 @@ def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
 def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
     real = real_pairs(numbers, diagonal=True)
     mask = real.unsqueeze(-3) * real.unsqueeze(-2) * real.unsqueeze(-1)
-    if not diagonal:
+    if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
     return mask
 
@@ -97,7 +99,7 @@ def pack(
     return padded
 
 
-def to_number(symbols: List[str]) -> Tensor:
+def to_number(symbols: list[str]) -> Tensor:
     """
     Obtain atomic numbers from element symbols.
     """

@@ -2,15 +2,21 @@
 Rational (Becke-Johnson) damping function.
 """
 
+from __future__ import annotations
+
 import torch
+
+from .. import defaults
 from ..typing import Tensor
+
+__all__ = ["rational_damping"]
 
 
 def rational_damping(
     order: int,
     distances: Tensor,
     qq: Tensor,
-    param: dict[str, float],
+    param: dict[str, Tensor],
 ) -> Tensor:
     """
     Rational damped dispersion interaction between pairs.
@@ -24,7 +30,7 @@ def rational_damping(
         Pairwise distances between atoms in the system.
     qq : Tensor
         Quotient of C8 and C6 dispersion coefficients.
-    param : dict[str, float]
+    param : dict[str, Tensor]
         DFT-D3 damping parameters.
 
     Returns
@@ -32,6 +38,6 @@ def rational_damping(
     Tensor
         Values of the damping function.
     """
-    a1 = param.get("a1", 0.4)
-    a2 = param.get("a2", 5.0)
+    a1 = param.get("a1", distances.new_tensor(defaults.A1))
+    a2 = param.get("a2", distances.new_tensor(defaults.A1))
     return 1.0 / (distances.pow(order) + (a1 * torch.sqrt(qq) + a2).pow(order))

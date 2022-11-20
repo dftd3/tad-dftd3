@@ -4,19 +4,22 @@ Three-body (Axilrod-Teller-Muto, ATM) dispersion term.
 
 import torch
 
+from .. import defaults
 from ..typing import Tensor
 from ..util import real_pairs, real_triples
 
+__all__ = ["dispersion_atm"]
 
-def disp_atm(
+
+def dispersion_atm(
     numbers: Tensor,
     positions: Tensor,
     c6: Tensor,
     rvdw: Tensor,
     cutoff: Tensor,
-    s9: float = 1.0,
-    rs9: float = 4.0 / 3.0,
-    alp: float = 14.0,
+    s9: Tensor = torch.tensor(defaults.S9),
+    rs9: Tensor = torch.tensor(defaults.RS9),
+    alp: Tensor = torch.tensor(defaults.ALP),
 ) -> Tensor:
     """
     Axilrod-Teller-Muto dispersion term.
@@ -33,21 +36,23 @@ def disp_atm(
         Van der Waals radii of the atoms in the system.
     cutoff : Tensor
         Real-space cutoff.
-    s9 : float, optional
-         Scaling for van-der-Waals radii in damping function. Defaults to `1.0`.
-    rs9 : float, optional
+    s9 : Tensor, optional
+        Scaling for dispersion coefficients. Defaults to `1.0`.
+    rs9 : Tensor, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
-    alp : float, optional
+    alp : Tensor, optional
         Exponent of zero damping function. Defaults to `14.0`.
 
     Returns
     -------
     Tensor
-        Atom-resolved three-body dispersion energy.
+        Atom-resolved ATM dispersion energy.
     """
-    cutoff2 = cutoff * cutoff
+    s9 = s9.type(positions.dtype).to(positions.device)
+    rs9 = rs9.type(positions.dtype).to(positions.device)
+    alp = alp.type(positions.dtype).to(positions.device)
 
-    # scaling for van-der-Waals radii in damping function
+    cutoff2 = cutoff * cutoff
     srvdw = rs9 * rvdw
 
     # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)

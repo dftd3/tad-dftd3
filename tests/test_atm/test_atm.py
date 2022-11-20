@@ -26,6 +26,8 @@ from .samples import samples
 @pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
 def test_single(dtype: torch.dtype, name: str):
     tol = sqrt(torch.finfo(dtype).eps) * 10
+    dd = {"dtype": dtype}
+
     sample = samples[name]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
@@ -33,30 +35,30 @@ def test_single(dtype: torch.dtype, name: str):
 
     # TPSS0-D3BJ-ATM parameters
     param = {
-        "s6": 1.0,
-        "s8": 1.2576,
-        "s9": 1.0,
-        "alp": 14.0,
-        "a1": 0.3768,
-        "a2": 4.5865,
+        "s6": torch.tensor(1.0, **dd),
+        "s8": torch.tensor(1.2576, **dd),
+        "s9": torch.tensor(1.0, **dd),
+        "alp": torch.tensor(14.0, **dd),
+        "a1": torch.tensor(0.3768, **dd),
+        "a2": torch.tensor(4.5865, **dd),
     }
 
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(dtype)
-    cutoff = torch.tensor(50.0, dtype=dtype)
+    cutoff = torch.tensor(50.0, **dd)
     refmodel = reference.Reference().type(dtype)
     rcov = data.covalent_rad_d3[numbers].type(dtype)
     cn = ncoord.coordination_number(numbers, positions, rcov)
     weights = model.weight_references(numbers, cn, refmodel)
     c6 = model.atomic_c6(numbers, weights, refmodel)
 
-    energy = damping.disp_atm(
+    energy = damping.dispersion_atm(
         numbers,
         positions,
         c6,
         rvdw,
         cutoff,
-        param.get("s9", 1.0),
-        alp=param.get("alp", 14.0),
+        s9=param["s9"],
+        alp=param["alp"],
     )
 
     assert energy.dtype == dtype
@@ -68,6 +70,8 @@ def test_single(dtype: torch.dtype, name: str):
 @pytest.mark.parametrize("name2", ["SiH4"])
 def test_batch(dtype: torch.dtype, name1: str, name2: str):
     tol = sqrt(torch.finfo(dtype).eps) * 10
+    dd = {"dtype": dtype}
+
     sample1, sample2 = samples[name1], samples[name2]
     numbers = util.pack(
         [
@@ -90,30 +94,30 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str):
 
     # TPSS0-D3BJ-ATM parameters
     param = {
-        "s6": 1.0,
-        "s8": 1.2576,
-        "s9": 1.0,
-        "alp": 14.0,
-        "a1": 0.3768,
-        "a2": 4.5865,
+        "s6": torch.tensor(1.0, **dd),
+        "s8": torch.tensor(1.2576, **dd),
+        "s9": torch.tensor(1.0, **dd),
+        "alp": torch.tensor(14.0, **dd),
+        "a1": torch.tensor(0.3768, **dd),
+        "a2": torch.tensor(4.5865, **dd),
     }
 
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(dtype)
-    cutoff = torch.tensor(50.0, dtype=dtype)
+    cutoff = torch.tensor(50.0, **dd)
     refmodel = reference.Reference().type(dtype)
     rcov = data.covalent_rad_d3[numbers].type(dtype)
     cn = ncoord.coordination_number(numbers, positions, rcov)
     weights = model.weight_references(numbers, cn, refmodel)
     c6 = model.atomic_c6(numbers, weights, refmodel)
 
-    energy = damping.disp_atm(
+    energy = damping.dispersion_atm(
         numbers,
         positions,
         c6,
         rvdw,
         cutoff,
-        param.get("s9", 1.0),
-        alp=param.get("alp", 14.0),
+        s9=param["s9"],
+        alp=param["alp"],
     )
 
     assert energy.dtype == dtype

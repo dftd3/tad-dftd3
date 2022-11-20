@@ -16,17 +16,19 @@
 Type annotations for this project.
 """
 
-import torch
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypedDict, Union
+from __future__ import annotations
 
-Size = Optional[Union[Tuple[int], torch.Size]]
+import torch
+from typing import Any, Callable, Optional, TypedDict, Union
+
+Size = Optional[Union[tuple[int], torch.Size]]
 Tensor = torch.Tensor
 MaybeTensor = Union[Tensor, Optional[Tensor]]
-Sliceable = Union[List[Tensor], Tuple[Tensor]]
+Sliceable = Union[list[Tensor], tuple[Tensor]]
 
-CountingFunction = Callable[[Tensor, Tensor, Any], Tensor]
+CountingFunction = Callable[[Tensor, Tensor], Tensor]
 WeightingFunction = Callable[[Tensor, Any], Tensor]
-DampingFunction = Callable[[int, Tensor, Tensor, Any], Tensor]
+DampingFunction = Callable[[int, Tensor, Tensor, dict[str, Tensor]], Tensor]
 
 
 class Molecule(TypedDict):

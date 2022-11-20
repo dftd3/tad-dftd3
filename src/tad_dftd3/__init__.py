@@ -67,11 +67,12 @@ tensor([-0.0124292, -0.0045002])
 tensor(-0.0034288)
 """
 
+from __future__ import annotations
+
 import torch
 
 from . import data, disp, damping, ncoord, model, reference, util
 from .typing import (
-    Dict,
     Tensor,
     Optional,
     CountingFunction,
@@ -83,7 +84,7 @@ from .typing import (
 def dftd3(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, float],
+    param: dict[str, Tensor],
     *,
     ref: Optional[reference.Reference] = None,
     rcov: Optional[Tensor] = None,
@@ -102,7 +103,7 @@ def dftd3(
         Atomic numbers of the atoms in the system.
     positions : torch.Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, float]
+    param : dict[str, Tensor]
         DFT-D3 damping parameters.
     ref : reference.Reference, optional
         Reference C6 coefficients.
@@ -126,15 +127,19 @@ def dftd3(
     """
 
     if ref is None:
-        ref = reference.Reference().type(positions.dtype)
+        ref = reference.Reference().type(positions.dtype).to(positions.device)
     if rcov is None:
-        rcov = data.covalent_rad_d3[numbers].type(positions.dtype)
+        rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
     if rvdw is None:
-        rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(
-            positions.dtype
+        rvdw = (
+            data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+            .type(positions.dtype)
+            .to(positions.device)
         )
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2[numbers].type(positions.dtype)
+        r4r2 = (
+            data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
+        )
 
     cn = ncoord.coordination_number(numbers, positions, rcov, counting_function)
     weights = model.weight_references(numbers, cn, ref, weighting_function)

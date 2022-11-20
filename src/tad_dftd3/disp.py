@@ -49,24 +49,26 @@ Example
 tensor(-0.0003964)
 """
 
+from __future__ import annotations
+
 import torch
 
-from . import data
-from .damping import rational_damping, disp_atm
-from .typing import Dict, Optional, Tensor, DampingFunction
+from . import data, defaults
+from .damping import rational_damping, dispersion_atm
+from .typing import Optional, Tensor, DampingFunction
 from .util import real_pairs
 
 
 def dispersion(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, float],
+    param: dict[str, Tensor],
     c6: Tensor,
     rvdw: Optional[Tensor] = None,
     r4r2: Optional[Tensor] = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: Optional[Tensor] = None,
-    **kwargs
+    **kwargs,
 ) -> Tensor:
     """
     Calculate dispersion energy between pairs of atoms.
@@ -77,7 +79,7 @@ def dispersion(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, float]
+    param : dict[str, Tensor]
         DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
@@ -90,14 +92,18 @@ def dispersion(
         Additional arguments are passed through to the function.
     """
     if cutoff is None:
-        cutoff = torch.tensor(50.0, dtype=positions.dtype)
+        cutoff = positions.new_tensor(50.0)
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2[numbers].type(positions.dtype)
+        r4r2 = (
+            data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
+        )
     if numbers.shape != positions.shape[:-1]:
-        raise ValueError("Shape of positions is not consistent with atomic numbers")
+        raise ValueError(
+            "Shape of positions is not consistent with atomic numbers.",
+        )
     if numbers.shape != r4r2.shape:
         raise ValueError(
-            "Shape of expectation values is not consistent with atomic numbers"
+            "Shape of expectation values is not consistent with atomic numbers.",
         )
 
     # two-body dispersion
@@ -108,10 +114,11 @@ def dispersion(
     # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
         if rvdw is None:
-            rvdw = data.vdw_rad_d3[
-                numbers.unsqueeze(-1),
-                numbers.unsqueeze(-2),
-            ].type(positions.dtype)
+            rvdw = (
+                data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+                .type(positions.dtype)
+                .to(positions.device)
+            )
 
         energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 
@@ -121,12 +128,12 @@ def dispersion(
 def dispersion2(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, float],
+    param: dict[str, Tensor],
     c6: Tensor,
     r4r2: Tensor,
     damping_function: DampingFunction,
     cutoff: Tensor,
-    **kwargs
+    **kwargs,
 ) -> Tensor:
     """
     Calculate dispersion energy between pairs of atoms.
@@ -137,7 +144,7 @@ def dispersion2(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, float]
+    param : dict[str, Tensor]
         DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
@@ -147,12 +154,11 @@ def dispersion2(
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
     """
-    eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
         torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"),
-        eps,
+        positions.new_tensor(torch.finfo(positions.dtype).eps),
     )
 
     qq = 3 * r4r2.unsqueeze(-1) * r4r2.unsqueeze(-2)
@@ -172,17 +178,19 @@ def dispersion2(
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
     e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
 
-    return param.get("s6", 1.0) * e6 + param.get("s8", 1.0) * e8
+    s6 = param.get("s6", positions.new_tensor(defaults.S6))
+    s8 = param.get("s8", positions.new_tensor(defaults.S8))
+    return s6 * e6 + s8 * e8
 
 
 def dispersion3(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, float],
+    param: dict[str, Tensor],
     c6: Tensor,
     rvdw: Tensor,
     cutoff: Tensor,
-    rs9: float = 4.0 / 3.0,
+    rs9: Tensor = torch.tensor(4.0 / 3.0),
 ) -> Tensor:
     """
     Three-body dispersion term. Currently this is only a wrapper for the
@@ -194,7 +202,7 @@ def dispersion3(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, float]
+    param : dict[str, Tensor]
         Dictionary of dispersion parameters. Default values are used for
         missing keys.
     c6 : Tensor
@@ -203,7 +211,7 @@ def dispersion3(
         Van der Waals radii of the atoms in the system.
     cutoff : Tensor
         Real-space cutoff.
-    rs9 : float, optional
+    rs9 : Tensor, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
 
     Returns
@@ -211,7 +219,8 @@ def dispersion3(
     Tensor
         Atom-resolved three-body dispersion energy.
     """
-    alp = param.get("alp", 14.0)  # exponent of zero damping function
-    s9 = param.get("s9", 1.0)  # scaling for dispersion coefficients
+    alp = param.get("alp", positions.new_tensor(14.0))
+    s9 = param.get("s9", positions.new_tensor(14.0))
+    rs9 = rs9.type(positions.dtype).to(positions.device)
 
-    return disp_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)
+    return dispersion_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)
