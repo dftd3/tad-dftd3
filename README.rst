@@ -1,6 +1,9 @@
 Torch autodiff for DFT-D3
 =========================
 
+.. image:: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10-blue
+   :alt: Python Versions
+
 .. image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
    :target: https://github.com/dftd3/tad-dftd3/releases/latest
    :alt: Release
