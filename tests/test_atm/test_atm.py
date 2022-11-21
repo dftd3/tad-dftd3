@@ -61,7 +61,7 @@ def test_single(dtype: torch.dtype, name: str):
         positions,
         c6,
         rvdw,
-        cutoff,
+        cutoff=cutoff,
         s9=param["s9"],
         alp=param["alp"],
     )

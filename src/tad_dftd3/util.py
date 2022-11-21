@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import torch
 
-from .typing import Any, Size, Sliceable, Tensor
+from .typing import Any, Tensor
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -47,10 +47,10 @@ def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
 
 
 def pack(
-    tensors: Sliceable,
+    tensors: list[Tensor] | tuple[Tensor, ...],
     axis: int = 0,
     value: Any = 0,
-    size: Size = None,
+    size: tuple[int] | list[int] | torch.Size | None = None,
 ) -> Tensor:
     """
     Pad a list of variable length tensors with zeros, or some other value, and
@@ -58,7 +58,7 @@ def pack(
 
     Parameters
     ----------
-    tensors : Sliceable
+    tensors : list[Tensor] | tuple[Tensor]
         List of tensors to be packed, all with identical dtypes.
     axis : int
         Axis along which tensors should be packed; 0 for first axis -1
@@ -82,7 +82,7 @@ def pack(
     _dtype = tensors[0].dtype
 
     if size is None:
-        size = torch.tensor([i.shape for i in tensors]).max(0).values
+        size = torch.tensor([i.shape for i in tensors]).max(0).values.tolist()
 
     padded = torch.full((_count, *size), value, dtype=_dtype, device=_device)
 

@@ -22,6 +22,21 @@ from tad_dftd3 import data, ncoord, util
 from . import samples
 
 
+def test_fail() -> None:
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    # rcov wrong shape
+    with pytest.raises(ValueError):
+        rcov = torch.tensor([1.0])
+        ncoord.coordination_number(numbers, positions, rcov)
+
+    # wrong numbers
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1])
+        ncoord.coordination_number(numbers, positions)
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_cn_single(dtype):
     sample = samples.structures["PbH4-BiH3"]

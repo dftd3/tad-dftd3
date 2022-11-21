@@ -22,15 +22,41 @@ from tad_dftd3 import data, disp, util
 from . import samples
 
 
+def test_fail() -> None:
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    param = {
+        "a1": torch.tensor(0.49484001),
+        "s8": torch.tensor(0.78981345),
+        "a2": torch.tensor(5.73083694),
+    }
+    c6 = samples.structures["PbH4-BiH3"]["c6"]
+
+    # r4r2 wrong shape
+    with pytest.raises(ValueError):
+        r4r2 = torch.tensor([1.0])
+        disp.dispersion(numbers, positions, param, c6, r4r2=r4r2)
+
+    # wrong numbers
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1])
+        disp.dispersion(numbers, positions, param, c6)
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_single(dtype):
+def test_single(dtype: torch.dtype):
+    dd = {"dtype": dtype}
     sample = samples.structures["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
     c6 = sample["c6"].type(dtype)
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.sqrt_z_r4_over_r2[numbers]
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+    param = {
+        "a1": torch.tensor(0.49484001, **dd),
+        "s8": torch.tensor(0.78981345, **dd),
+        "a2": torch.tensor(5.73083694, **dd),
+    }
     ref = torch.tensor(
         [
             -3.5479912602e-04,
@@ -54,7 +80,9 @@ def test_disp_single(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_batch(dtype):
+def test_batch(dtype):
+    dd = {"dtype": dtype}
+
     sample1, sample2 = (
         samples.structures["PbH4-BiH3"],
         samples.structures["C6H5I-CH3SH"],
@@ -79,7 +107,11 @@ def test_disp_batch(dtype):
     )
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.sqrt_z_r4_over_r2[numbers]
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+    param = {
+        "a1": torch.tensor(0.49484001, **dd),
+        "s8": torch.tensor(0.78981345, **dd),
+        "a2": torch.tensor(5.73083694, **dd),
+    }
     ref = torch.tensor(
         [
             [

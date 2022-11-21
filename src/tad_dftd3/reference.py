@@ -238,7 +238,8 @@ class Reference:
 
         Notes
         -----
-        If the `Reference` instance is already on the desired device `self` will be returned.
+        If the `Reference` instance is already on the desired device `self`
+        will be returned.
         """
         if self.__device == device:
             return self
@@ -266,7 +267,8 @@ class Reference:
 
         Notes
         -----
-        If the `Reference` instance has already the desired dtype `self` will be returned.
+        If the `Reference` instance has already the desired dtype `self` will
+        be returned.
         """
         if self.__dtype == dtype:
             return self
@@ -278,4 +280,8 @@ class Reference:
 
     def __repr__(self):
         """Creates a string representation of the Reference object."""
-        return f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, device={self.__device})"
+        return (
+            f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, "
+            f"n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, "
+            f"device={self.__device})"
+        )
