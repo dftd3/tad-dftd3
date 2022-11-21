@@ -15,7 +15,6 @@
 """
 Possible exceptions which can be raised by this module.
 """
-from __future__ import annotations
 
 
 class DFTD3Error(Exception):

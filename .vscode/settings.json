@@ -9,7 +9,6 @@
   "python.analysis.diagnosticSeverityOverrides": {
     "reportPrivateImportUsage": "information"
   },
-  "python.defaultInterpreterPath": "${env:CONDA_PREFIX}/envs/dxtb/bin/python",
   "python.formatting.provider": "black",
   "python.linting.enabled": true,
   "python.linting.pylintEnabled": true,

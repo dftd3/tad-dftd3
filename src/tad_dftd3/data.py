@@ -18,8 +18,6 @@ Atomic data
 
 Data arrays for atomic constants like covalent radii or van-der-Waals radii.
 """
-from __future__ import annotations
-
 import torch
 
 from . import constants
@@ -62,7 +60,7 @@ covalent_rad_d3 = 4.0 / 3.0 * covalent_rad_2009
 
 
 # fmt: off
-r4_over_r2 = torch.Tensor([
+r4_over_r2 = torch.tensor([
     0.0000,  # None
     8.0589, 3.4698,  # H,He
     29.0974,14.8517,11.8799, 7.8715, 5.5588, 4.7566, 3.8025, 3.1036,  # Li-Ne

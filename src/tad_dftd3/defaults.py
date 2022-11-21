@@ -1,7 +1,6 @@
 """
 Default values for parameters within DFT-D3.
 """
-from __future__ import annotations
 
 A1 = 0.4
 """Scaling for the C8 / C6 ratio in the critical radius (0.4)."""
