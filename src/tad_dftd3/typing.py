@@ -15,7 +15,7 @@
 """
 Type annotations for this project.
 """
-from typing import Any, Callable, Dict, Optional, TypedDict, Union, Tuple, List
+from typing import Callable, Dict, List, Optional, Tuple, TypedDict, Union
 
 import torch
 

@@ -21,7 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import Any, Tensor, List, Optional, Size, TensorOrTensors
+from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -47,7 +47,7 @@ def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
 def pack(
     tensors: TensorOrTensors,
     axis: int = 0,
-    value: Any = 0,
+    value: Union[int, float] = 0,
     size: Optional[Size] = None,
 ) -> Tensor:
     """
@@ -61,7 +61,7 @@ def pack(
     axis : int
         Axis along which tensors should be packed; 0 for first axis -1
         for the last axis, etc. This will be a new dimension.
-    value : Any
+    value : int | float
         The value with which the tensor is to be padded.
     size :
         Size of each dimension to which tensors should be padded.

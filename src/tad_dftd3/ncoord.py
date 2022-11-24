@@ -61,7 +61,7 @@ tensor([[2.9901006, 0.9977214, 0.9977214, 0.9977214, 0.0000000, 0.0000000],
 import torch
 
 from . import data
-from .typing import CountingFunction, Tensor, Optional
+from .typing import CountingFunction, Optional, Tensor
 from .util import real_pairs
 
 

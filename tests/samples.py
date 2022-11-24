@@ -17,7 +17,7 @@ Collection of test samples.
 """
 import torch
 
-from tad_dftd3.typing import Molecule, Tensor, TypedDict, Dict
+from tad_dftd3.typing import Dict, Molecule, Tensor, TypedDict
 
 from .molecules import merge_nested_dicts, mols
 

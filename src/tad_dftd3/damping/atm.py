@@ -7,8 +7,6 @@ from .. import defaults
 from ..typing import Tensor
 from ..util import real_pairs, real_triples
 
-__all__ = ["dispersion_atm"]
-
 
 def dispersion_atm(
     numbers: Tensor,

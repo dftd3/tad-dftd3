@@ -4,9 +4,7 @@ Rational (Becke-Johnson) damping function.
 import torch
 
 from .. import defaults
-from ..typing import Tensor, Dict
-
-__all__ = ["rational_damping"]
+from ..typing import Dict, Tensor
 
 
 def rational_damping(
