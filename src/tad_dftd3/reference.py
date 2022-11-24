@@ -19,8 +19,8 @@ Reference model
 This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
-
 import os.path as op
+
 import torch
 
 from .typing import Optional, Tensor
@@ -128,11 +128,15 @@ def _load_cn(dtype=torch.float):
     ).type(dtype)
 
 
-def _load_c6(dtype=torch.float) -> Tensor:
+def _load_c6(dtype: torch.dtype = torch.float) -> Tensor:
     """
     Load reference C6 coefficients from file and fill them into a tensor
     """
-    import math, numpy as np
+
+    # pylint: disable=import-outside-toplevel
+    import math
+
+    import numpy as np
 
     ref = torch.from_numpy(
         np.load(op.join(op.dirname(__file__), "reference-c6.npy"))
@@ -234,7 +238,8 @@ class Reference:
 
         Notes
         -----
-        If the `Reference` instance is already on the desired device `self` will be returned.
+        If the `Reference` instance is already on the desired device `self`
+        will be returned.
         """
         if self.__device == device:
             return self
@@ -262,7 +267,8 @@ class Reference:
 
         Notes
         -----
-        If the `Reference` instance has already the desired dtype `self` will be returned.
+        If the `Reference` instance has already the desired dtype `self` will
+        be returned.
         """
         if self.__dtype == dtype:
             return self
@@ -274,4 +280,8 @@ class Reference:
 
     def __repr__(self):
         """Creates a string representation of the Reference object."""
-        return f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, device={self.__device})"
+        return (
+            f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, "
+            f"n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, "
+            f"device={self.__device})"
+        )

@@ -12,13 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import sys, os.path as op
+"""
+Config file for docs.
+"""
+import os.path as op
+import sys
 
 sys.path.insert(0, op.join(op.dirname(__file__), "..", "src"))
 
 import tad_dftd3
-
 
 project = "Torch autodiff DFT-D3"
 author = "Sebastian Ehlert"

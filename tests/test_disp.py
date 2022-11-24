@@ -12,51 +12,66 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+Test calculation of two-body and three-body dispersion terms.
+"""
+from math import sqrt
 
 import pytest
 import torch
 
-from tad_dftd3 import data, disp, util
-from . import samples
+from tad_dftd3 import damping, data, disp, util
+
+from .samples import samples
+
+
+def test_fail() -> None:
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    param = {
+        "a1": torch.tensor(0.49484001),
+        "s8": torch.tensor(0.78981345),
+        "a2": torch.tensor(5.73083694),
+    }
+    c6 = samples["PbH4-BiH3"]["c6"]
+
+    # r4r2 wrong shape
+    with pytest.raises(ValueError):
+        r4r2 = torch.tensor([1.0])
+        disp.dispersion(numbers, positions, param, c6, r4r2=r4r2)
+
+    # wrong numbers
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1])
+        disp.dispersion(numbers, positions, param, c6)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_single(dtype):
-    sample = samples.structures["PbH4-BiH3"]
+def test_disp2_single(dtype: torch.dtype):
+    sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
+    ref = sample["disp2"].type(dtype)
     c6 = sample["c6"].type(dtype)
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.sqrt_z_r4_over_r2[numbers]
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
-    ref = torch.tensor(
-        [
-            -3.5479912602e-04,
-            -8.9124281989e-05,
-            -8.9124287363e-05,
-            -8.9124287363e-05,
-            -1.3686794039e-04,
-            -3.8805575850e-04,
-            -8.7387460069e-05,
-            -8.7387464149e-05,
-            -8.7387460069e-05,
-        ]
-    ).type(dtype)
+    param = {
+        "a1": positions.new_tensor(0.49484001),
+        "s8": positions.new_tensor(0.78981345),
+        "a2": positions.new_tensor(5.73083694),
+    }
 
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
+        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
     )
 
     assert energy.dtype == dtype
-    assert torch.allclose(energy, ref)
+    assert pytest.approx(energy) == ref
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_batch(dtype):
-    sample1, sample2 = (
-        samples.structures["PbH4-BiH3"],
-        samples.structures["C6H5I-CH3SH"],
-    )
+def test_disp2_batch(dtype):
+    sample1, sample2 = samples["PbH4-BiH3"], samples["C6H5I-CH3SH"]
     numbers = util.pack(
         (
             sample1["numbers"],
@@ -75,57 +90,119 @@ def test_disp_batch(dtype):
             sample2["c6"].type(dtype),
         )
     )
+    ref = util.pack(
+        (
+            sample1["disp2"].type(dtype),
+            sample2["disp2"].type(dtype),
+        )
+    )
+
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.sqrt_z_r4_over_r2[numbers]
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
-    ref = torch.tensor(
-        [
-            [
-                -3.5479912602e-04,
-                -8.9124281989e-05,
-                -8.9124287363e-05,
-                -8.9124287363e-05,
-                -1.3686794039e-04,
-                -3.8805575850e-04,
-                -8.7387460069e-05,
-                -8.7387464149e-05,
-                -8.7387460069e-05,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-            ],
-            [
-                -4.1551151549e-04,
-                -3.9770287009e-04,
-                -4.1552470565e-04,
-                -4.4246829733e-04,
-                -4.7527776799e-04,
-                -4.4258484762e-04,
-                -1.0637547378e-03,
-                -1.5452322970e-04,
-                -1.9695663808e-04,
-                -1.6184434935e-04,
-                -1.9703176496e-04,
-                -1.6183339573e-04,
-                -4.6648977616e-04,
-                -1.3764556692e-04,
-                -2.4555353368e-04,
-                -1.3535967638e-04,
-                -1.5719227870e-04,
-                -1.1675684940e-04,
-            ],
-        ]
-    ).type(dtype)
+    param = {
+        "a1": positions.new_tensor(0.49484001),
+        "s8": positions.new_tensor(0.78981345),
+        "a2": positions.new_tensor(5.73083694),
+    }
 
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, disp.rational_damping, **param
+        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
     )
 
     assert energy.dtype == dtype
-    assert torch.allclose(energy, ref)
+    assert pytest.approx(energy) == ref
+
+
+@pytest.mark.parametrize("dtype", [torch.float, torch.double])
+@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
+def test_atm_single(dtype: torch.dtype, name: str):
+    tol = sqrt(torch.finfo(dtype).eps) * 10
+
+    sample = samples[name]
+    numbers = sample["numbers"]
+    positions = sample["positions"].type(dtype)
+    c6 = sample["c6"].type(dtype)
+    ref = (sample["disp3"] - sample["disp2"]).type(dtype)
+
+    # TPSS0-D3BJ-ATM parameters
+    param = {
+        "s6": positions.new_tensor(1.0),
+        "s8": positions.new_tensor(1.2576),
+        "s9": positions.new_tensor(1.0),
+        "alp": positions.new_tensor(14.0),
+        "a1": positions.new_tensor(0.3768),
+        "a2": positions.new_tensor(4.5865),
+    }
+
+    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(dtype)
+
+    energy = damping.dispersion_atm(
+        numbers,
+        positions,
+        c6,
+        rvdw,
+        cutoff=positions.new_tensor(50.0),
+        s9=param["s9"],
+        alp=param["alp"],
+    )
+
+    assert energy.dtype == dtype
+    assert pytest.approx(energy, abs=tol) == ref
+
+
+@pytest.mark.parametrize("dtype", [torch.float, torch.double])
+@pytest.mark.parametrize("name1", ["SiH4", "MB16_43_01"])
+@pytest.mark.parametrize("name2", ["SiH4"])
+def test_atm_batch(dtype: torch.dtype, name1: str, name2: str):
+    tol = sqrt(torch.finfo(dtype).eps) * 10
+
+    sample1, sample2 = samples[name1], samples[name2]
+    numbers = util.pack(
+        [
+            sample1["numbers"],
+            sample2["numbers"],
+        ]
+    )
+    positions = util.pack(
+        [
+            sample1["positions"].type(dtype),
+            sample2["positions"].type(dtype),
+        ]
+    )
+    c6 = util.pack(
+        [
+            sample1["c6"].type(dtype),
+            sample2["c6"].type(dtype),
+        ]
+    )
+    ref = util.pack(
+        [
+            (sample1["disp3"] - sample1["disp2"]).type(dtype),
+            (sample2["disp3"] - sample2["disp2"]).type(dtype),
+        ]
+    )
+
+    # TPSS0-D3BJ-ATM parameters
+    param = {
+        "s6": positions.new_tensor(1.0),
+        "s8": positions.new_tensor(1.2576),
+        "s9": positions.new_tensor(1.0),
+        "alp": positions.new_tensor(14.0),
+        "a1": positions.new_tensor(0.3768),
+        "a2": positions.new_tensor(4.5865),
+    }
+
+    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(dtype)
+
+    energy = damping.dispersion_atm(
+        numbers,
+        positions,
+        c6,
+        rvdw,
+        cutoff=positions.new_tensor(50.0),
+        s9=param["s9"],
+        alp=param["alp"],
+    )
+
+    assert energy.dtype == dtype
+    assert pytest.approx(energy, abs=tol) == ref

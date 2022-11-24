@@ -1,6 +1,6 @@
 # SPDX-Identifier: CC0-1.0
-
 import torch
+
 import tad_dftd3 as d3
 
 numbers = d3.util.to_number(symbols="C C C C N C S H H H H H".split())

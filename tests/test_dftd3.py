@@ -12,33 +12,29 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+"""
+Test calculation of dispersion energy and nuclear gradients.
+"""
 import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
-from . import samples
+
+from .samples import samples
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_disp_single(dtype):
-    sample = samples.structures["PbH4-BiH3"]
+    sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
-    ref = torch.tensor(
-        [
-            -3.5479912602e-04,
-            -8.9124281989e-05,
-            -8.9124287363e-05,
-            -8.9124287363e-05,
-            -1.3686794039e-04,
-            -3.8805575850e-04,
-            -8.7387460069e-05,
-            -8.7387464149e-05,
-            -8.7387460069e-05,
-        ]
-    ).type(dtype)
+    ref = sample["disp2"].type(dtype)
+
+    param = {
+        "a1": positions.new_tensor(0.49484001),
+        "s8": positions.new_tensor(0.78981345),
+        "a2": positions.new_tensor(5.73083694),
+    }
 
     energy = dftd3(numbers, positions, param)
 
@@ -48,10 +44,7 @@ def test_disp_single(dtype):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_disp_batch(dtype):
-    sample1, sample2 = (
-        samples.structures["PbH4-BiH3"],
-        samples.structures["C6H5I-CH3SH"],
-    )
+    sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
     numbers = util.pack(
         (
             sample1["numbers"],
@@ -64,51 +57,18 @@ def test_disp_batch(dtype):
             sample2["positions"].type(dtype),
         )
     )
-    param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
-    ref = torch.tensor(
-        [
-            [
-                -3.5479912602e-04,
-                -8.9124281989e-05,
-                -8.9124287363e-05,
-                -8.9124287363e-05,
-                -1.3686794039e-04,
-                -3.8805575850e-04,
-                -8.7387460069e-05,
-                -8.7387464149e-05,
-                -8.7387460069e-05,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-                -0.0000000000e-00,
-            ],
-            [
-                -4.1551151549e-04,
-                -3.9770287009e-04,
-                -4.1552470565e-04,
-                -4.4246829733e-04,
-                -4.7527776799e-04,
-                -4.4258484762e-04,
-                -1.0637547378e-03,
-                -1.5452322970e-04,
-                -1.9695663808e-04,
-                -1.6184434935e-04,
-                -1.9703176496e-04,
-                -1.6183339573e-04,
-                -4.6648977616e-04,
-                -1.3764556692e-04,
-                -2.4555353368e-04,
-                -1.3535967638e-04,
-                -1.5719227870e-04,
-                -1.1675684940e-04,
-            ],
-        ]
-    ).type(dtype)
+    ref = util.pack(
+        (
+            sample1["disp2"].type(dtype),
+            sample2["disp2"].type(dtype),
+        )
+    )
+
+    param = {
+        "a1": positions.new_tensor(0.49484001),
+        "s8": positions.new_tensor(0.78981345),
+        "a2": positions.new_tensor(5.73083694),
+    }
 
     energy = dftd3(numbers, positions, param)
 
@@ -119,39 +79,48 @@ def test_disp_batch(dtype):
 @pytest.mark.grad
 def test_param_grad():
     dtype = torch.float64
-    sample = samples.structures["C4H5NCS"]
+    sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
     param = (
-        torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
-        torch.tensor(0.78981345, requires_grad=True, dtype=dtype),
-        torch.tensor(0.49484001, requires_grad=True, dtype=dtype),
-        torch.tensor(5.73083694, requires_grad=True, dtype=dtype),
+        positions.new_tensor(1.00000000).requires_grad_(True),
+        positions.new_tensor(0.78981345).requires_grad_(True),
+        positions.new_tensor(1.00000000).requires_grad_(True),
+        positions.new_tensor(0.49484001).requires_grad_(True),
+        positions.new_tensor(5.73083694).requires_grad_(True),
     )
-    label = ("s6", "s8", "a1", "a2")
+    label = ("s6", "s8", "s9", "a1", "a2")
 
     def func(*inputs):
         input_param = {label[i]: inputs[i] for i in range(len(inputs))}
         return dftd3(numbers, positions, input_param)
 
-    assert torch.autograd.gradcheck(func, param)
+    # pylint: disable=import-outside-toplevel
+    from torch.autograd.gradcheck import gradcheck
+
+    assert gradcheck(func, param)
 
 
 @pytest.mark.grad
 def test_positions_grad():
     dtype = torch.float64
-    sample = samples.structures["C4H5NCS"]
+    sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
-    positions.requires_grad_(True)
     param = {
-        "s6": torch.tensor(1.00000000, dtype=dtype),
-        "s8": torch.tensor(0.78981345, dtype=dtype),
-        "a1": torch.tensor(0.49484001, dtype=dtype),
-        "a2": torch.tensor(5.73083694, dtype=dtype),
+        "s6": positions.new_tensor(1.00000000),
+        "s8": positions.new_tensor(0.78981345),
+        "s9": positions.new_tensor(1.00000000),
+        "a1": positions.new_tensor(0.49484001),
+        "a2": positions.new_tensor(5.73083694),
     }
+
+    pos = positions.detach().clone().requires_grad_(True)
 
     def func(positions):
         return dftd3(numbers, positions, param)
 
-    assert torch.autograd.gradcheck(func, positions)
+    # pylint: disable=import-outside-toplevel
+    from torch.autograd.gradcheck import gradcheck
+
+    assert gradcheck(func, pos)

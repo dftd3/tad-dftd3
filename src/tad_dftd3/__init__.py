@@ -17,7 +17,8 @@ Torch autodiff DFT-D3
 =====================
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
-This module allows to process a single structure or a batch of structures for the calculation of atom-resolved dispersion energies.
+This module allows to process a single structure or a batch of structures for
+the calculation of atom-resolved dispersion energies.
 
 .. note::
 
@@ -58,7 +59,11 @@ Example
 ...         [-2.63139587595376, +0.96447869452240, 0.00000000000000],
 ...     ]),
 ... ))
->>> param = dict(a1=0.5660, s8=0.3908, a2=3.1280)  # ωB97M-D3(BJ) parameters
+>>> param = dict( # ωB97M-D3(BJ) parameters
+...     a1=torch.tensor(0.5660),
+...     s8=torch.tensor(0.3908),
+...     a2=torch.tensor(3.1280),
+... )
 >>> energy = torch.sum(d3.dftd3(numbers, positions, param), -1)
 >>> torch.set_printoptions(precision=7)
 >>> print(energy)  # Energies in Hartree
@@ -66,24 +71,23 @@ tensor([-0.0124292, -0.0045002])
 >>> print(energy[0] - 2*energy[1])
 tensor(-0.0034288)
 """
-
 import torch
 
-from . import data, disp, ncoord, model, reference, util
+from . import damping, data, disp, model, ncoord, reference, util
 from .typing import (
-    Dict,
-    Tensor,
-    Optional,
     CountingFunction,
-    WeightingFunction,
     DampingFunction,
+    Dict,
+    Optional,
+    Tensor,
+    WeightingFunction,
 )
 
 
 def dftd3(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, float],
+    param: Dict[str, Tensor],
     *,
     ref: Optional[reference.Reference] = None,
     rcov: Optional[Tensor] = None,
@@ -91,7 +95,7 @@ def dftd3(
     r4r2: Optional[Tensor] = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
-    damping_function: DampingFunction = disp.rational_damping,
+    damping_function: DampingFunction = damping.rational_damping,
 ) -> Tensor:
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
@@ -102,8 +106,8 @@ def dftd3(
         Atomic numbers of the atoms in the system.
     positions : torch.Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict
-        DFT-D3 damping parameters
+    param : dict[str, Tensor]
+        DFT-D3 damping parameters.
     ref : reference.Reference, optional
         Reference C6 coefficients.
     rcov : torch.Tensor, optional
@@ -126,21 +130,31 @@ def dftd3(
     """
 
     if ref is None:
-        ref = reference.Reference().type(positions.dtype)
+        ref = reference.Reference().type(positions.dtype).to(positions.device)
     if rcov is None:
-        rcov = data.covalent_rad_d3[numbers].type(positions.dtype)
+        rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
     if rvdw is None:
-        rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)].type(
-            positions.dtype
+        rvdw = (
+            data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+            .type(positions.dtype)
+            .to(positions.device)
         )
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2[numbers].type(positions.dtype)
+        r4r2 = (
+            data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
+        )
 
     cn = ncoord.coordination_number(numbers, positions, rcov, counting_function)
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
     energy = disp.dispersion(
-        numbers, positions, c6, rvdw, r4r2, damping_function, **param
+        numbers,
+        positions,
+        param,
+        c6,
+        rvdw,
+        r4r2,
+        damping_function,
     )
 
     return energy

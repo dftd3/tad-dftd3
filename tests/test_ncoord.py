@@ -12,44 +12,50 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+"""
+Test coordination number.
+"""
 import pytest
 import torch
 
 from tad_dftd3 import data, ncoord, util
-from . import samples
+
+from .samples import samples
+
+
+def test_fail() -> None:
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    # rcov wrong shape
+    with pytest.raises(ValueError):
+        rcov = torch.tensor([1.0])
+        ncoord.coordination_number(numbers, positions, rcov)
+
+    # wrong numbers
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1])
+        ncoord.coordination_number(numbers, positions)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_cn_single(dtype):
-    sample = samples.structures["PbH4-BiH3"]
+    sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
-    rcov = data.covalent_rad_d3[numbers]
-    ref = torch.Tensor(
-        [
-            3.9388208389,
-            0.9832025766,
-            0.9832026958,
-            0.9832026958,
-            0.9865897894,
-            2.9714603424,
-            0.9870455265,
-            0.9870456457,
-            0.9870455265,
-        ],
-    ).type(dtype)
+    ref = sample["cn"].type(dtype)
 
+    rcov = data.covalent_rad_d3[numbers]
     cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
     assert cn.dtype == dtype
-    assert torch.allclose(cn, ref)
+    assert pytest.approx(cn) == ref
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_cn_batch(dtype):
     sample1, sample2 = (
-        samples.structures["PbH4-BiH3"],
-        samples.structures["C6H5I-CH3SH"],
+        samples["PbH4-BiH3"],
+        samples["C6H5I-CH3SH"],
     )
     numbers = util.pack(
         (
@@ -63,52 +69,14 @@ def test_cn_batch(dtype):
             sample2["positions"].type(dtype),
         )
     )
-    rcov = data.covalent_rad_d3[numbers]
-    ref = torch.Tensor(
-        [
-            [
-                3.9388208389,
-                0.9832025766,
-                0.9832026958,
-                0.9832026958,
-                0.9865897894,
-                2.9714603424,
-                0.9870455265,
-                0.9870456457,
-                0.9870455265,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-                0.0000000000,
-            ],
-            [
-                3.1393690109,
-                3.1313166618,
-                3.1393768787,
-                3.3153429031,
-                3.1376547813,
-                3.3148119450,
-                1.5363609791,
-                1.0035246611,
-                1.0122337341,
-                1.0036621094,
-                1.0121959448,
-                1.0036619902,
-                2.1570565701,
-                0.9981809855,
-                3.9841127396,
-                1.0146225691,
-                1.0123561621,
-                1.0085891485,
-            ],
-        ],
-    ).type(dtype)
+    ref = util.pack(
+        (
+            sample1["cn"].type(dtype),
+            sample2["cn"].type(dtype),
+        )
+    )
 
+    rcov = data.covalent_rad_d3[numbers]
     cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
     assert cn.dtype == dtype
-    assert torch.allclose(cn, ref)
+    assert pytest.approx(cn) == ref

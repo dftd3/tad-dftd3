@@ -58,11 +58,10 @@ tensor([[2.9901006, 0.9977214, 0.9977214, 0.9977214, 0.0000000, 0.0000000],
         [3.0059586, 1.0318390, 3.0268824, 1.0061584, 1.0036336, 0.9989871],
         [3.0093639, 2.0046251, 1.0187057, 0.9978270, 1.0069743, 0.0000000]])
 """
-
 import torch
 
 from . import data
-from .typing import Optional, Tensor, CountingFunction
+from .typing import CountingFunction, Optional, Tensor
 from .util import real_pairs
 
 
@@ -118,19 +117,22 @@ def coordination_number(
         Tensor: The coordination number of each atom in the system.
     """
     if cutoff is None:
-        cutoff = torch.tensor(25.0, dtype=positions.dtype)
+        cutoff = positions.new_tensor(25.0)
     if rcov is None:
-        rcov = data.covalent_rad_d3[numbers].type(positions.dtype)
+        rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
     if numbers.shape != rcov.shape:
-        raise ValueError("Shape of covalent radii is not consistent with atomic numbers")
+        raise ValueError(
+            "Shape of covalent radii is not consistent with atomic numbers"
+        )
     if numbers.shape != positions.shape[:-1]:
         raise ValueError("Shape of positions is not consistent with atomic numbers")
 
-    eps = torch.tensor(torch.finfo(positions.dtype).eps, dtype=positions.dtype)
+    eps = positions.new_tensor(torch.finfo(positions.dtype).eps)
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
-        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist") + eps,
+        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist")
+        + eps,
         eps,
     )
 
@@ -138,6 +140,6 @@ def coordination_number(
     cf = torch.where(
         mask * (distances <= cutoff),
         counting_function(distances, rc.type(distances.dtype), **kwargs),
-        torch.tensor(0.0, dtype=distances.dtype),
+        positions.new_tensor(0.0),
     )
     return torch.sum(cf, dim=-1)

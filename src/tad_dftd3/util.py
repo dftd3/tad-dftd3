@@ -16,13 +16,12 @@
 Miscellaneous functions
 =======================
 
-Utilities for working with tensors as well as translating between element symbols and
-atomic numbers.
+Utilities for working with tensors as well as translating between element
+symbols and atomic numbers.
 """
-
 import torch
 
-from .typing import Any, List, MaybeTensor, Sliceable, Size, Tensor, Tuple, Union
+from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -32,30 +31,37 @@ def real_atoms(numbers: Tensor) -> Tensor:
 def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
     real = real_atoms(numbers)
     mask = real.unsqueeze(-2) * real.unsqueeze(-1)
-    if not diagonal:
+    if diagonal is False:
+        mask *= ~torch.diag_embed(torch.ones_like(real))
+    return mask
+
+
+def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
+    real = real_pairs(numbers, diagonal=True)
+    mask = real.unsqueeze(-3) * real.unsqueeze(-2) * real.unsqueeze(-1)
+    if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
     return mask
 
 
 def pack(
-    tensors: Sliceable,
+    tensors: TensorOrTensors,
     axis: int = 0,
-    value: Any = 0,
-    size: Size = None,
-    return_mask: bool = False,
-) -> MaybeTensor:
+    value: Union[int, float] = 0,
+    size: Optional[Size] = None,
+) -> Tensor:
     """
     Pad a list of variable length tensors with zeros, or some other value, and
     pack them into a single tensor.
 
     Parameters
     ----------
-    tensors : Sliceable
+    tensors : list[Tensor] | tuple[Tensor] | Tensor
         List of tensors to be packed, all with identical dtypes.
     axis : int
         Axis along which tensors should be packed; 0 for first axis -1
         for the last axis, etc. This will be a new dimension.
-    value : Any
+    value : int | float
         The value with which the tensor is to be padded.
     size :
         Size of each dimension to which tensors should be padded.
@@ -74,7 +80,7 @@ def pack(
     _dtype = tensors[0].dtype
 
     if size is None:
-        size = torch.tensor([i.shape for i in tensors]).max(0).values
+        size = torch.tensor([i.shape for i in tensors]).max(0).values.tolist()
 
     padded = torch.full((_count, *size), value, dtype=_dtype, device=_device)
 
