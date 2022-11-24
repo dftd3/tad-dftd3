@@ -1,15 +1,13 @@
 """
 Molecules for testing. Taken from https://github.com/grimme-lab/mstore.
 """
-from __future__ import annotations
-
 import torch
 
-from tad_dftd3.typing import Molecule
+from tad_dftd3.typing import Molecule, Dict
 from tad_dftd3.util import to_number
 
 
-def merge_nested_dicts(a: dict, b: dict) -> dict:
+def merge_nested_dicts(a: Dict, b: Dict) -> Dict:
     """
     Merge nested dictionaries. Dictionary `a` remains unaltered, while
     the corresponding keys of it are added to `b`.
@@ -32,7 +30,7 @@ def merge_nested_dicts(a: dict, b: dict) -> dict:
     return b
 
 
-mols: dict[str, Molecule] = {
+mols: Dict[str, Molecule] = {
     "SiH4": {
         "numbers": to_number("Si H H H H".split()),
         "positions": torch.tensor(

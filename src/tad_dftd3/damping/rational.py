@@ -1,12 +1,10 @@
 """
 Rational (Becke-Johnson) damping function.
 """
-from __future__ import annotations
-
 import torch
 
 from .. import defaults
-from ..typing import Tensor
+from ..typing import Tensor, Dict
 
 __all__ = ["rational_damping"]
 
@@ -15,7 +13,7 @@ def rational_damping(
     order: int,
     distances: Tensor,
     qq: Tensor,
-    param: dict[str, Tensor],
+    param: Dict[str, Tensor],
 ) -> Tensor:
     """
     Rational damped dispersion interaction between pairs.

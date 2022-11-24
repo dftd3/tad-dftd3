@@ -19,11 +19,9 @@ Miscellaneous functions
 Utilities for working with tensors as well as translating between element
 symbols and atomic numbers.
 """
-from __future__ import annotations
-
 import torch
 
-from .typing import Any, Tensor
+from .typing import Any, Tensor, List, Optional, Size, TensorOrTensors
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -47,10 +45,10 @@ def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
 
 
 def pack(
-    tensors: list[Tensor] | tuple[Tensor, ...],
+    tensors: TensorOrTensors,
     axis: int = 0,
     value: Any = 0,
-    size: tuple[int] | list[int] | torch.Size | None = None,
+    size: Optional[Size] = None,
 ) -> Tensor:
     """
     Pad a list of variable length tensors with zeros, or some other value, and
@@ -58,7 +56,7 @@ def pack(
 
     Parameters
     ----------
-    tensors : list[Tensor] | tuple[Tensor]
+    tensors : list[Tensor] | tuple[Tensor] | Tensor
         List of tensors to be packed, all with identical dtypes.
     axis : int
         Axis along which tensors should be packed; 0 for first axis -1
@@ -98,7 +96,7 @@ def pack(
     return padded
 
 
-def to_number(symbols: list[str]) -> Tensor:
+def to_number(symbols: List[str]) -> Tensor:
     """
     Obtain atomic numbers from element symbols.
     """

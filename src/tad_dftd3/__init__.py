@@ -71,14 +71,13 @@ tensor([-0.0124292, -0.0045002])
 >>> print(energy[0] - 2*energy[1])
 tensor(-0.0034288)
 """
-from __future__ import annotations
-
 import torch
 
 from . import damping, data, disp, model, ncoord, reference, util
 from .typing import (
     CountingFunction,
     DampingFunction,
+    Dict,
     Optional,
     Tensor,
     WeightingFunction,
@@ -88,7 +87,7 @@ from .typing import (
 def dftd3(
     numbers: Tensor,
     positions: Tensor,
-    param: dict[str, Tensor],
+    param: Dict[str, Tensor],
     *,
     ref: Optional[reference.Reference] = None,
     rcov: Optional[Tensor] = None,

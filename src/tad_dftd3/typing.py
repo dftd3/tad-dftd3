@@ -15,18 +15,18 @@
 """
 Type annotations for this project.
 """
-from __future__ import annotations
-
-from typing import Any, Callable, Dict, Optional, TypedDict, Union
+from typing import Any, Callable, Dict, Optional, TypedDict, Union, Tuple, List
 
 import torch
 
 Tensor = torch.Tensor
+TensorOrTensors = Union[List[Tensor], Tuple[Tensor, ...], Tensor]
 MaybeTensor = Union[Tensor, Optional[Tensor]]
 
 CountingFunction = Callable[[Tensor, Tensor], Tensor]
-WeightingFunction = Callable[[Tensor, Any], Tensor]
+WeightingFunction = Callable[[Tensor], Tensor]
 DampingFunction = Callable[[int, Tensor, Tensor, Dict[str, Tensor]], Tensor]
+Size = Union[Tuple[int], List[int], torch.Size]
 
 
 class Molecule(TypedDict):

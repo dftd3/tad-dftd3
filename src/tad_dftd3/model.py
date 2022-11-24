@@ -39,8 +39,6 @@ tensor([[10.4130478,  5.4368815,  5.4368815],
         [ 5.4368811,  3.0930152,  3.0930152],
         [ 5.4368811,  3.0930152,  3.0930152]])
 """
-from __future__ import annotations
-
 import torch
 
 from .reference import Reference
@@ -103,7 +101,7 @@ def weight_references(
     cn: Tensor,
     reference: Reference,
     weighting_function: WeightingFunction = gaussian_weight,
-    epsilon=1.0e-20,
+    epsilon: float = 1.0e-20,
     **kwargs,
 ) -> Tensor:
     """
@@ -131,7 +129,7 @@ def weight_references(
     weights = torch.where(
         mask,
         weighting_function(reference.cn[numbers] - cn.unsqueeze(-1), **kwargs),
-        torch.tensor(0.0, dtype=cn.dtype),
+        cn.new_tensor(0.0),
     )
     norms = torch.add(torch.sum(weights, dim=-1), epsilon)
 

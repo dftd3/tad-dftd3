@@ -58,12 +58,10 @@ tensor([[2.9901006, 0.9977214, 0.9977214, 0.9977214, 0.0000000, 0.0000000],
         [3.0059586, 1.0318390, 3.0268824, 1.0061584, 1.0036336, 0.9989871],
         [3.0093639, 2.0046251, 1.0187057, 0.9978270, 1.0069743, 0.0000000]])
 """
-from __future__ import annotations
-
 import torch
 
 from . import data
-from .typing import CountingFunction, Tensor
+from .typing import CountingFunction, Tensor, Optional
 from .util import real_pairs
 
 
@@ -91,9 +89,9 @@ def exp_count(r: Tensor, r0: Tensor, kcn: float = 16.0) -> Tensor:
 def coordination_number(
     numbers: Tensor,
     positions: Tensor,
-    rcov: Tensor | None = None,
+    rcov: Optional[Tensor] = None,
     counting_function: CountingFunction = exp_count,
-    cutoff: Tensor | None = None,
+    cutoff: Optional[Tensor] = None,
     **kwargs,
 ) -> Tensor:
     """

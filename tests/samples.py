@@ -15,11 +15,9 @@
 """
 Collection of test samples.
 """
-from __future__ import annotations
-
 import torch
 
-from tad_dftd3.typing import Molecule, Tensor, TypedDict
+from tad_dftd3.typing import Molecule, Tensor, TypedDict, Dict
 
 from .molecules import merge_nested_dicts, mols
 
@@ -47,7 +45,7 @@ class Record(Molecule, Refs):
     """Store for molecular information and reference values."""
 
 
-refs: dict[str, Refs] = {
+refs: Dict[str, Refs] = {
     "SiH4": {
         "cn": torch.tensor([], dtype=torch.float64),
         "weights": torch.tensor([], dtype=torch.float64),
@@ -1045,4 +1043,4 @@ refs: dict[str, Refs] = {
     },
 }
 
-samples: dict[str, Record] = merge_nested_dicts(mols, refs)
+samples: Dict[str, Record] = merge_nested_dicts(mols, refs)
