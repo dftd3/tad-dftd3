@@ -206,3 +206,30 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str):
 
     assert energy.dtype == dtype
     assert pytest.approx(energy, abs=tol) == ref
+
+
+@pytest.mark.parametrize("dtype", [torch.float, torch.double])
+@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
+def test_full_single(dtype: torch.dtype, name: str):
+    tol = sqrt(torch.finfo(dtype).eps) * 10
+
+    sample = samples[name]
+    numbers = sample["numbers"]
+    positions = sample["positions"].type(dtype)
+    c6 = sample["c6"].type(dtype)
+    ref = sample["disp3"].type(dtype)
+
+    # TPSS0-D3BJ-ATM parameters
+    param = {
+        "s6": positions.new_tensor(1.0),
+        "s8": positions.new_tensor(1.2576),
+        "s9": positions.new_tensor(1.0),
+        "alp": positions.new_tensor(14.0),
+        "a1": positions.new_tensor(0.3768),
+        "a2": positions.new_tensor(4.5865),
+    }
+
+    energy = disp.dispersion(numbers, positions, param, c6)
+
+    assert energy.dtype == dtype
+    assert pytest.approx(energy, abs=tol) == ref

@@ -188,10 +188,10 @@ class Reference:
         self.__dtype = self.c6.dtype
         self.__device = self.c6.device
 
-        if any([tensor.device != self.device for tensor in (self.cn, self.c6)]):
+        if any(tensor.device != self.device for tensor in (self.cn, self.c6)):
             raise RuntimeError("All tensors must be on the same device!")
 
-        if any([tensor.dtype != self.dtype for tensor in (self.cn, self.c6)]):
+        if any(tensor.dtype != self.dtype for tensor in (self.cn, self.c6)):
             raise RuntimeError("All tensors must have the same dtype!")
 
         if any(
