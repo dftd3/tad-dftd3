@@ -131,8 +131,7 @@ def coordination_number(
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
-        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist")
-        + eps,
+        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"),
         eps,
     )
 
