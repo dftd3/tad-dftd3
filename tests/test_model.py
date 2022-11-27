@@ -126,14 +126,12 @@ def test_reference_dtype(dtype: torch.dtype) -> None:
     not torch.cuda.is_available(),
     reason="Torch not compiled with CUDA enabled or no CUDA device available.",
 )
-@pytest.mark.parametrize(
-    "device",
-    [
-        torch.device("cpu"),
-        torch.device("cuda", index=torch.cuda.current_device()),
-    ],
-)
-def test_reference_device(device: torch.device) -> None:
+@pytest.mark.parametrize("device_str", ["cpu", "cuda"])
+def test_reference_device(device_str: str) -> None:
+    device = {
+        "cpu": torch.device("cpu"),
+        "cuda": torch.device("cuda", index=torch.cuda.current_device()),
+    }[device_str]
     ref = reference.Reference().to(device)
     assert ref.device == device
 
