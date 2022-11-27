@@ -106,7 +106,7 @@ The following example shows how to calculate the DFT-D3 dispersion energy for a 
    import tad_dftd3 as d3
 
    numbers = d3.util.to_number(symbols="C C C C N C S H H H H H".split())
-   positions = torch.Tensor(
+   positions = torch.tensor(
        [
            [-2.56745685564671, -0.02509985979910, 0.00000000000000],
            [-1.39177582455797, +2.27696188880014, 0.00000000000000],
@@ -122,7 +122,11 @@ The following example shows how to calculate the DFT-D3 dispersion energy for a 
            [-4.60044244782237, -0.17794734637413, 0.00000000000000],
        ]
    )
-   param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+   param = {
+       "a1": torch.tensor(0.49484001),
+       "s8": torch.tensor(0.78981345),
+       "a2": torch.tensor(5.73083694),
+   }
 
    energy = d3.dftd3(numbers, positions, param)
 
@@ -197,7 +201,11 @@ The next example shows the calculation of dispersion energies for a batch of str
    rcov = d3.data.covalent_rad_d3[numbers]
    rvdw = d3.data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
    r4r2 = d3.data.sqrt_z_r4_over_r2[numbers]
-   param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+   param = {
+       "a1": torch.tensor(0.49484001),
+       "s8": torch.tensor(0.78981345),
+       "a2": torch.tensor(5.73083694),
+   }
 
    cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
    weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
