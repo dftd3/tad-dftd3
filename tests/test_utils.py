@@ -16,6 +16,8 @@
 Test the utility functions.
 """
 
+
+import pytest
 import torch
 
 from tad_dftd3 import util
@@ -218,3 +220,11 @@ def test_pack() -> None:
     # different axis
     packed = util.pack([mol1, mol2], axis=-1)
     assert (packed == ref.T).all()
+
+
+def test_exception() -> None:
+    # pylint: disable=import-outside-toplevel
+    from tad_dftd3 import exception
+
+    with pytest.raises(exception.DFTD3Error):
+        raise exception.DFTD3Error
