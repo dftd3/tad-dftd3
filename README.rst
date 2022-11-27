@@ -2,6 +2,7 @@ Torch autodiff for DFT-D3
 =========================
 
 .. image:: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10-blue
+   :target: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10-blue
    :alt: Python Versions
 
 .. image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
@@ -27,6 +28,10 @@ Torch autodiff for DFT-D3
 .. image:: https://codecov.io/gh/dftd3/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
    :target: https://codecov.io/gh/dftd3/tad-dftd3
    :alt: Coverage
+
+.. image:: https://results.pre-commit.ci/badge/github/dftd3/tad-dftd3/main.svg
+   :target: https://results.pre-commit.ci/latest/github/dftd3/tad-dftd3/main
+   :alt: pre-commit.ci status
 
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
