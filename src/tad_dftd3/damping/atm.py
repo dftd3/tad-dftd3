@@ -1,5 +1,20 @@
-"""
-Three-body (Axilrod-Teller-Muto, ATM) dispersion term.
+r"""
+Axilrod-Teller-Muto (ATM) dispersion term
+=========================================
+
+This module provides the dispersion energy evaluation for the three-body
+Axilrod-Teller-Muto dispersion term.
+
+.. math::
+
+    E_\text{disp}^{(3), \text{ATM}} &=
+    \sum_\text{ABC} E^{\text{ABC}} f_\text{damp}\left(\overline{R}_\text{ABC}\right) \\
+    E^{\text{ABC}} &=
+    \dfrac{C^{\text{ABC}}_9
+    \left(3 \cos\theta_\text{A} \cos\theta_\text{B} \cos\theta_\text{C} + 1 \right)}
+    {\left(r_\text{AB} r_\text{BC} r_\text{AC} \right)^3} \\
+    f_\text{damp} &=
+    \dfrac{1}{1+ 6 \left(\overline{R}_\text{ABC}\right)^{-16}}
 """
 import torch
 

@@ -1,5 +1,15 @@
-"""
-Rational (Becke-Johnson) damping function.
+r"""
+Rational (Becke-Johnson) damping function
+=========================================
+
+This module defines the rational damping function, also known as Becke-Johnson
+damping.
+
+.. math::
+
+    f^n_{\text{damp}}\left(R_0^{\text{AB}}\right) =
+    \dfrac{R^n_{\text{AB}}}{R^n_{\text{AB}} +
+    \left( a_1 R_0^{\text{AB}} + a_2 \right)^n}
 """
 import torch
 
