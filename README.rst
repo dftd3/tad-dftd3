@@ -1,9 +1,6 @@
 Torch autodiff for DFT-D3
 =========================
 
-.. image:: https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10-blue
-   :alt: Python Versions
-
 .. image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
    :target: https://github.com/dftd3/tad-dftd3/releases/latest
    :alt: Release
@@ -27,6 +24,10 @@ Torch autodiff for DFT-D3
 .. image:: https://codecov.io/gh/dftd3/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
    :target: https://codecov.io/gh/dftd3/tad-dftd3
    :alt: Coverage
+
+.. image:: https://results.pre-commit.ci/badge/github/dftd3/tad-dftd3/main.svg
+   :target: https://results.pre-commit.ci/latest/github/dftd3/tad-dftd3/main
+   :alt: pre-commit.ci status
 
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
@@ -101,7 +102,7 @@ The following example shows how to calculate the DFT-D3 dispersion energy for a 
    import tad_dftd3 as d3
 
    numbers = d3.util.to_number(symbols="C C C C N C S H H H H H".split())
-   positions = torch.Tensor(
+   positions = torch.tensor(
        [
            [-2.56745685564671, -0.02509985979910, 0.00000000000000],
            [-1.39177582455797, +2.27696188880014, 0.00000000000000],
@@ -117,7 +118,11 @@ The following example shows how to calculate the DFT-D3 dispersion energy for a 
            [-4.60044244782237, -0.17794734637413, 0.00000000000000],
        ]
    )
-   param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+   param = {
+       "a1": torch.tensor(0.49484001),
+       "s8": torch.tensor(0.78981345),
+       "a2": torch.tensor(5.73083694),
+   }
 
    energy = d3.dftd3(numbers, positions, param)
 
@@ -192,7 +197,11 @@ The next example shows the calculation of dispersion energies for a batch of str
    rcov = d3.data.covalent_rad_d3[numbers]
    rvdw = d3.data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
    r4r2 = d3.data.sqrt_z_r4_over_r2[numbers]
-   param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+   param = {
+       "a1": torch.tensor(0.49484001),
+       "s8": torch.tensor(0.78981345),
+       "a2": torch.tensor(5.73083694),
+   }
 
    cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
    weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)

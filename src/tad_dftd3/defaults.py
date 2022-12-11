@@ -1,5 +1,8 @@
 """
-Default values for parameters within DFT-D3.
+Default values
+==============
+
+This module defines the default values for all parameters within DFT-D3.
 """
 
 A1 = 0.4

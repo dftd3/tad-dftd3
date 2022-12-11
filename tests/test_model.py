@@ -114,3 +114,51 @@ def test_c6_batch(dtype):
 
     assert c6.dtype == dtype
     assert pytest.approx(c6) == refc6
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_reference_dtype(dtype: torch.dtype) -> None:
+    ref = reference.Reference().type(dtype)
+    assert ref.dtype == dtype
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="Torch not compiled with CUDA enabled or no CUDA device available.",
+)
+@pytest.mark.parametrize("device_str", ["cpu", "cuda"])
+def test_reference_device(device_str: str) -> None:
+    device = {
+        "cpu": torch.device("cpu"),
+        "cuda": torch.device("cuda", index=torch.cuda.current_device()),
+    }[device_str]
+    ref = reference.Reference().to(device)
+    assert ref.device == device
+
+    with pytest.raises(AttributeError):
+        ref.device = device
+
+
+def test_reference_fail() -> None:
+    c6 = reference._load_c6()  # pylint: disable=protected-access
+
+    # wrong dtype
+    with pytest.raises(RuntimeError):
+        reference.Reference(c6=c6.type(torch.float64))
+
+    # wrong device
+    if torch.cuda.is_available() is True:
+        with pytest.raises(RuntimeError):
+            reference.Reference(c6=c6.to(torch.device("cuda")))
+
+    # wrong shape
+    with pytest.raises(RuntimeError):
+        reference.Reference(
+            cn=torch.rand((4, 4), dtype=torch.float32),
+            c6=c6.type(torch.float32),
+        )
+
+    assert (
+        repr(reference.Reference())
+        == "Reference(n_element=95, n_reference=5, dtype=torch.float32, device=cpu)"
+    )

@@ -20,7 +20,11 @@ positions = torch.Tensor(
         [-4.60044244782237, -0.17794734637413, 0.00000000000000],
     ]
 )
-param = dict(a1=0.49484001, s8=0.78981345, a2=5.73083694)
+param = {
+    "a1": torch.tensor(0.49484001),
+    "s8": torch.tensor(0.78981345),
+    "a2": torch.tensor(5.73083694),
+}
 
 energy = d3.dftd3(numbers, positions, param)
 
