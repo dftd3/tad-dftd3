@@ -1,6 +1,21 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "*.rst"
+
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "*.rst"
+
+  workflow_dispatch:
 
 jobs:
   python:
@@ -9,31 +24,32 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        python: ["3.8", "3.9", "3.10"]
-
-    defaults:
-      run:
-        shell: ${{ contains(matrix.os, 'windows') && 'powershell' || 'bash -l {0}' }}
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        # PyTorch does not support Python 3.11 on non-Linux platforms
+        # see: https://github.com/pytorch/pytorch/issues/86566
+        exclude:
+          - os: macos-latest
+            python-version: "3.11"
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        uses: mamba-org/provision-with-micromamba@main
-        with:
-          environment-file: environment.yml
-          extra-specs: |
-            python=${{ matrix.python }}
-
-      - name: Install Python extension module (pip)
-        run: python -m pip install . -vv
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install tox
 
       - name: Test Python API
-        run: python -m pytest --doctest-modules tests --pyargs tad_dftd3 --cov=tad_dftd3 -vv
+        run: tox -e py
 
-      - run: pip3 install coverage
-        shell: bash
-
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v1
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: matrix.python-version == '3.11' && matrix.os == 'ubuntu-latest'
+        with:
+          files: ./coverage.xml # optional

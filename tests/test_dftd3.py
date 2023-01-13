@@ -19,7 +19,7 @@ import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Tensor, Tuple
+from tad_dftd3.typing import Tensor
 
 from .samples import samples
 
