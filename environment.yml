@@ -3,8 +3,5 @@ channels:
   - conda-forge
 dependencies:
   - numpy
-  - python
+  - python >=3.8
   - pytorch
-  - pytest
-  - pytest-cov
-  - coverage
