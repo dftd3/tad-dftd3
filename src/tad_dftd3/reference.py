@@ -23,10 +23,10 @@ import os.path as op
 
 import torch
 
-from .typing import Optional, Tensor
+from .typing import Any, NoReturn, Optional, Tensor
 
 
-def _load_cn(dtype=torch.float):
+def _load_cn(dtype: torch.dtype = torch.float) -> Tensor:
     return torch.tensor(
         [
             [-1.0000, -1.0000, -1.0000, -1.0000, -1.0000],  # None
@@ -210,8 +210,10 @@ class Reference:
         return self.__device
 
     @device.setter
-    def device(self, *args):
-        """Instruct users to use the ".to" method if wanting to change device."""
+    def device(self, *_: Any) -> NoReturn:
+        """
+        Instruct users to use the ".to" method if wanting to change device.
+        """
         raise AttributeError("Move object to device using the `.to` method")
 
     @property
@@ -278,7 +280,7 @@ class Reference:
             self.c6.type(dtype),
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Creates a string representation of the Reference object."""
         return (
             f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, "

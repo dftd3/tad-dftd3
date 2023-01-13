@@ -6,30 +6,6 @@ import torch
 from tad_dftd3.typing import Dict, Molecule
 from tad_dftd3.util import to_number
 
-
-def merge_nested_dicts(a: Dict, b: Dict) -> Dict:
-    """
-    Merge nested dictionaries. Dictionary `a` remains unaltered, while
-    the corresponding keys of it are added to `b`.
-
-    Parameters
-    ----------
-    a : dict
-        First dictionary (not changed).
-    b : dict
-        Second dictionary (changed).
-
-    Returns
-    -------
-    dict
-        Merged dictionary `b`.
-    """
-    for key in b:
-        if key in a:
-            b[key].update(a[key])
-    return b
-
-
 mols: Dict[str, Molecule] = {
     "SiH4": {
         "numbers": to_number("Si H H H H".split()),

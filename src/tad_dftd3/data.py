@@ -21,9 +21,10 @@ Data arrays for atomic constants like covalent radii or van-der-Waals radii.
 import torch
 
 from . import constants
+from .typing import Tensor
 
 # fmt: off
-covalent_rad_2009 = constants.ANGSTROM_TO_BOHR * torch.Tensor([
+covalent_rad_2009 = constants.ANGSTROM_TO_BOHR * torch.tensor([
     0.00,  # None
     0.32,0.46,  # H,He
     1.20,0.94,0.77,0.75,0.71,0.63,0.64,0.67,  # Li-Ne
@@ -4568,18 +4569,19 @@ _vdw_rad_d3 = constants.ANGSTROM_TO_BOHR * torch.tensor(
 )  # fmt: off
 
 
-def _load_vdw_rad_d3(dtype=torch.float):
+def _load_vdw_rad_d3(dtype: torch.dtype = torch.float) -> Tensor:
+    # pylint: disable=import-outside-toplevel
     import math
 
     n_element = (math.isqrt(8 * _vdw_rad_d3.shape[0] + 1) - 1) // 2
 
-    vdw_rad_d3 = torch.zeros((n_element, n_element), dtype=dtype)
+    rad = torch.zeros((n_element, n_element), dtype=dtype)
     for i in range(1, n_element):
         for j in range(1, n_element):
             ij = i * (i - 1) // 2 + j - 1 if j < i else j * (j - 1) // 2 + i - 1
-            vdw_rad_d3[i, j] = _vdw_rad_d3[ij]
+            rad[i, j] = _vdw_rad_d3[ij]
 
-    return vdw_rad_d3
+    return rad
 
 
 vdw_rad_d3 = _load_vdw_rad_d3()

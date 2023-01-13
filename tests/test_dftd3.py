@@ -19,12 +19,13 @@ import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
+from tad_dftd3.typing import Tensor, Tuple
 
 from .samples import samples
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_single(dtype):
+def test_disp_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
@@ -43,7 +44,7 @@ def test_disp_single(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp_batch(dtype):
+def test_disp_batch(dtype: torch.dtype) -> None:
     sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
     numbers = util.pack(
         (
@@ -77,7 +78,7 @@ def test_disp_batch(dtype):
 
 
 @pytest.mark.grad
-def test_param_grad():
+def test_param_grad() -> None:
     dtype = torch.float64
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
@@ -91,7 +92,7 @@ def test_param_grad():
     )
     label = ("s6", "s8", "s9", "a1", "a2")
 
-    def func(*inputs):
+    def func(*inputs: Tensor) -> Tensor:
         input_param = {label[i]: inputs[i] for i in range(len(inputs))}
         return dftd3(numbers, positions, input_param)
 
@@ -102,7 +103,7 @@ def test_param_grad():
 
 
 @pytest.mark.grad
-def test_positions_grad():
+def test_positions_grad() -> None:
     dtype = torch.float64
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
@@ -117,7 +118,7 @@ def test_positions_grad():
 
     pos = positions.detach().clone().requires_grad_(True)
 
-    def func(positions):
+    def func(positions: Tensor) -> Tensor:
         return dftd3(numbers, positions, param)
 
     # pylint: disable=import-outside-toplevel
