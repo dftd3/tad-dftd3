@@ -5,9 +5,9 @@ The following modules are contained with `tad_dftd3`.
 
 .. toctree::
 
-   damping/index
    dftd3
    disp
+   damping
    model
    ncoord
    reference

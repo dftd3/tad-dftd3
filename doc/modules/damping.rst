@@ -2,5 +2,5 @@
 
 .. toctree::
 
-  atm
-  rational
+  damping/atm
+  damping/rational
