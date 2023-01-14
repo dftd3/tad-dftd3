@@ -47,7 +47,7 @@ def test_fail() -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp2_single(dtype: torch.dtype):
+def test_disp2_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
@@ -70,7 +70,7 @@ def test_disp2_single(dtype: torch.dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_disp2_batch(dtype):
+def test_disp2_batch(dtype: torch.dtype) -> None:
     sample1, sample2 = samples["PbH4-BiH3"], samples["C6H5I-CH3SH"]
     numbers = util.pack(
         (
@@ -115,7 +115,7 @@ def test_disp2_batch(dtype):
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
-def test_atm_single(dtype: torch.dtype, name: str):
+def test_atm_single(dtype: torch.dtype, name: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
     sample = samples[name]
@@ -153,7 +153,7 @@ def test_atm_single(dtype: torch.dtype, name: str):
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name1", ["SiH4", "MB16_43_01"])
 @pytest.mark.parametrize("name2", ["SiH4"])
-def test_atm_batch(dtype: torch.dtype, name1: str, name2: str):
+def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
     sample1, sample2 = samples[name1], samples[name2]
@@ -210,7 +210,7 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str):
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
-def test_full_single(dtype: torch.dtype, name: str):
+def test_full_single(dtype: torch.dtype, name: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
     sample = samples[name]

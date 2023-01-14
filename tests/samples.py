@@ -19,7 +19,8 @@ import torch
 
 from tad_dftd3.typing import Dict, Molecule, Tensor, TypedDict
 
-from .molecules import merge_nested_dicts, mols
+from .molecules import mols
+from .utils import merge_nested_dicts
 
 
 class Refs(TypedDict):
@@ -1043,4 +1044,4 @@ refs: Dict[str, Refs] = {
     },
 }
 
-samples: Dict[str, Record] = merge_nested_dicts(mols, refs)
+samples: Dict[str, Record] = merge_nested_dicts(mols, refs)  # type: ignore

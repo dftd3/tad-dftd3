@@ -22,10 +22,11 @@ import torch
 from tad_dftd3 import model, reference, util
 
 from .samples import samples
+from .utils import get_device_from_str
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_gw_single(dtype):
+def test_gw_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     ref = reference.Reference().type(dtype)
@@ -39,7 +40,7 @@ def test_gw_single(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_gw_batch(dtype):
+def test_gw_batch(dtype: torch.dtype) -> None:
     sample1, sample2 = (
         samples["PbH4-BiH3"],
         samples["C6H5I-CH3SH"],
@@ -71,7 +72,7 @@ def test_gw_batch(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_c6_single(dtype):
+def test_c6_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     ref = reference.Reference().type(dtype)
@@ -85,7 +86,7 @@ def test_c6_single(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_c6_batch(dtype):
+def test_c6_batch(dtype: torch.dtype) -> None:
     sample1, sample2 = (
         samples["PbH4-BiH3"],
         samples["C6H5I-CH3SH"],
@@ -122,16 +123,10 @@ def test_reference_dtype(dtype: torch.dtype) -> None:
     assert ref.dtype == dtype
 
 
-@pytest.mark.skipif(
-    not torch.cuda.is_available(),
-    reason="Torch not compiled with CUDA enabled or no CUDA device available.",
-)
+@pytest.mark.cuda
 @pytest.mark.parametrize("device_str", ["cpu", "cuda"])
 def test_reference_device(device_str: str) -> None:
-    device = {
-        "cpu": torch.device("cpu"),
-        "cuda": torch.device("cuda", index=torch.cuda.current_device()),
-    }[device_str]
+    device = get_device_from_str(device_str)
     ref = reference.Reference().to(device)
     assert ref.device == device
 

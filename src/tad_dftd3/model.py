@@ -42,14 +42,14 @@ tensor([[10.4130478,  5.4368815,  5.4368815],
 import torch
 
 from .reference import Reference
-from .typing import Tensor, WeightingFunction
+from .typing import Any, Tensor, WeightingFunction
 
 
 def atomic_c6(
     numbers: Tensor,
     weights: Tensor,
     reference: Reference,
-):
+) -> Tensor:
     """
     Calculate atomic dispersion coefficients.
 
@@ -76,7 +76,7 @@ def atomic_c6(
     return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
 
 
-def gaussian_weight(dcn: Tensor, factor: float = 4.0):
+def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
     """
     Calculate weight of indivdual reference system.
 
@@ -102,7 +102,7 @@ def weight_references(
     reference: Reference,
     weighting_function: WeightingFunction = gaussian_weight,
     epsilon: float = 1.0e-20,
-    **kwargs,
+    **kwargs: Any,
 ) -> Tensor:
     """
     Calculate the weights of the reference system.

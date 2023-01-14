@@ -56,7 +56,7 @@ import torch
 
 from . import data, defaults
 from .damping import dispersion_atm, rational_damping
-from .typing import DampingFunction, Dict, Optional, Tensor
+from .typing import Any, DampingFunction, Dict, Optional, Tensor
 from .util import real_pairs
 
 
@@ -69,7 +69,7 @@ def dispersion(
     r4r2: Optional[Tensor] = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: Optional[Tensor] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Tensor:
     """
     Calculate dispersion energy between pairs of atoms.
@@ -134,7 +134,7 @@ def dispersion2(
     r4r2: Tensor,
     damping_function: DampingFunction,
     cutoff: Tensor,
-    **kwargs,
+    **kwargs: Any,
 ) -> Tensor:
     """
     Calculate dispersion energy between pairs of atoms.

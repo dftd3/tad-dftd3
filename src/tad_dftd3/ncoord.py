@@ -61,7 +61,7 @@ tensor([[2.9901006, 0.9977214, 0.9977214, 0.9977214, 0.0000000, 0.0000000],
 import torch
 
 from . import data
-from .typing import CountingFunction, Optional, Tensor
+from .typing import Any, CountingFunction, Optional, Tensor
 from .util import real_pairs
 
 
@@ -92,7 +92,7 @@ def coordination_number(
     rcov: Optional[Tensor] = None,
     counting_function: CountingFunction = exp_count,
     cutoff: Optional[Tensor] = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Tensor:
     """
     Calculate the coordination number of each atom in the system.

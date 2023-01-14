@@ -15,11 +15,23 @@
 """
 Type annotations for this project.
 """
-from typing import Callable, Dict, List, Optional, Tuple, TypedDict, Union
+
+# pylint: disable=unused-import
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Tuple,
+    TypedDict,
+    Union,
+)
 
 import torch
+from torch import Tensor
 
-Tensor = torch.Tensor
 TensorOrTensors = Union[List[Tensor], Tuple[Tensor, ...], Tensor]
 MaybeTensor = Union[Tensor, Optional[Tensor]]
 

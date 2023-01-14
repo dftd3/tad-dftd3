@@ -39,7 +39,7 @@ def test_fail() -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_cn_single(dtype):
+def test_cn_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
@@ -52,7 +52,7 @@ def test_cn_single(dtype):
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_cn_batch(dtype):
+def test_cn_batch(dtype: torch.dtype) -> None:
     sample1, sample2 = (
         samples["PbH4-BiH3"],
         samples["C6H5I-CH3SH"],

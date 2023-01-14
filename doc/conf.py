@@ -53,7 +53,7 @@ html_theme_options = {
     "logo_only": False,
 }
 
-html_sidebars = {}
+html_sidebars = {}  # type: ignore[var-annotated]
 
 html_css_files = [
     "css/custom.css",
