@@ -1,4 +1,4 @@
-name: CI
+name: Tests
 
 on:
   push:
@@ -6,15 +6,15 @@ on:
       - main
       - master
     paths-ignore:
-      - "docs/**"
-      - "*.md"
-      - "*.rst"
+      - "doc*/**"
+      - "**/*.md"
+      - "**/*.rst"
 
   pull_request:
     paths-ignore:
-      - "docs/**"
-      - "*.md"
-      - "*.rst"
+      - "doc*/**"
+      - "**/*.md"
+      - "**/*.rst"
 
   workflow_dispatch:
 

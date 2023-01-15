@@ -2,35 +2,43 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
     tags:
       - "v*"
+
   pull_request:
-    branches: [main]
+    branches:
+      - main
+
   workflow_dispatch:
 
 jobs:
   wheel:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Build sdist
+      - name: Build wheel (bdist)
         run: pipx run build --wheel
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload wheel as artifact
+        uses: actions/upload-artifact@v3
         with:
           path: dist/*.whl
 
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      - name: Build sdist
+      - name: Build source distribution (sdist)
         run: pipx run build --sdist
 
-      - uses: actions/upload-artifact@v3
+      - name: Upload source distribution as artifact
+        uses: actions/upload-artifact@v3
         with:
           path: dist/*.tar.gz
 
@@ -39,12 +47,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/download-artifact@v3
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
         with:
           name: artifact
           path: dist
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}

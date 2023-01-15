@@ -23,7 +23,7 @@ sys.path.insert(0, op.join(op.dirname(__file__), "..", "src"))
 import tad_dftd3
 
 project = "Torch autodiff DFT-D3"
-author = "Sebastian Ehlert"
+author = "Sebastian Ehlert, Marvin Friede"
 copyright = f"2022 {author}"
 
 extensions = [
