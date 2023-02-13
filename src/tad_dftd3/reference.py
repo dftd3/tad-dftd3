@@ -177,7 +177,6 @@ class Reference:
         cn: Optional[Tensor] = None,
         c6: Optional[Tensor] = None,
     ):
-
         if cn is None:
             cn = _load_cn()
         self.cn = cn
