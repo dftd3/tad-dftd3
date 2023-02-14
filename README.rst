@@ -53,6 +53,19 @@ For alternative implementations also check out
 Installation
 ------------
 
+pip
+~~~
+
+The project can easily be installed with ``pip``.
+
+.. code::
+
+   pip install tad-dftd3
+
+
+From source
+~~~~~~~~~~~
+
 This project is hosted on GitHub at `dftd3/tad-dftd3 <https://github.com/dftd3/tad-dftd3>`__.
 Obtain the source by cloning the repository with
 
