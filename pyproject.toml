@@ -24,7 +24,6 @@ warn_unused_ignores = false
 [tool.coverage.run]
 plugins = ["covdefaults"]
 source = ["./src"]
-omit = ["./src/dxtb/exlibs/*"]
 
 [tool.coverage.report]
 fail_under = 80
