@@ -129,7 +129,7 @@ def weight_references(
     weights = torch.where(
         mask,
         weighting_function(reference.cn[numbers] - cn.unsqueeze(-1), **kwargs),
-        cn.new_tensor(0.0),
+        torch.tensor(0.0, device=cn.device, dtype=cn.dtype),
     )
     norms = torch.add(torch.sum(weights, dim=-1), epsilon)
 
