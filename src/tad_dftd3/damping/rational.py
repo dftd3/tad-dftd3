@@ -43,6 +43,8 @@ def rational_damping(
     Tensor
         Values of the damping function.
     """
-    a1 = param.get("a1", distances.new_tensor(defaults.A1))
-    a2 = param.get("a2", distances.new_tensor(defaults.A1))
+    dd = {"device": distances.device, "dtype": distances.dtype}
+
+    a1 = param.get("a1", torch.tensor(defaults.A1, **dd))
+    a2 = param.get("a2", torch.tensor(defaults.A2, **dd))
     return 1.0 / (distances.pow(order) + (a1 * torch.sqrt(qq) + a2).pow(order))

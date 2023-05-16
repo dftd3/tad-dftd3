@@ -92,8 +92,10 @@ def dispersion(
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
     """
+    dd = {"device": positions.device, "dtype": positions.dtype}
+
     if cutoff is None:
-        cutoff = positions.new_tensor(50.0)
+        cutoff = torch.tensor(50.0, **dd)
     if r4r2 is None:
         r4r2 = (
             data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
@@ -155,11 +157,13 @@ def dispersion2(
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
     """
+    dd = {"device": positions.device, "dtype": positions.dtype}
+
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
         torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"),
-        positions.new_tensor(torch.finfo(positions.dtype).eps),
+        torch.tensor(torch.finfo(positions.dtype).eps, **dd),
     )
 
     qq = 3 * r4r2.unsqueeze(-1) * r4r2.unsqueeze(-2)
@@ -168,19 +172,19 @@ def dispersion2(
     t6 = torch.where(
         mask * (distances <= cutoff),
         damping_function(6, distances, qq, param, **kwargs),
-        positions.new_tensor(0.0),
+        torch.tensor(0.0, **dd),
     )
     t8 = torch.where(
         mask * (distances <= cutoff),
         damping_function(8, distances, qq, param, **kwargs),
-        positions.new_tensor(0.0),
+        torch.tensor(0.0, **dd),
     )
 
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
     e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
 
-    s6 = param.get("s6", positions.new_tensor(defaults.S6))
-    s8 = param.get("s8", positions.new_tensor(defaults.S8))
+    s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
+    s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
     return s6 * e6 + s8 * e8
 
 
@@ -220,8 +224,10 @@ def dispersion3(
     Tensor
         Atom-resolved three-body dispersion energy.
     """
-    alp = param.get("alp", positions.new_tensor(14.0))
-    s9 = param.get("s9", positions.new_tensor(14.0))
+    dd = {"device": positions.device, "dtype": positions.dtype}
+
+    alp = param.get("alp", torch.tensor(14.0, **dd))
+    s9 = param.get("s9", torch.tensor(1.0, **dd))
     rs9 = rs9.type(positions.dtype).to(positions.device)
 
     return dispersion_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)
