@@ -16,6 +16,7 @@
 Test model parameters.
 """
 from math import sqrt
+
 import pytest
 import torch
 

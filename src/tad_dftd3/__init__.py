@@ -130,7 +130,10 @@ def dftd3(
     """
 
     if ref is None:
-        ref = reference.Reference().type(positions.dtype).to(positions.device)
+        ref = reference.Reference(
+            device=positions.device,
+            dtype=positions.dtype,
+        )
     if rcov is None:
         rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
     if rvdw is None:

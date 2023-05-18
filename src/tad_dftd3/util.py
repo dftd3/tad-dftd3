@@ -21,7 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
+from .typing import Any, List, Optional, Size, Tensor, TensorOrTensors, Union
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -42,6 +42,55 @@ def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
     if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
     return mask
+
+
+# https://discuss.pytorch.org/t/efficient-distance-matrix-computation/9065/6
+def cdist_quadratic_expansion(
+    x: Tensor, y: Optional[Tensor] = None, p: int = 2
+) -> Tensor:
+    eps = torch.tensor(
+        torch.finfo(x.dtype).eps,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    xnorm = torch.pow(x, p).sum(-1)
+    if y is None:
+        ynorm = xnorm
+    else:
+        ynorm = torch.pow(y, p).sum(-1)
+
+    n = xnorm.unsqueeze(-1) + ynorm.unsqueeze(-2)
+
+    # x @ y.mT
+    prod = torch.einsum("...ik, ...jk -> ...ij", x, y)
+
+    # sum of squared differences or L2-norm of differences
+    # important: remove negative values that give NaN in backward
+    return torch.sqrt(torch.clamp(n - 2.0 * prod, min=eps))
+
+
+def cdist_direct_expansion(x: Tensor, y: Optional[Tensor] = None, p: int = 2) -> Tensor:
+    eps = torch.tensor(
+        torch.finfo(x.dtype).eps,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    if y is None:
+        y = x
+
+    # unsqueeze different dimension to create matrix
+    differences = x.unsqueeze(-2) - y.unsqueeze(-3)
+
+    distances = torch.sum(torch.pow(differences, p), -1)
+    return torch.sqrt(torch.clamp(distances, min=eps))
+
+
+def cdist(
+    x: Tensor, y: Optional[Tensor] = None, p: int = 2, **_: dict[str, Any]
+) -> Tensor:
+    return cdist_direct_expansion(x, y, p=p)
 
 
 def pack(

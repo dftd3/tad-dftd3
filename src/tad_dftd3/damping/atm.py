@@ -19,7 +19,7 @@ Axilrod-Teller-Muto dispersion term.
 import torch
 
 from .. import defaults
-from ..typing import Tensor
+from ..typing import DD, Tensor
 from ..util import real_pairs, real_triples
 
 
@@ -60,7 +60,7 @@ def dispersion_atm(
     Tensor
         Atom-resolved ATM dispersion energy.
     """
-    dd = {"device": positions.device, "dtype": positions.dtype}
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     s9 = s9.type(positions.dtype).to(positions.device)
     rs9 = rs9.type(positions.dtype).to(positions.device)
