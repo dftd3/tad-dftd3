@@ -55,6 +55,8 @@ def test_disp2_single(dtype: torch.dtype) -> None:
     c6 = sample["c6"].type(dtype)
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.sqrt_z_r4_over_r2[numbers]
+    cutoff = torch.tensor(50.0, dtype=dtype)
+
     param = {
         "a1": positions.new_tensor(0.49484001),
         "s8": positions.new_tensor(0.78981345),
@@ -62,7 +64,7 @@ def test_disp2_single(dtype: torch.dtype) -> None:
     }
 
     energy = disp.dispersion(
-        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
+        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping, cutoff=cutoff
     )
 
     assert energy.dtype == dtype
@@ -97,17 +99,13 @@ def test_disp2_batch(dtype: torch.dtype) -> None:
         )
     )
 
-    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.sqrt_z_r4_over_r2[numbers]
     param = {
         "a1": positions.new_tensor(0.49484001),
         "s8": positions.new_tensor(0.78981345),
         "a2": positions.new_tensor(5.73083694),
     }
 
-    energy = disp.dispersion(
-        numbers, positions, param, c6, rvdw, r4r2, disp.rational_damping
-    )
+    energy = disp.dispersion(numbers, positions, param, c6)
 
     assert energy.dtype == dtype
     assert pytest.approx(energy) == ref

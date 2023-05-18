@@ -18,7 +18,7 @@ Test calculation of dispersion energy and nuclear gradients.
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util
+from tad_dftd3 import dftd3, util, data, model, ncoord, damping, reference
 from tad_dftd3.typing import Tensor
 
 from .samples import samples
@@ -31,13 +31,30 @@ def test_disp_single(dtype: torch.dtype) -> None:
     positions = sample["positions"].type(dtype)
     ref = sample["disp2"].type(dtype)
 
+    rcov = data.covalent_rad_d3[numbers]
+    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    r4r2 = data.sqrt_z_r4_over_r2[numbers]
+    cutoff = torch.tensor(50, dtype=dtype)
+
     param = {
         "a1": positions.new_tensor(0.49484001),
         "s8": positions.new_tensor(0.78981345),
         "a2": positions.new_tensor(5.73083694),
     }
 
-    energy = dftd3(numbers, positions, param)
+    energy = dftd3(
+        numbers,
+        positions,
+        param,
+        ref=reference.Reference(dtype=dtype),
+        rcov=rcov,
+        rvdw=rvdw,
+        r4r2=r4r2,
+        cutoff=cutoff,
+        counting_function=ncoord.exp_count,
+        weighting_function=model.gaussian_weight,
+        damping_function=damping.rational_damping,
+    )
 
     assert energy.dtype == dtype
     assert torch.allclose(energy, ref)

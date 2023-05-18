@@ -21,7 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import Any, Dict, List, Optional, Size, Tensor, TensorOrTensors, Union
+from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -117,7 +117,7 @@ def cdist_direct_expansion(x: Tensor, y: Tensor, p: int = 2) -> Tensor:
     )
 
     # unsqueeze different dimension to create matrix
-    diff = x.unsqueeze(-2) - y.unsqueeze(-3)
+    diff = torch.abs(x.unsqueeze(-2) - y.unsqueeze(-3))
 
     # einsum is nearly twice as fast!
     if p == 2:
@@ -125,7 +125,7 @@ def cdist_direct_expansion(x: Tensor, y: Tensor, p: int = 2) -> Tensor:
     else:
         distances = torch.sum(torch.pow(diff, p), -1)
 
-    return torch.sqrt(torch.clamp(distances, min=eps))
+    return torch.pow(torch.clamp(distances, min=eps), 1.0 / p)
 
 
 def cdist(x: Tensor, y: Optional[Tensor] = None, p: int = 2) -> Tensor:
