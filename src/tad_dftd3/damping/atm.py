@@ -20,7 +20,7 @@ import torch
 
 from .. import defaults
 from ..typing import DD, Tensor
-from ..util import real_pairs, real_triples
+from ..util import cdist, real_pairs, real_triples
 
 
 def dispersion_atm(
@@ -84,9 +84,7 @@ def dispersion_atm(
     distances = torch.pow(
         torch.where(
             real_pairs(numbers, diagonal=False),
-            torch.cdist(
-                positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"
-            ),
+            cdist(positions, positions, p=2),
             torch.tensor(torch.finfo(positions.dtype).eps, **dd),
         ),
         2.0,

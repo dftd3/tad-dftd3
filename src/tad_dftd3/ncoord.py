@@ -62,7 +62,7 @@ import torch
 
 from . import data
 from .typing import DD, Any, CountingFunction, Optional, Tensor
-from .util import real_pairs
+from .util import cdist, real_pairs
 
 
 def exp_count(r: Tensor, r0: Tensor, kcn: float = 16.0) -> Tensor:
@@ -132,7 +132,7 @@ def coordination_number(
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
-        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"),
+        cdist(positions, positions, p=2),
         torch.tensor(torch.finfo(positions.dtype).eps, **dd),
     )
 
