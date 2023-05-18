@@ -18,7 +18,7 @@ Test calculation of dispersion energy and nuclear gradients.
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util, data, model, ncoord, damping, reference
+from tad_dftd3 import damping, data, dftd3, model, ncoord, reference, util
 from tad_dftd3.typing import Tensor
 
 from .samples import samples

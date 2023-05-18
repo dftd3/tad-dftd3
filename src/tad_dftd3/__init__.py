@@ -75,13 +75,13 @@ import torch
 
 from . import damping, data, disp, model, ncoord, reference, util
 from .typing import (
+    DD,
     CountingFunction,
     DampingFunction,
     Dict,
     Optional,
     Tensor,
     WeightingFunction,
-    DD,
 )
 
 
