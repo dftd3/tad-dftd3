@@ -7,6 +7,15 @@ from tad_dftd3.typing import Dict, Molecule
 from tad_dftd3.util import to_number
 
 mols: Dict[str, Molecule] = {
+    "LiH": {
+        "numbers": to_number("Li H".split()),
+        "positions": torch.tensor(
+            [
+                [+0.00000000000000, +0.00000000000000, -1.50796743897235],
+                [+0.00000000000000, +0.00000000000000, +1.50796743897235],
+            ]
+        ),
+    },
     "SiH4": {
         "numbers": to_number("Si H H H H".split()),
         "positions": torch.tensor(

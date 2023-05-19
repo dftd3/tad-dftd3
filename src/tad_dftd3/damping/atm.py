@@ -69,9 +69,16 @@ def dispersion_atm(
     cutoff2 = cutoff * cutoff
     srvdw = rs9 * rvdw
 
+    mask_pairs = real_pairs(numbers, diagonal=False)
+    mask_triples = real_triples(numbers, diagonal=False)
+
+    eps = torch.tensor(torch.finfo(positions.dtype).eps, **dd)
+
     # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)
     c9 = s9 * torch.sqrt(
-        torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3))
+        torch.clamp(
+            torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3)), min=eps
+        )
     )
 
     r0ij = srvdw.unsqueeze(-1)
@@ -83,9 +90,9 @@ def dispersion_atm(
     # very slow: (pos.unsqueeze(-2) - pos.unsqueeze(-3)).pow(2).sum(-1)
     distances = torch.pow(
         torch.where(
-            real_pairs(numbers, diagonal=False),
+            mask_pairs,
             cdist(positions, positions, p=2),
-            torch.tensor(torch.finfo(positions.dtype).eps, **dd),
+            eps,
         ),
         2.0,
     )
@@ -95,17 +102,15 @@ def dispersion_atm(
     r2jk = distances.unsqueeze(-3)
     r2 = r2ij * r2ik * r2jk
     r1 = torch.sqrt(r2)
-    r3 = r1 * r2
-    r5 = r2 * r3
+    # add epsilon to avoid zero division later
+    r3 = torch.where(mask_triples, r1 * r2, eps)
+    r5 = torch.where(mask_triples, r2 * r3, eps)
 
     fdamp = 1.0 / (1.0 + 6.0 * (r0 / r1) ** ((alp + 2.0) / 3.0))
 
     s = (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik)
     ang = torch.where(
-        real_triples(numbers, diagonal=False)
-        * (r2ij <= cutoff2)
-        * (r2jk <= cutoff2)
-        * (r2jk <= cutoff2),
+        mask_triples * (r2ij <= cutoff2) * (r2jk <= cutoff2) * (r2jk <= cutoff2),
         0.375 * s / r5 + 1.0 / r3,
         torch.tensor(0.0, **dd),
     )

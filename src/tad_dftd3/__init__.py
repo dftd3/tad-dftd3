@@ -127,8 +127,8 @@ def dftd3(
 
     Returns
     -------
-    torch.Tensor
-        DFT-D3 dispersion energy for each geometry.
+    Tensor
+        Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 

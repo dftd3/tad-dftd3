@@ -91,6 +91,11 @@ def dispersion(
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
+
+    Returns
+    -------
+    Tensor
+        Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 

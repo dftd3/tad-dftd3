@@ -21,7 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
+from .typing import Any, Callable, List, Optional, Size, Tensor, TensorOrTensors, Union
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -219,6 +219,75 @@ def to_number(symbols: List[str]) -> Tensor:
     return torch.flatten(
         torch.tensor([PSE.get(symbol.capitalize(), 0) for symbol in symbols])
     )
+
+
+def jacobian(f: Callable[..., Tensor], argnums: int) -> Any:
+    """
+    Wrapper for Jacobian calcluation.
+
+    Note
+    ----
+    Only reverse mode AD is given through the custom autograd classes. Forward
+    mode requires implementation of `jvp`.
+    """
+    return torch.func.jacrev(f, argnums=argnums)  # type: ignore
+
+
+def hessian(
+    f: Callable[..., Tensor],
+    inputs: tuple[Any, ...],
+    argnums: int = 0,
+    is_batched: bool = False,
+) -> Tensor:
+    """
+    Wrapper for Hessian. The Hessian is the Jacobian of the gradient.
+
+    PyTorch, however, suggests calculating the Jacobian of the Jacobian, which
+    does not yield the correct shape in this case.
+
+    Parameters
+    ----------
+    f : Callable[[Any], Tensor]
+        The function whose result is differentiated.
+    inputs : tuple[Any, ...]
+        The input parameters of `f`.
+    argnums : int, optional
+        The variable w.r.t. which will be differentiated. Defaults to 0.
+
+    Returns
+    -------
+    Tensor
+        The Hessian.
+    """
+
+    def _grad(*inps: tuple[Any, ...]) -> Tensor:
+        e = f(*inps).sum()
+
+        if not isinstance(inps[argnums], Tensor):
+            raise RuntimeError(
+                f"The {argnums}'th input parameter must be a tensor but is of "
+                f"type '{type(inps[argnums])}'."
+            )
+
+        # catch missing gradients
+        if e.grad_fn is None:
+            return torch.zeros_like(inps[argnums])  # type: ignore
+
+        (g,) = torch.autograd.grad(
+            e,
+            inps[argnums],
+            create_graph=True,
+        )
+        return g
+
+    _jac = jacobian(_grad, argnums=argnums)
+
+    if is_batched:
+        raise NotImplementedError("Batched Hessian not available.")
+        # dims = tuple(None if x != argnums else 0 for x in range(len(inputs)))
+        # _jac = torch.func.vmap(_jac, in_dims=dims)
+
+    return _jac(*inputs)  # type: ignore
 
 
 PSE = {
