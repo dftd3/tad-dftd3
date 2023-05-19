@@ -7,12 +7,10 @@ import pytest
 import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
-
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Tensor, Callable
+from tad_dftd3.typing import Callable, Tensor
 
 from ..samples import samples
-
 
 sample_list = ["LiH", "SiH4", "MB16_43_01"]
 
