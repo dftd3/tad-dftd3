@@ -8,7 +8,7 @@ import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Callable, Tensor
+from tad_dftd3.typing import Callable, Tensor, Tuple
 
 from ..samples import samples
 
@@ -19,9 +19,9 @@ tol = 1e-8
 
 def gradchecker(
     dtype: torch.dtype, name: str
-) -> tuple[
+) -> Tuple[
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
-    tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
+    Tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
     sample = samples[name]
     numbers = sample["numbers"]
@@ -36,7 +36,7 @@ def gradchecker(
     )
     label = ("s6", "s8", "a1", "a2")
 
-    def func(*inputs):
+    def func(*inputs: Tensor) -> Tensor:
         input_param = {label[i]: input for i, input in enumerate(inputs)}
         return dftd3(numbers, positions, input_param)
 
@@ -69,9 +69,9 @@ def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
 
 def gradchecker_batch(
     dtype: torch.dtype, name1: str, name2: str
-) -> tuple[
+) -> Tuple[
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
-    tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
+    Tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
     sample1, sample2 = samples[name1], samples[name2]
     numbers = util.pack(
@@ -96,7 +96,7 @@ def gradchecker_batch(
     )
     label = ("s6", "s8", "a1", "a2")
 
-    def func(*inputs):
+    def func(*inputs: Tensor) -> Tensor:
         input_param = {label[i]: input for i, input in enumerate(inputs)}
         return dftd3(numbers, positions, input_param)
 

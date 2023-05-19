@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
+from tad_dftd3.typing import Tensor
 
 from ..samples import samples
 from ..utils import reshape_fortran
@@ -20,9 +21,7 @@ def test_fail() -> None:
     sample = samples["LiH"]
     numbers = sample["numbers"]
     positions = sample["positions"]
-
-    # GFN1-xTB parameters
-    param = {}
+    param = {"a1": numbers}
 
     # differentiable variable is not a tensor
     with pytest.raises(RuntimeError):
@@ -32,7 +31,7 @@ def test_fail() -> None:
 def test_zeros() -> None:
     d = torch.randn(2, 3, requires_grad=True)
 
-    def dummy(x: torch.Tensor) -> torch.Tensor:
+    def dummy(x: Tensor) -> Tensor:
         return torch.zeros_like(x)
 
     hess = util.hessian(dummy, (d,), argnums=0)
@@ -73,7 +72,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)
-def skip_test_batch(dtype: torch.dtype, name1: str, name2) -> None:
+def skip_test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     sample1, sample2 = samples[name1], samples[name2]
     numbers = util.pack(
         [

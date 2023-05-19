@@ -21,7 +21,17 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import Any, Callable, List, Optional, Size, Tensor, TensorOrTensors, Union
+from .typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Size,
+    Tensor,
+    TensorOrTensors,
+    Tuple,
+    Union,
+)
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -235,7 +245,7 @@ def jacobian(f: Callable[..., Tensor], argnums: int) -> Any:
 
 def hessian(
     f: Callable[..., Tensor],
-    inputs: tuple[Any, ...],
+    inputs: Tuple[Any, ...],
     argnums: int = 0,
     is_batched: bool = False,
 ) -> Tensor:
@@ -260,7 +270,7 @@ def hessian(
         The Hessian.
     """
 
-    def _grad(*inps: tuple[Any, ...]) -> Tensor:
+    def _grad(*inps: Tuple[Any, ...]) -> Tensor:
         e = f(*inps).sum()
 
         if not isinstance(inps[argnums], Tensor):
@@ -284,7 +294,7 @@ def hessian(
 
     if is_batched:
         raise NotImplementedError("Batched Hessian not available.")
-        # dims = tuple(None if x != argnums else 0 for x in range(len(inputs)))
+        # dims = Tuple(None if x != argnums else 0 for x in range(len(inputs)))
         # _jac = torch.func.vmap(_jac, in_dims=dims)
 
     return _jac(*inputs)  # type: ignore

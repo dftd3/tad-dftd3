@@ -8,7 +8,7 @@ import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Callable, Tensor
+from tad_dftd3.typing import Callable, Tensor, Tuple
 
 from ..samples import samples
 
@@ -19,7 +19,7 @@ tol = 1e-8
 
 def gradchecker(
     dtype: torch.dtype, name: str
-) -> tuple[
+) -> Tuple[
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
@@ -73,7 +73,7 @@ def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
 
 def gradchecker_batch(
     dtype: torch.dtype, name1: str, name2: str
-) -> tuple[
+) -> Tuple[
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
