@@ -7,16 +7,26 @@ import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
+from tad_dftd3.__version__ import __torch_version__
 from tad_dftd3.typing import Tensor
 
 from ..samples import samples
 from ..utils import reshape_fortran
+
+if __torch_version__ < (2, 0, 0):
+    try:
+        from functorch import jacrev  # type: ignore
+    except ModuleNotFoundError:
+        jacrev = None
+else:
+    from torch.func import jacrev  # type: ignore
 
 sample_list = ["LiH", "SiH4", "PbH4-BiH3", "MB16_43_01"]
 
 tol = 1e-8
 
 
+@pytest.mark.skipif(jacrev is None, reason="Hessian tests require functorch")
 def test_fail() -> None:
     sample = samples["LiH"]
     numbers = sample["numbers"]
@@ -28,6 +38,7 @@ def test_fail() -> None:
         util.hessian(dftd3, (numbers, positions, param), argnums=2)
 
 
+@pytest.mark.skipif(jacrev is None, reason="Hessian tests require functorch")
 def test_zeros() -> None:
     d = torch.randn(2, 3, requires_grad=True)
 
@@ -38,6 +49,7 @@ def test_zeros() -> None:
     assert pytest.approx(torch.zeros([*d.shape, *d.shape])) == hess.detach()
 
 
+@pytest.mark.skipif(jacrev is None, reason="Hessian tests require functorch")
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_single(dtype: torch.dtype, name: str) -> None:
@@ -69,6 +81,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
 
 # TODO: Figure out batched Hessian computation
+@pytest.mark.skipif(jacrev is None, reason="Hessian tests require functorch")
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)

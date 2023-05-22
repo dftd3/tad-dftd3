@@ -21,6 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
+from .__version__ import __torch_version__
 from .typing import (
     Any,
     Callable,
@@ -32,6 +33,14 @@ from .typing import (
     Tuple,
     Union,
 )
+
+if __torch_version__ < (2, 0, 0):  # pragma: no cover
+    try:
+        from functorch import jacrev  # type: ignore
+    except ModuleNotFoundError:
+        jacrev = None
+else:
+    from torch.func import jacrev  # type: ignore
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -62,11 +71,14 @@ def euclidean_dist_quadratic_expansion(x: Tensor, y: Tensor) -> Tensor:
     While this is significantly faster than the "direct expansion" or
     "broadcast" approach, it only works for euclidean (p=2) distances.
     Additionally, it has issues with numerical stability (the diagonal slightly
-    deviates from zero for `x=y`). The numerical stability should not pose
+    deviates from zero for ``x=y``). The numerical stability should not pose
     problems, since we must remove zeros anyway for batched calculations.
 
-    For more information, see `https://github.com/eth-cscs/PythonHPC/blob/master/numpy/03-euclidean-distance-matrix-numpy.ipynb`__ or
-    `https://discuss.pytorch.org/t/efficient-distance-matrix-computation/9065`__.
+    For more information, see \
+    `this Jupyter notebook <https://github.com/eth-cscs/PythonHPC/blob/master/\
+    numpy/03-euclidean-distance-matrix-numpy.ipynb>`__ or \
+    `this discussion thread on PyTorch forum <https://discuss.pytorch.org/t/\
+    efficient-distance-matrix-computation/9065>`__.
 
     Parameters
     ----------
@@ -103,8 +115,8 @@ def cdist_direct_expansion(x: Tensor, y: Tensor, p: int = 2) -> Tensor:
     """
     Computation of cartesian distance matrix.
 
-    This currently replaces the use of `torch.cdist`, which does not handle
-    zeros well and produces nan's in the backward pass.
+    Contrary to `euclidean_dist_quadratic_expansion`, this function allows
+    arbitrary powers but is considerably slower.
 
     Parameters
     ----------
@@ -231,22 +243,26 @@ def to_number(symbols: List[str]) -> Tensor:
     )
 
 
-def jacobian(f: Callable[..., Tensor], argnums: int) -> Any:
+def jacobian(f: Callable[..., Tensor], argnums: int = 0) -> Any:
     """
     Wrapper for Jacobian calcluation.
 
-    Note
-    ----
-    Only reverse mode AD is given through the custom autograd classes. Forward
-    mode requires implementation of `jvp`.
+    Parameters
+    ----------
+    f : Callable[[Any], Tensor]
+        The function whose result is differentiated.
+    argnums : int, optional
+        The variable w.r.t. which will be differentiated. Defaults to 0.
     """
-    return torch.func.jacrev(f, argnums=argnums)  # type: ignore
+    if jacrev is None:
+        raise ModuleNotFoundError("PyTorch's `functorch` is not installed.")
+    return jacrev(f, argnums=argnums)  # type: ignore
 
 
 def hessian(
     f: Callable[..., Tensor],
     inputs: Tuple[Any, ...],
-    argnums: int = 0,
+    argnums: int,
     is_batched: bool = False,
 ) -> Tensor:
     """
