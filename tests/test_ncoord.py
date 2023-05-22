@@ -43,10 +43,13 @@ def test_cn_single(dtype: torch.dtype) -> None:
     sample = samples["PbH4-BiH3"]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
+    cutoff = torch.tensor(25, dtype=dtype)
     ref = sample["cn"].type(dtype)
 
     rcov = data.covalent_rad_d3[numbers]
-    cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
+    cn = ncoord.coordination_number(
+        numbers, positions, rcov, ncoord.exp_count, cutoff=cutoff
+    )
     assert cn.dtype == dtype
     assert pytest.approx(cn) == ref
 
@@ -76,7 +79,6 @@ def test_cn_batch(dtype: torch.dtype) -> None:
         )
     )
 
-    rcov = data.covalent_rad_d3[numbers]
-    cn = ncoord.coordination_number(numbers, positions, rcov, ncoord.exp_count)
+    cn = ncoord.coordination_number(numbers, positions)
     assert cn.dtype == dtype
     assert pytest.approx(cn) == ref

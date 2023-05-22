@@ -75,6 +75,7 @@ import torch
 
 from . import damping, data, disp, model, ncoord, reference, util
 from .typing import (
+    DD,
     CountingFunction,
     DampingFunction,
     Dict,
@@ -93,6 +94,7 @@ def dftd3(
     rcov: Optional[Tensor] = None,
     rvdw: Optional[Tensor] = None,
     r4r2: Optional[Tensor] = None,
+    cutoff: Optional[Tensor] = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
     damping_function: DampingFunction = damping.rational_damping,
@@ -125,12 +127,15 @@ def dftd3(
 
     Returns
     -------
-    torch.Tensor
-        DFT-D3 dispersion energy for each geometry.
+    Tensor
+        Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
+    if cutoff is None:
+        cutoff = torch.tensor(50.0, **dd)
     if ref is None:
-        ref = reference.Reference().type(positions.dtype).to(positions.device)
+        ref = reference.Reference(**dd)
     if rcov is None:
         rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
     if rvdw is None:
@@ -155,6 +160,7 @@ def dftd3(
         rvdw,
         r4r2,
         damping_function,
+        cutoff=cutoff,
     )
 
     return energy

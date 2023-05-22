@@ -43,6 +43,7 @@ import torch
 
 from .reference import Reference
 from .typing import Any, Tensor, WeightingFunction
+from .util import real_atoms
 
 
 def atomic_c6(
@@ -101,7 +102,6 @@ def weight_references(
     cn: Tensor,
     reference: Reference,
     weighting_function: WeightingFunction = gaussian_weight,
-    epsilon: float = 1.0e-20,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -126,11 +126,37 @@ def weight_references(
 
     mask = reference.cn[numbers] >= 0
 
+    # Due to the exponentiation, `norms` and `weights` may become very small.
+    # This may cause problems for the division by `norms`. It may occur that
+    # `weights` and `norms` are equal, in which case the result should be
+    # exactly one. This might, however, not be the case and ultimately cause
+    # larger deviations in the final values.
+    #
+    # If the values become even smaller, we may have to evaluate this portion
+    # in double precision to retain the correct results. This must be done in
+    # the D4 variant because the weighting functions contains higher powers,
+    # which lead to values down to 1e-300.
+    dcn = reference.cn[numbers] - cn.unsqueeze(-1)
     weights = torch.where(
         mask,
-        weighting_function(reference.cn[numbers] - cn.unsqueeze(-1), **kwargs),
-        torch.tensor(0.0, device=cn.device, dtype=cn.dtype),
+        weighting_function(dcn, **kwargs),
+        torch.tensor(0.0, device=dcn.device, dtype=dcn.dtype),  # not eps!
     )
-    norms = torch.add(torch.sum(weights, dim=-1), epsilon)
 
+    # Nevertheless, we must avoid zero division here in batched calculations.
+    #
+    # Previously, a small value was added to `norms` to prevent division by zero
+    # (`norms = torch.add(torch.sum(weights, dim=-1), 1e-20)`). However, even
+    # such small values can lead to relatively large deviations because the
+    # small value is not added to the weights, and hence, the case where
+    # `weights` and `norms` are equal does not yield one anymore. In fact, the
+    # test suite fails because some elements deviate up to around 1e-4.
+    #
+    # We solve this issue by using a mask from the atoms and only add a small
+    # value, where the actual padding zeros are.
+    norms = torch.where(
+        real_atoms(numbers),
+        torch.sum(weights, dim=-1),
+        torch.tensor(torch.finfo(dcn.dtype).eps, device=cn.device, dtype=dcn.dtype),
+    )
     return weights / norms.unsqueeze(-1)

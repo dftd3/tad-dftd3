@@ -56,8 +56,8 @@ import torch
 
 from . import data, defaults
 from .damping import dispersion_atm, rational_damping
-from .typing import Any, DampingFunction, Dict, Optional, Tensor
-from .util import real_pairs
+from .typing import DD, Any, DampingFunction, Dict, Optional, Tensor
+from .util import cdist, real_pairs
 
 
 def dispersion(
@@ -91,8 +91,13 @@ def dispersion(
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
+
+    Returns
+    -------
+    Tensor
+        Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
-    dd = {"device": positions.device, "dtype": positions.dtype}
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     if cutoff is None:
         cutoff = torch.tensor(50.0, **dd)
@@ -157,12 +162,12 @@ def dispersion2(
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
     """
-    dd = {"device": positions.device, "dtype": positions.dtype}
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     mask = real_pairs(numbers, diagonal=False)
     distances = torch.where(
         mask,
-        torch.cdist(positions, positions, p=2, compute_mode="use_mm_for_euclid_dist"),
+        cdist(positions, positions, p=2),
         torch.tensor(torch.finfo(positions.dtype).eps, **dd),
     )
 
@@ -224,7 +229,7 @@ def dispersion3(
     Tensor
         Atom-resolved three-body dispersion energy.
     """
-    dd = {"device": positions.device, "dtype": positions.dtype}
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     alp = param.get("alp", torch.tensor(14.0, **dd))
     s9 = param.get("s9", torch.tensor(1.0, **dd))

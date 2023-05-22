@@ -15,6 +15,7 @@
 """
 Test model parameters.
 """
+from math import sqrt
 
 import pytest
 import torch
@@ -24,26 +25,35 @@ from tad_dftd3 import model, reference, util
 from .samples import samples
 from .utils import get_device_from_str
 
+sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
+
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_gw_single(dtype: torch.dtype) -> None:
-    sample = samples["PbH4-BiH3"]
+@pytest.mark.parametrize("name", sample_list)
+def test_gw_single(dtype: torch.dtype, name: str) -> None:
+    tol = sqrt(torch.finfo(dtype).eps)
+
+    sample = samples[name]
     numbers = sample["numbers"]
-    ref = reference.Reference().type(dtype)
+    ref = reference.Reference(dtype=dtype)
     cn = sample["cn"].type(dtype)
     refgw = sample["weights"].type(dtype)
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
-    assert pytest.approx(weights) == refgw
+    assert pytest.approx(refgw, abs=tol, rel=tol) == weights
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_gw_batch(dtype: torch.dtype) -> None:
+@pytest.mark.parametrize("name1", ["SiH4"])
+@pytest.mark.parametrize("name2", sample_list)
+def test_gw_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+    tol = sqrt(torch.finfo(dtype).eps)
+
     sample1, sample2 = (
-        samples["PbH4-BiH3"],
-        samples["C6H5I-CH3SH"],
+        samples[name1],
+        samples[name2],
     )
     numbers = util.pack(
         (
@@ -51,7 +61,7 @@ def test_gw_batch(dtype: torch.dtype) -> None:
             sample2["numbers"],
         )
     )
-    ref = reference.Reference().type(dtype)
+    ref = reference.Reference(dtype=dtype)
     cn = util.pack(
         (
             sample1["cn"].type(dtype),
@@ -68,28 +78,35 @@ def test_gw_batch(dtype: torch.dtype) -> None:
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
-    assert pytest.approx(weights) == refgw
+    assert pytest.approx(refgw, abs=tol, rel=tol) == weights
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_c6_single(dtype: torch.dtype) -> None:
-    sample = samples["PbH4-BiH3"]
+@pytest.mark.parametrize("name", sample_list)
+def test_c6_single(dtype: torch.dtype, name: str) -> None:
+    tol = sqrt(torch.finfo(dtype).eps)
+
+    sample = samples[name]
     numbers = sample["numbers"]
-    ref = reference.Reference().type(dtype)
+    ref = reference.Reference(dtype=dtype)
     weights = sample["weights"].type(dtype)
     refc6 = sample["c6"].type(dtype)
 
     c6 = model.atomic_c6(numbers, weights, ref)
 
     assert c6.dtype == dtype
-    assert pytest.approx(c6) == refc6
+    assert pytest.approx(refc6, abs=tol, rel=tol) == c6
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_c6_batch(dtype: torch.dtype) -> None:
+@pytest.mark.parametrize("name1", ["SiH4"])
+@pytest.mark.parametrize("name2", sample_list)
+def test_c6_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+    tol = sqrt(torch.finfo(dtype).eps)
+
     sample1, sample2 = (
-        samples["PbH4-BiH3"],
-        samples["C6H5I-CH3SH"],
+        samples[name1],
+        samples[name2],
     )
     numbers = util.pack(
         (
@@ -97,7 +114,7 @@ def test_c6_batch(dtype: torch.dtype) -> None:
             sample2["numbers"],
         )
     )
-    ref = reference.Reference().type(dtype)
+    ref = reference.Reference(dtype=dtype)
     weights = util.pack(
         (
             sample1["weights"].type(dtype),
@@ -114,7 +131,7 @@ def test_c6_batch(dtype: torch.dtype) -> None:
     c6 = model.atomic_c6(numbers, weights, ref)
 
     assert c6.dtype == dtype
-    assert pytest.approx(c6) == refc6
+    assert pytest.approx(refc6, abs=tol, rel=tol) == c6
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])

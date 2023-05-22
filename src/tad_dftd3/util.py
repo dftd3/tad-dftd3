@@ -21,7 +21,17 @@ symbols and atomic numbers.
 """
 import torch
 
-from .typing import List, Optional, Size, Tensor, TensorOrTensors, Union
+from .typing import (
+    Any,
+    Callable,
+    List,
+    Optional,
+    Size,
+    Tensor,
+    TensorOrTensors,
+    Tuple,
+    Union,
+)
 
 
 def real_atoms(numbers: Tensor) -> Tensor:
@@ -42,6 +52,122 @@ def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
     if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
     return mask
+
+
+def euclidean_dist_quadratic_expansion(x: Tensor, y: Tensor) -> Tensor:
+    """
+    Computation of euclidean distance matrix via quadratic expansion (sum of
+    squared differences or L2-norm of differences).
+
+    While this is significantly faster than the "direct expansion" or
+    "broadcast" approach, it only works for euclidean (p=2) distances.
+    Additionally, it has issues with numerical stability (the diagonal slightly
+    deviates from zero for `x=y`). The numerical stability should not pose
+    problems, since we must remove zeros anyway for batched calculations.
+
+    For more information, see `https://github.com/eth-cscs/PythonHPC/blob/master/numpy/03-euclidean-distance-matrix-numpy.ipynb`__ or
+    `https://discuss.pytorch.org/t/efficient-distance-matrix-computation/9065`__.
+
+    Parameters
+    ----------
+    x : Tensor
+        First tensor.
+    y : Tensor
+        Second tensor (with same shape as first tensor).
+
+    Returns
+    -------
+    Tensor
+        Pair-wise distance matrix.
+    """
+    eps = torch.tensor(
+        torch.finfo(x.dtype).eps,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    # using einsum is slightly faster than `torch.pow(x, 2).sum(-1)`
+    xnorm = torch.einsum("...ij,...ij->...i", x, x)
+    ynorm = torch.einsum("...ij,...ij->...i", y, y)
+
+    n = xnorm.unsqueeze(-1) + ynorm.unsqueeze(-2)
+
+    # x @ y.mT
+    prod = torch.einsum("...ik,...jk->...ij", x, y)
+
+    # important: remove negative values that give NaN in backward
+    return torch.sqrt(torch.clamp(n - 2.0 * prod, min=eps))
+
+
+def cdist_direct_expansion(x: Tensor, y: Tensor, p: int = 2) -> Tensor:
+    """
+    Computation of cartesian distance matrix.
+
+    This currently replaces the use of `torch.cdist`, which does not handle
+    zeros well and produces nan's in the backward pass.
+
+    Parameters
+    ----------
+    x : Tensor
+        First tensor.
+    y : Tensor
+        Second tensor (with same shape as first tensor).
+    p : int, optional
+        Power used in the distance evaluation (p-norm). Defaults to 2.
+
+    Returns
+    -------
+    Tensor
+        Pair-wise distance matrix.
+    """
+    eps = torch.tensor(
+        torch.finfo(x.dtype).eps,
+        device=x.device,
+        dtype=x.dtype,
+    )
+
+    # unsqueeze different dimension to create matrix
+    diff = torch.abs(x.unsqueeze(-2) - y.unsqueeze(-3))
+
+    # einsum is nearly twice as fast!
+    if p == 2:
+        distances = torch.einsum("...ijk,...ijk->...ij", diff, diff)
+    else:
+        distances = torch.sum(torch.pow(diff, p), -1)
+
+    return torch.pow(torch.clamp(distances, min=eps), 1.0 / p)
+
+
+def cdist(x: Tensor, y: Optional[Tensor] = None, p: int = 2) -> Tensor:
+    """
+    Wrapper for cartesian distance computation.
+
+    This currently replaces the use of `torch.cdist`, which does not handle
+    zeros well and produces nan's in the backward pass.
+
+    Parameters
+    ----------
+    x : Tensor
+        First tensor.
+    y : Optional[Tensor], optional
+        Second tensor. If no second tensor is given (default), the first tensor
+        is used as the second tensor, too.
+    p : int, optional
+        Power used in the distance evaluation (p-norm). Defaults to 2.
+
+    Returns
+    -------
+    Tensor
+        Pair-wise distance matrix.
+    """
+    if y is None:
+        y = x
+
+    # faster
+    if p == 2:
+        return euclidean_dist_quadratic_expansion(x, y)
+
+    return cdist_direct_expansion(x, y, p=p)
 
 
 def pack(
@@ -103,6 +229,75 @@ def to_number(symbols: List[str]) -> Tensor:
     return torch.flatten(
         torch.tensor([PSE.get(symbol.capitalize(), 0) for symbol in symbols])
     )
+
+
+def jacobian(f: Callable[..., Tensor], argnums: int) -> Any:
+    """
+    Wrapper for Jacobian calcluation.
+
+    Note
+    ----
+    Only reverse mode AD is given through the custom autograd classes. Forward
+    mode requires implementation of `jvp`.
+    """
+    return torch.func.jacrev(f, argnums=argnums)  # type: ignore
+
+
+def hessian(
+    f: Callable[..., Tensor],
+    inputs: Tuple[Any, ...],
+    argnums: int = 0,
+    is_batched: bool = False,
+) -> Tensor:
+    """
+    Wrapper for Hessian. The Hessian is the Jacobian of the gradient.
+
+    PyTorch, however, suggests calculating the Jacobian of the Jacobian, which
+    does not yield the correct shape in this case.
+
+    Parameters
+    ----------
+    f : Callable[[Any], Tensor]
+        The function whose result is differentiated.
+    inputs : tuple[Any, ...]
+        The input parameters of `f`.
+    argnums : int, optional
+        The variable w.r.t. which will be differentiated. Defaults to 0.
+
+    Returns
+    -------
+    Tensor
+        The Hessian.
+    """
+
+    def _grad(*inps: Tuple[Any, ...]) -> Tensor:
+        e = f(*inps).sum()
+
+        if not isinstance(inps[argnums], Tensor):
+            raise RuntimeError(
+                f"The {argnums}'th input parameter must be a tensor but is of "
+                f"type '{type(inps[argnums])}'."
+            )
+
+        # catch missing gradients
+        if e.grad_fn is None:
+            return torch.zeros_like(inps[argnums])  # type: ignore
+
+        (g,) = torch.autograd.grad(
+            e,
+            inps[argnums],
+            create_graph=True,
+        )
+        return g
+
+    _jac = jacobian(_grad, argnums=argnums)
+
+    if is_batched:
+        raise NotImplementedError("Batched Hessian not available.")
+        # dims = Tuple(None if x != argnums else 0 for x in range(len(inputs)))
+        # _jac = torch.func.vmap(_jac, in_dims=dims)
+
+    return _jac(*inputs)  # type: ignore
 
 
 PSE = {

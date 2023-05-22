@@ -26,7 +26,9 @@ import torch
 from .typing import Any, NoReturn, Optional, Tensor
 
 
-def _load_cn(dtype: torch.dtype = torch.float) -> Tensor:
+def _load_cn(
+    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+) -> Tensor:
     return torch.tensor(
         [
             [-1.0000, -1.0000, -1.0000, -1.0000, -1.0000],  # None
@@ -124,11 +126,15 @@ def _load_cn(dtype: torch.dtype = torch.float) -> Tensor:
             [+0.0000, +2.8878, -1.0000, -1.0000, -1.0000],  # U
             [+0.0000, +2.9095, -1.0000, -1.0000, -1.0000],  # Np
             [+0.0000, +1.9209, -1.0000, -1.0000, -1.0000],  # Pu
-        ]
-    ).type(dtype)
+        ],
+        device=device,
+        dtype=dtype,
+    )
 
 
-def _load_c6(dtype: torch.dtype = torch.float) -> Tensor:
+def _load_c6(
+    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+) -> Tensor:
     """
     Load reference C6 coefficients from file and fill them into a tensor
     """
@@ -138,13 +144,14 @@ def _load_c6(dtype: torch.dtype = torch.float) -> Tensor:
 
     import numpy as np
 
-    ref = torch.from_numpy(
-        np.load(op.join(op.dirname(__file__), "reference-c6.npy"))
-    ).type(dtype)
+    path = op.join(op.dirname(__file__), "reference-c6.npy")
+    ref = torch.from_numpy(np.load(path)).type(dtype).to(device)
 
     n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
-    c6 = torch.zeros((n_element, n_element, n_reference, n_reference), dtype=dtype)
+    c6 = torch.zeros(
+        (n_element, n_element, n_reference, n_reference), dtype=dtype, device=device
+    )
 
     for i in range(1, n_element):
         for j in range(1, n_element):
@@ -176,12 +183,20 @@ class Reference:
         self,
         cn: Optional[Tensor] = None,
         c6: Optional[Tensor] = None,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
     ):
         if cn is None:
-            cn = _load_cn()
+            cn = _load_cn(
+                dtype if dtype is not None else torch.float,
+                device=device,
+            )
         self.cn = cn
         if c6 is None:
-            c6 = _load_c6()
+            c6 = _load_c6(
+                dtype if dtype is not None else torch.float,
+                device=device,
+            )
         self.c6 = c6
 
         self.__dtype = self.c6.dtype

@@ -49,3 +49,13 @@ class Molecule(TypedDict):
 
     positions: Tensor
     """Tensor of 3D coordinates of shape (n, 3)"""
+
+
+class DD(TypedDict):
+    """Collection of torch.device and torch.dtype."""
+
+    device: Union[torch.device, None]
+    """Device on which a tensor lives."""
+
+    dtype: torch.dtype
+    """Floating point precision of a tensor."""
