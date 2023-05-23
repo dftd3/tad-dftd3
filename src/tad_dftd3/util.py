@@ -34,13 +34,12 @@ from .typing import (
     Union,
 )
 
-# pragma: no cover
-if __torch_version__ < (2, 0, 0):
+if __torch_version__ < (2, 0, 0): # pragma: no cover
     try:
         from functorch import jacrev  # type: ignore
     except ModuleNotFoundError:
         jacrev = None
-else:
+else: # pragma: no cover
     from torch.func import jacrev  # type: ignore
 
 
