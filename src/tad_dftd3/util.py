@@ -34,7 +34,8 @@ from .typing import (
     Union,
 )
 
-if __torch_version__ < (2, 0, 0):  # pragma: no cover
+# pragma: no cover
+if __torch_version__ < (2, 0, 0):
     try:
         from functorch import jacrev  # type: ignore
     except ModuleNotFoundError:
@@ -254,8 +255,9 @@ def jacobian(f: Callable[..., Tensor], argnums: int = 0) -> Any:
     argnums : int, optional
         The variable w.r.t. which will be differentiated. Defaults to 0.
     """
-    if jacrev is None:
+    if jacrev is None:  # pragma: no cover
         raise ModuleNotFoundError("PyTorch's `functorch` is not installed.")
+
     return jacrev(f, argnums=argnums)  # type: ignore
 
 
