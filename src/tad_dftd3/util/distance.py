@@ -20,7 +20,7 @@ Functions for calculating the cartesian distance of two vectors.
 """
 import torch
 
-from ..typing import Tensor
+from ..typing import Optional, Tensor
 
 
 def euclidean_dist_quadratic_expansion(x: Tensor, y: Tensor) -> Tensor:
@@ -110,7 +110,7 @@ def cdist_direct_expansion(x: Tensor, y: Tensor, p: int = 2) -> Tensor:
     return torch.pow(torch.clamp(distances, min=eps), 1.0 / p)
 
 
-def cdist(x: Tensor, y: Tensor | None = None, p: int = 2) -> Tensor:
+def cdist(x: Tensor, y: Optional[Tensor] = None, p: int = 2) -> Tensor:
     """
     Wrapper for cartesian distance computation.
 

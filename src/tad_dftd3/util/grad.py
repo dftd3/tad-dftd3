@@ -23,7 +23,7 @@ import torch
 from ..__version__ import __torch_version__
 from ..typing import Any, Callable, Tensor, Tuple
 
-if __torch_version__ < (2, 0, 0):  # type: ignore, pragma: no cover
+if __torch_version__ < (2, 0, 0):  # type: ignore # pragma: no cover
     try:
         from functorch import jacrev  # type: ignore
     except ModuleNotFoundError:
@@ -48,7 +48,7 @@ def jac(f: Callable[..., Tensor], argnums: int = 0) -> Any:
 
     if jacrev is None:  # pragma: no cover
 
-        def wrap(*inps: Tuple[Any, ...]) -> Any:
+        def wrap(*inps: Any) -> Any:
             """
             Wrapper to imitate the calling signature of functorch's `jacrev`
             with `torch.autograd.functional.jacobian`.
@@ -84,7 +84,7 @@ def jac(f: Callable[..., Tensor], argnums: int = 0) -> Any:
             def _f(arg: Tensor) -> Tensor:
                 return f(*(*before, arg, *after))
 
-            return jacobian(_f, inputs=diffarg)  # type: ignore, pylint: disable=used-before-assignment
+            return jacobian(_f, inputs=diffarg)  # type: ignore # pylint: disable=used-before-assignment
 
         return wrap
 

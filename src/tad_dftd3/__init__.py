@@ -74,8 +74,6 @@ tensor(-0.0034288)
 """
 import torch
 
-from .util import misc
-
 from . import damping, data, disp, model, ncoord, reference
 from .typing import (
     DD,
@@ -86,6 +84,7 @@ from .typing import (
     Tensor,
     WeightingFunction,
 )
+from .util import misc
 
 
 def dftd3(
