@@ -23,6 +23,9 @@ import torch
 from ..__version__ import __torch_version__
 from ..typing import Any, Callable, Tensor, Tuple
 
+__all__ = ["jac", "hessian"]
+
+
 if __torch_version__ < (2, 0, 0):  # type: ignore # pragma: no cover
     try:
         from functorch import jacrev  # type: ignore

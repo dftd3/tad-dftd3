@@ -23,6 +23,8 @@ import torch
 
 from ..typing import List, Optional, Size, Tensor, TensorOrTensors, Union
 
+__all__ = ["real_atoms", "real_pairs", "real_triples", "pack", "to_number"]
+
 
 def real_atoms(numbers: Tensor) -> Tensor:
     return numbers != 0
@@ -81,6 +83,7 @@ def pack(
 
     if size is None:
         size = torch.tensor([i.shape for i in tensors]).max(0).values.tolist()
+    assert size is not None
 
     padded = torch.full((_count, *size), value, dtype=_dtype, device=_device)
 

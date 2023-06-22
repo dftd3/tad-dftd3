@@ -22,6 +22,8 @@ import torch
 
 from ..typing import Optional, Tensor
 
+__all__ = ["cdist"]
+
 
 def euclidean_dist_quadratic_expansion(x: Tensor, y: Tensor) -> Tensor:
     """
