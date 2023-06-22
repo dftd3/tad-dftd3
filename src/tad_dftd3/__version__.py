@@ -19,6 +19,4 @@ import torch
 
 __version__ = "0.1.2"
 
-__torch_version__ = tuple(
-    int(x) for x in torch.__version__.split("+", maxsplit=1)[0].split(".")
-)
+__torch_version__ = torch.__version__

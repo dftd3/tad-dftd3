@@ -27,8 +27,8 @@ def test_all(dtype: torch.dtype) -> None:
     x = torch.randn(2, 3, 4, dtype=dtype)
 
     d1 = util.cdist(x)
-    d2 = util.cdist_direct_expansion(x, x, p=2)
-    d3 = util.euclidean_dist_quadratic_expansion(x, x)
+    d2 = util.distance.cdist_direct_expansion(x, x, p=2)
+    d3 = util.distance.euclidean_dist_quadratic_expansion(x, x)
 
     assert pytest.approx(d1) == d2
     assert pytest.approx(d2) == d3

@@ -24,7 +24,8 @@ the calculation of atom-resolved dispersion energies.
 
    This project is still in early development and the API is subject to change.
    Contributions are welcome, please checkout our
-   `contributing guidelines <https://github.com/dftd3/tad-dftd3/blob/main/CONTRIBUTING.md>`_.
+   `contributing guidelines <https://github.com/dftd3/tad-dftd3/blob/main/\
+    CONTRIBUTING.md>`_.
 
 
 Example
@@ -73,7 +74,7 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import damping, data, disp, model, ncoord, reference, util
+from . import damping, data, disp, model, ncoord, reference
 from .typing import (
     DD,
     CountingFunction,
@@ -83,6 +84,7 @@ from .typing import (
     Tensor,
     WeightingFunction,
 )
+from .util import misc
 
 
 def dftd3(

@@ -16,8 +16,6 @@
 Test the utility functions.
 """
 
-
-import pytest
 import torch
 
 from tad_dftd3 import util
@@ -220,35 +218,3 @@ def test_pack() -> None:
     # different axis
     packed = util.pack([mol1, mol2], axis=-1)
     assert (packed == ref.T).all()
-
-
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_cdist(dtype: torch.dtype) -> None:
-    x = torch.randn(2, 3, 4, dtype=dtype)
-
-    d1 = util.cdist(x)
-    d2 = util.cdist_direct_expansion(x, x, p=2)
-    d3 = util.euclidean_dist_quadratic_expansion(x, x)
-
-    assert pytest.approx(d1) == d2
-    assert pytest.approx(d2) == d3
-    assert pytest.approx(d3) == d1
-
-
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_cdist_direct_expansion(dtype: torch.dtype) -> None:
-    x = torch.randn(2, 4, 5, dtype=dtype)
-    y = torch.randn(2, 4, 5, dtype=dtype)
-
-    d1 = util.cdist(x, y, p=3)
-    d2 = torch.cdist(x, y, p=3)
-
-    assert pytest.approx(d1) == d2
-
-
-def test_exception() -> None:
-    # pylint: disable=import-outside-toplevel
-    from tad_dftd3 import exception
-
-    with pytest.raises(exception.DFTD3Error):
-        raise exception.DFTD3Error
