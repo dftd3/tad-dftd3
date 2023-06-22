@@ -17,6 +17,6 @@ Version module for tad_dftd3.
 """
 import torch
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __torch_version__ = torch.__version__
