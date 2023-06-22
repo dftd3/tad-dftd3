@@ -34,7 +34,7 @@ else:  # pragma: no cover
     from torch.func import jacrev  # type: ignore
 
 
-def jac(f: Callable[..., Tensor], argnums: int = 0) -> Any:
+def jac(f: Callable[..., Tensor], argnums: int = 0) -> Any:  # pragma: no cover
     """
     Wrapper for Jacobian calcluation.
 
@@ -46,7 +46,7 @@ def jac(f: Callable[..., Tensor], argnums: int = 0) -> Any:
         The variable w.r.t. which will be differentiated. Defaults to 0.
     """
 
-    if jacrev is None:  # pragma: no cover
+    if jacrev is None:
 
         def wrap(*inps: Any) -> Any:
             """
@@ -127,7 +127,7 @@ def hessian(
     def _grad(*inps: Tuple[Any, ...]) -> Tensor:
         e = f(*inps).sum()
 
-        if not isinstance(inps[argnums], Tensor):
+        if not isinstance(inps[argnums], Tensor):  # pragma: no cover
             raise RuntimeError(
                 f"The {argnums}'th input parameter must be a tensor but is of "
                 f"type '{type(inps[argnums])}'."
