@@ -150,7 +150,7 @@ def _load_c6(
     n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
     c6 = torch.zeros(
-        (n_element, n_element, n_reference, n_reference), dtype=dtype, device=device
+        (n_element, n_element, n_reference, n_reference), dtype=ref.dtype, device=device
     )
 
     for i in range(1, n_element):
@@ -188,15 +188,12 @@ class Reference:
     ):
         if cn is None:
             cn = _load_cn(
-                dtype if dtype is not None else torch.float,
+                dtype if dtype is not None else torch.double,
                 device=device,
             )
         self.cn = cn
         if c6 is None:
-            c6 = _load_c6(
-                dtype if dtype is not None else torch.float,
-                device=device,
-            )
+            c6 = _load_c6(device=device)
         self.c6 = c6
 
         self.__dtype = self.c6.dtype
