@@ -21,7 +21,7 @@ Data arrays for atomic constants like covalent radii or van-der-Waals radii.
 import torch
 
 from . import constants
-from .typing import Tensor
+from ._typing import Tensor
 
 # fmt: off
 covalent_rad_2009 = constants.ANGSTROM_TO_BOHR * torch.tensor([

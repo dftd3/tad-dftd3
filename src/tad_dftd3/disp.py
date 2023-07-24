@@ -55,8 +55,8 @@ tensor(-0.0003964)
 import torch
 
 from . import data, defaults
+from ._typing import DD, Any, DampingFunction, Dict, Optional, Tensor
 from .damping import dispersion_atm, rational_damping
-from .typing import DD, Any, DampingFunction, Dict, Optional, Tensor
 from .util import cdist, real_pairs
 
 

@@ -41,8 +41,8 @@ tensor([[10.4130478,  5.4368815,  5.4368815],
 """
 import torch
 
+from ._typing import Any, Tensor, WeightingFunction
 from .reference import Reference
-from .typing import Any, Tensor, WeightingFunction
 from .util import real_atoms
 
 

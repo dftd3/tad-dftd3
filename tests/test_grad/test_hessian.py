@@ -21,7 +21,7 @@ import pytest
 import torch
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Tensor
+from tad_dftd3._typing import Tensor
 
 from ..samples import samples
 from ..utils import reshape_fortran

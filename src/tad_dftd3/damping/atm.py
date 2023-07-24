@@ -33,7 +33,7 @@ Axilrod-Teller-Muto dispersion term.
 import torch
 
 from .. import defaults
-from ..typing import DD, Tensor
+from .._typing import DD, Tensor
 from ..util import cdist, real_pairs, real_triples
 
 

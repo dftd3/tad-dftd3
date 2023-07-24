@@ -23,7 +23,7 @@ import os.path as op
 
 import torch
 
-from .typing import Any, NoReturn, Optional, Tensor
+from ._typing import Any, NoReturn, Optional, Tensor
 
 
 def _load_cn(

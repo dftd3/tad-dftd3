@@ -18,7 +18,7 @@ Collection of utility functions for testing.
 
 import torch
 
-from tad_dftd3.typing import Dict, Size, Tensor
+from tad_dftd3._typing import Dict, Size, Tensor
 
 
 def merge_nested_dicts(a: Dict[str, Dict], b: Dict[str, Dict]) -> Dict:  # type: ignore[type-arg]

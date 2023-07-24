@@ -21,7 +21,7 @@ symbols and atomic numbers.
 """
 import torch
 
-from ..typing import List, Optional, Size, Tensor, TensorOrTensors, Union
+from .._typing import List, Optional, Size, Tensor, TensorOrTensors, Union
 
 __all__ = ["real_atoms", "real_pairs", "real_triples", "pack", "to_number"]
 

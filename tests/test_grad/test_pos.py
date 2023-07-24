@@ -22,7 +22,7 @@ import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Callable, Tensor, Tuple
+from tad_dftd3._typing import Callable, Tensor, Tuple
 
 from ..samples import samples
 

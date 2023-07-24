@@ -28,7 +28,7 @@ damping.
 import torch
 
 from .. import defaults
-from ..typing import DD, Dict, Tensor
+from .._typing import DD, Dict, Tensor
 
 
 def rational_damping(
