@@ -27,7 +27,7 @@ from ._typing import Any, NoReturn, Optional, Tensor
 
 
 def _load_cn(
-    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
     return torch.tensor(
         [
@@ -133,7 +133,7 @@ def _load_cn(
 
 
 def _load_c6(
-    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
     """
     Load reference C6 coefficients from file and fill them into a tensor
@@ -188,12 +188,14 @@ class Reference:
     ):
         if cn is None:
             cn = _load_cn(
-                dtype if dtype is not None else torch.double,
+                dtype=dtype if dtype is not None else torch.double,
                 device=device,
             )
         self.cn = cn
         if c6 is None:
-            c6 = _load_c6(device=device)
+            c6 = _load_c6(
+                dtype=dtype if dtype is not None else torch.double, device=device
+            )
         self.c6 = c6
 
         self.__dtype = self.c6.dtype

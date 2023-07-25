@@ -4569,7 +4569,7 @@ _vdw_rad_d3 = constants.ANGSTROM_TO_BOHR * torch.tensor(
 )  # fmt: off
 
 
-def _load_vdw_rad_d3(dtype: torch.dtype = torch.float) -> Tensor:
+def _load_vdw_rad_d3(dtype: torch.dtype = torch.double) -> Tensor:
     # pylint: disable=import-outside-toplevel
     import math
 
