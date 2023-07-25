@@ -198,6 +198,85 @@ def test_real_triples_batch() -> None:
     assert (mask == ref).all()
 
 
+def test_real_triples_self_single() -> None:
+    numbers = torch.tensor([8, 1, 1])  # H2O
+
+    ref = torch.tensor(
+        [
+            [
+                [False, False, False],
+                [False, False, True],
+                [False, True, False],
+            ],
+            [
+                [False, False, True],
+                [False, False, False],
+                [True, False, False],
+            ],
+            [
+                [False, True, False],
+                [True, False, False],
+                [False, False, False],
+            ],
+        ],
+        dtype=torch.bool,
+    )
+
+    mask = util.real_triples(numbers, self=False)
+    assert (mask == ref).all()
+
+
+def test_real_triples_self_batch() -> None:
+    numbers = torch.tensor(
+        [
+            [1, 1, 0],  # H2
+            [8, 1, 1],  # H2O
+        ],
+    )
+
+    ref = torch.tensor(
+        [
+            [
+                [
+                    [False, False, False],
+                    [False, False, False],
+                    [False, False, False],
+                ],
+                [
+                    [False, False, False],
+                    [False, False, False],
+                    [False, False, False],
+                ],
+                [
+                    [False, False, False],
+                    [False, False, False],
+                    [False, False, False],
+                ],
+            ],
+            [
+                [
+                    [False, False, False],
+                    [False, False, True],
+                    [False, True, False],
+                ],
+                [
+                    [False, False, True],
+                    [False, False, False],
+                    [True, False, False],
+                ],
+                [
+                    [False, True, False],
+                    [True, False, False],
+                    [False, False, False],
+                ],
+            ],
+        ]
+    )
+
+    mask = util.real_triples(numbers, self=False)
+    assert (mask == ref).all()
+
+
 def test_pack() -> None:
     mol1 = torch.tensor([1, 1])  # H2
     mol2 = torch.tensor([8, 1, 1])  # H2O

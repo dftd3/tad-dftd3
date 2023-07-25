@@ -38,11 +38,39 @@ def real_pairs(numbers: Tensor, diagonal: bool = False) -> Tensor:
     return mask
 
 
-def real_triples(numbers: Tensor, diagonal: bool = False) -> Tensor:
+def real_triples(
+    numbers: torch.Tensor, diagonal: bool = False, self: bool = True
+) -> Tensor:
+    """
+    Create a mask for triples from atomic numbers.
+
+    Parameters
+    ----------
+    numbers : torch.Tensor
+        Atomic numbers for all atoms.
+    diagonal : bool, optional
+        Flag for also writing `False` to the space diagonal, i.e., to all
+        triples with the same indices. Defaults to `False`, i.e., writing False
+        to the diagonal.
+    self : bool, optional
+        Flag for also writing `False` to all triples where at least two indices are identical. Defaults to `True`, i.e., not writing `False`.
+
+    Returns
+    -------
+    Tensor
+        Mask.
+    """
     real = real_pairs(numbers, diagonal=True)
     mask = real.unsqueeze(-3) * real.unsqueeze(-2) * real.unsqueeze(-1)
+
     if diagonal is False:
         mask *= ~torch.diag_embed(torch.ones_like(real))
+
+    if self is False:
+        mask *= ~torch.diag_embed(torch.ones_like(real), offset=0, dim1=-3, dim2=-2)
+        mask *= ~torch.diag_embed(torch.ones_like(real), offset=0, dim1=-3, dim2=-1)
+        mask *= ~torch.diag_embed(torch.ones_like(real), offset=0, dim1=-2, dim2=-1)
+
     return mask
 
 
