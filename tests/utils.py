@@ -23,10 +23,12 @@ from tad_dftd3._typing import (
     Any,
     Callable,
     Dict,
+    Optional,
     Protocol,
     Size,
     Tensor,
     TensorOrTensors,
+    Union,
 )
 
 from .conftest import FAST_MODE
@@ -112,7 +114,7 @@ class _GradcheckFunction(Protocol):
     Type annotation for gradcheck function.
     """
 
-    def __call__(
+    def __call__(  # type: ignore
         self,
         func: Callable[..., TensorOrTensors],
         inputs: TensorOrTensors,
@@ -139,11 +141,11 @@ class _GradgradcheckFunction(Protocol):
     Type annotation for gradgradcheck function.
     """
 
-    def __call__(
+    def __call__(  # type: ignore
         self,
         func: Callable[..., TensorOrTensors],
         inputs: TensorOrTensors,
-        grad_outputs: TensorOrTensors | None = None,
+        grad_outputs: Optional[TensorOrTensors] = None,
         *,
         eps: float = 1e-6,
         atol: float = 1e-5,
@@ -162,7 +164,7 @@ class _GradgradcheckFunction(Protocol):
 
 
 def _wrap_gradcheck(
-    gradcheck_func: _GradcheckFunction | _GradgradcheckFunction,
+    gradcheck_func: Union[_GradcheckFunction, _GradgradcheckFunction],
     func: Callable[..., TensorOrTensors],
     diffvars: TensorOrTensors,
     **kwargs: Any,
