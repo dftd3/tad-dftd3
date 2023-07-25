@@ -41,16 +41,12 @@ tensor([[10.4130478,  5.4368815,  5.4368815],
 """
 import torch
 
+from ._typing import Any, Tensor, WeightingFunction
 from .reference import Reference
-from .typing import Any, Tensor, WeightingFunction
 from .util import real_atoms
 
 
-def atomic_c6(
-    numbers: Tensor,
-    weights: Tensor,
-    reference: Reference,
-) -> Tensor:
+def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
     """
     Calculate atomic dispersion coefficients.
 
@@ -132,11 +128,11 @@ def weight_references(
     # exactly one. This might, however, not be the case and ultimately cause
     # larger deviations in the final values.
     #
-    # If the values become even smaller, we may have to evaluate this portion
-    # in double precision to retain the correct results. This must be done in
-    # the D4 variant because the weighting functions contains higher powers,
-    # which lead to values down to 1e-300.
-    dcn = reference.cn[numbers] - cn.unsqueeze(-1)
+    # This must be done in the D4 variant because the weighting functions
+    # contains higher powers, which lead to values down to 1e-300.
+    # Since there are also cases in D3, we have to evaluate this portion
+    # in double precision to retain the correct results and avoid nan's.
+    dcn = (reference.cn[numbers] - cn.unsqueeze(-1)).type(torch.double)
     weights = torch.where(
         mask,
         weighting_function(dcn, **kwargs),
@@ -159,4 +155,4 @@ def weight_references(
         torch.sum(weights, dim=-1),
         torch.tensor(torch.finfo(dcn.dtype).eps, device=cn.device, dtype=dcn.dtype),
     )
-    return weights / norms.unsqueeze(-1)
+    return (weights / norms.unsqueeze(-1)).type(cn.dtype)

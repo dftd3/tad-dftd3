@@ -24,6 +24,7 @@ from typing import (
     List,
     NoReturn,
     Optional,
+    Protocol,
     Tuple,
     TypedDict,
     Union,

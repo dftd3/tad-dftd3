@@ -21,7 +21,7 @@ Utilities for calculating gradients and Hessians.
 import torch
 
 from ..__version__ import __torch_version__
-from ..typing import Any, Callable, Tensor, Tuple
+from .._typing import Any, Callable, Tensor, Tuple
 
 __all__ = ["jac", "hessian"]
 

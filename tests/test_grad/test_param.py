@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import pytest
 import torch
-from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
 from tad_dftd3 import dftd3, util
-from tad_dftd3.typing import Callable, Tensor, Tuple
+from tad_dftd3._typing import Callable, Tensor, Tuple
 
 from ..samples import samples
+from ..utils import dgradcheck, dgradgradcheck
 
 sample_list = ["LiH", "SiH4", "MB16_43_01"]
 
@@ -66,7 +66,7 @@ def test_gradcheck(dtype: torch.dtype, name: str) -> None:
     gradient from `torch.autograd.gradcheck`.
     """
     func, diffvars = gradchecker(dtype, name)
-    assert gradcheck(func, diffvars, atol=tol)
+    assert dgradcheck(func, diffvars, atol=tol)
 
 
 @pytest.mark.grad
@@ -78,7 +78,7 @@ def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
     gradient from `torch.autograd.gradgradcheck`.
     """
     func, diffvars = gradchecker(dtype, name)
-    assert gradgradcheck(func, diffvars, atol=tol)
+    assert dgradgradcheck(func, diffvars, atol=tol)
 
 
 def gradchecker_batch(
@@ -127,7 +127,7 @@ def test_gradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     gradient from `torch.autograd.gradcheck`.
     """
     func, diffvars = gradchecker_batch(dtype, name1, name2)
-    assert gradcheck(func, diffvars, atol=tol)
+    assert dgradcheck(func, diffvars, atol=tol)
 
 
 @pytest.mark.grad
@@ -140,4 +140,4 @@ def test_gradgradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None
     gradient from `torch.autograd.gradgradcheck`.
     """
     func, diffvars = gradchecker_batch(dtype, name1, name2)
-    assert gradgradcheck(func, diffvars, atol=tol)
+    assert dgradgradcheck(func, diffvars, atol=tol)

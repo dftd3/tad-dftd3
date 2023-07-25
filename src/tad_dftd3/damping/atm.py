@@ -33,7 +33,7 @@ Axilrod-Teller-Muto dispersion term.
 import torch
 
 from .. import defaults
-from ..typing import DD, Tensor
+from .._typing import DD, Tensor
 from ..util import cdist, real_pairs, real_triples
 
 
@@ -84,9 +84,11 @@ def dispersion_atm(
     srvdw = rs9 * rvdw
 
     mask_pairs = real_pairs(numbers, diagonal=False)
-    mask_triples = real_triples(numbers, diagonal=False)
+    mask_triples = real_triples(numbers, self=False)
 
     eps = torch.tensor(torch.finfo(positions.dtype).eps, **dd)
+    zero = torch.tensor(0.0, **dd)
+    one = torch.tensor(1.0, **dd)
 
     # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)
     c9 = s9 * torch.sqrt(
@@ -120,9 +122,25 @@ def dispersion_atm(
     r3 = torch.where(mask_triples, r1 * r2, eps)
     r5 = torch.where(mask_triples, r2 * r3, eps)
 
-    fdamp = 1.0 / (1.0 + 6.0 * (r0 / r1) ** ((alp + 2.0) / 3.0))
+    # dividing by tiny numbers leads to huge numbers, which result in NaN's
+    # upon exponentiation in the subsequent step
+    mask = real_triples(numbers, self=False)
+    base = r0 / torch.where(mask_triples, r1, one)
 
-    s = (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik)
+    # to fix the previous mask, we mask again (not strictly necessary because
+    # `ang` is also masked and we later multiply with `ang`)
+    fdamp = torch.where(
+        mask_triples,
+        1.0 / (1.0 + 6.0 * base ** ((alp + 2.0) / 3.0)),
+        zero,
+    )
+
+    s = torch.where(
+        mask,
+        (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik),
+        zero,
+    )
+
     ang = torch.where(
         mask_triples * (r2ij <= cutoff2) * (r2jk <= cutoff2) * (r2jk <= cutoff2),
         0.375 * s / r5 + 1.0 / r3,

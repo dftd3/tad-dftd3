@@ -156,7 +156,7 @@ def test_reference_fail() -> None:
 
     # wrong dtype
     with pytest.raises(RuntimeError):
-        reference.Reference(c6=c6.type(torch.float64))
+        reference.Reference(c6=c6.type(torch.float16))
 
     # wrong device
     if torch.cuda.is_available() is True:
@@ -172,5 +172,5 @@ def test_reference_fail() -> None:
 
     assert (
         repr(reference.Reference())
-        == "Reference(n_element=95, n_reference=5, dtype=torch.float32, device=cpu)"
+        == "Reference(n_element=95, n_reference=5, dtype=torch.float64, device=cpu)"
     )

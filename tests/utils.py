@@ -17,8 +17,21 @@ Collection of utility functions for testing.
 """
 
 import torch
+from torch.autograd.gradcheck import gradcheck, gradgradcheck
 
-from tad_dftd3.typing import Dict, Size, Tensor
+from tad_dftd3._typing import (
+    Any,
+    Callable,
+    Dict,
+    Optional,
+    Protocol,
+    Size,
+    Tensor,
+    TensorOrTensors,
+    Union,
+)
+
+from .conftest import FAST_MODE
 
 
 def merge_nested_dicts(a: Dict[str, Dict], b: Dict[str, Dict]) -> Dict:  # type: ignore[type-arg]
@@ -94,3 +107,120 @@ def reshape_fortran(x: Tensor, shape: Size) -> Tensor:
     if len(x.shape) > 0:
         x = x.permute(*reversed(range(len(x.shape))))
     return x.reshape(*reversed(shape)).permute(*reversed(range(len(shape))))
+
+
+class _GradcheckFunction(Protocol):
+    """
+    Type annotation for gradcheck function.
+    """
+
+    def __call__(  # type: ignore
+        self,
+        func: Callable[..., TensorOrTensors],
+        inputs: TensorOrTensors,
+        *,
+        eps: float = 1e-6,
+        atol: float = 1e-5,
+        rtol: float = 1e-3,
+        raise_exception: bool = True,
+        check_sparse_nnz: bool = False,
+        nondet_tol: float = 0.0,
+        check_undefined_grad: bool = True,
+        check_grad_dtypes: bool = False,
+        check_batched_grad: bool = False,
+        check_batched_forward_grad: bool = False,
+        check_forward_ad: bool = False,
+        check_backward_ad: bool = True,
+        fast_mode: bool = False,
+    ) -> bool:
+        ...
+
+
+class _GradgradcheckFunction(Protocol):
+    """
+    Type annotation for gradgradcheck function.
+    """
+
+    def __call__(  # type: ignore
+        self,
+        func: Callable[..., TensorOrTensors],
+        inputs: TensorOrTensors,
+        grad_outputs: Optional[TensorOrTensors] = None,
+        *,
+        eps: float = 1e-6,
+        atol: float = 1e-5,
+        rtol: float = 1e-3,
+        gen_non_contig_grad_outputs: bool = False,
+        raise_exception: bool = True,
+        nondet_tol: float = 0.0,
+        check_undefined_grad: bool = True,
+        check_grad_dtypes: bool = False,
+        check_batched_grad: bool = False,
+        check_fwd_over_rev: bool = False,
+        check_rev_over_rev: bool = True,
+        fast_mode: bool = False,
+    ) -> bool:
+        ...
+
+
+def _wrap_gradcheck(
+    gradcheck_func: Union[_GradcheckFunction, _GradgradcheckFunction],
+    func: Callable[..., TensorOrTensors],
+    diffvars: TensorOrTensors,
+    **kwargs: Any,
+) -> bool:
+    fast_mode = kwargs.pop("fast_mode", FAST_MODE)
+    try:
+        assert gradcheck_func(func, diffvars, fast_mode=fast_mode, **kwargs)
+    finally:
+        if isinstance(diffvars, Tensor):
+            diffvars.detach_()
+        else:
+            for diffvar in diffvars:
+                diffvar.detach_()
+
+    return True
+
+
+def dgradcheck(
+    func: Callable[..., TensorOrTensors], diffvars: TensorOrTensors, **kwargs: Any
+) -> bool:
+    """
+    Wrapper for `torch.autograd.gradcheck` that detaches the differentiated
+    variables after the check.
+
+    Parameters
+    ----------
+    func : Callable[..., TensorOrTensors]
+        Forward function.
+    diffvars : TensorOrTensors
+        Variables w.r.t. which we differentiate.
+
+    Returns
+    -------
+    bool
+        Status of check.
+    """
+    return _wrap_gradcheck(gradcheck, func, diffvars, **kwargs)
+
+
+def dgradgradcheck(
+    func: Callable[..., TensorOrTensors], diffvars: TensorOrTensors, **kwargs: Any
+) -> bool:
+    """
+    Wrapper for `torch.autograd.gradgradcheck` that detaches the differentiated
+    variables after the check.
+
+    Parameters
+    ----------
+    func : Callable[..., TensorOrTensors]
+        Forward function.
+    diffvars : TensorOrTensors
+        Variables w.r.t. which we differentiate.
+
+    Returns
+    -------
+    bool
+        Status of check.
+    """
+    return _wrap_gradcheck(gradgradcheck, func, diffvars, **kwargs)

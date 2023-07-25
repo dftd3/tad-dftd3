@@ -20,7 +20,7 @@ Functions for calculating the cartesian distance of two vectors.
 """
 import torch
 
-from ..typing import Optional, Tensor
+from .._typing import Optional, Tensor
 
 __all__ = ["cdist"]
 

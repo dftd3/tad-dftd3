@@ -23,11 +23,11 @@ import os.path as op
 
 import torch
 
-from .typing import Any, NoReturn, Optional, Tensor
+from ._typing import Any, NoReturn, Optional, Tensor
 
 
 def _load_cn(
-    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
     return torch.tensor(
         [
@@ -133,7 +133,7 @@ def _load_cn(
 
 
 def _load_c6(
-    dtype: torch.dtype = torch.float, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
     """
     Load reference C6 coefficients from file and fill them into a tensor
@@ -150,7 +150,7 @@ def _load_c6(
     n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
     c6 = torch.zeros(
-        (n_element, n_element, n_reference, n_reference), dtype=dtype, device=device
+        (n_element, n_element, n_reference, n_reference), dtype=ref.dtype, device=device
     )
 
     for i in range(1, n_element):
@@ -188,14 +188,13 @@ class Reference:
     ):
         if cn is None:
             cn = _load_cn(
-                dtype if dtype is not None else torch.float,
+                dtype=dtype if dtype is not None else torch.double,
                 device=device,
             )
         self.cn = cn
         if c6 is None:
             c6 = _load_c6(
-                dtype if dtype is not None else torch.float,
-                device=device,
+                dtype=dtype if dtype is not None else torch.double, device=device
             )
         self.c6 = c6
 
