@@ -4573,7 +4573,7 @@ def _load_vdw_rad_d3(dtype: torch.dtype = torch.double) -> Tensor:
     # pylint: disable=import-outside-toplevel
     import math
 
-    n_element = (math.isqrt(8 * _vdw_rad_d3.shape[0] + 1) - 1) // 2
+    n_element = (math.isqrt(8 * _vdw_rad_d3.shape[0] + 1) - 1) // 2 + 1
 
     rad = torch.zeros((n_element, n_element), dtype=dtype)
     for i in range(1, n_element):
