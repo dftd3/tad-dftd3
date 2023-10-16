@@ -35,9 +35,9 @@ Examples
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
 >>> torch.set_printoptions(precision=7)
 >>> print(c6)
-tensor([[10.4130478,  5.4368815,  5.4368815],
-        [ 5.4368811,  3.0930152,  3.0930152],
-        [ 5.4368811,  3.0930152,  3.0930152]], dtype=torch.float64)
+tensor([[10.4130471,  5.4368822,  5.4368822],
+        [ 5.4368822,  3.0930154,  3.0930154],
+        [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
 import torch
 
