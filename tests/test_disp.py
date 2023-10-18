@@ -73,29 +73,33 @@ def test_disp2_single(dtype: torch.dtype) -> None:
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_disp2_batch(dtype: torch.dtype) -> None:
-    sample1, sample2 = samples["PbH4-BiH3"], samples["C6H5I-CH3SH"]
+    sample1, sample2, sample3 = samples["PbH4-BiH3"], samples["C6H5I-CH3SH"], samples["AmF3"]
     numbers = util.pack(
         (
             sample1["numbers"],
             sample2["numbers"],
+            sample3["numbers"],
         )
     )
     positions = util.pack(
         (
             sample1["positions"].type(dtype),
             sample2["positions"].type(dtype),
+            sample3["positions"].type(dtype),
         )
     )
     c6 = util.pack(
         (
             sample1["c6"].type(dtype),
             sample2["c6"].type(dtype),
+            sample3["c6"].type(dtype),
         )
     )
     ref = util.pack(
         (
             sample1["disp2"].type(dtype),
             sample2["disp2"].type(dtype),
+            sample3["disp2"].type(dtype),
         )
     )
 
@@ -112,7 +116,7 @@ def test_disp2_batch(dtype: torch.dtype) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
+@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01", "AmF3"])
 def test_atm_single(dtype: torch.dtype, name: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
@@ -151,32 +155,37 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name1", ["SiH4", "MB16_43_01"])
 @pytest.mark.parametrize("name2", ["SiH4"])
-def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("name3", ["AmF3"])
+def test_atm_batch(dtype: torch.dtype, name1: str, name2: str, name3: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
-    sample1, sample2 = samples[name1], samples[name2]
+    sample1, sample2, sample3 = samples[name1], samples[name2], samples[name3]
     numbers = util.pack(
         [
             sample1["numbers"],
             sample2["numbers"],
+            sample3["numbers"],
         ]
     )
     positions = util.pack(
         [
             sample1["positions"].type(dtype),
             sample2["positions"].type(dtype),
+            sample3["positions"].type(dtype),
         ]
     )
     c6 = util.pack(
         [
             sample1["c6"].type(dtype),
             sample2["c6"].type(dtype),
+            sample3["c6"].type(dtype),
         ]
     )
     ref = util.pack(
         [
             (sample1["disp3"] - sample1["disp2"]).type(dtype),
             (sample2["disp3"] - sample2["disp2"]).type(dtype),
+            (sample3["disp3"] - sample3["disp2"]).type(dtype),
         ]
     )
 
@@ -207,7 +216,7 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
+@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01", "AmF3"])
 def test_full_single(dtype: torch.dtype, name: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
