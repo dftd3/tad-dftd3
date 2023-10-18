@@ -73,7 +73,11 @@ def test_disp2_single(dtype: torch.dtype) -> None:
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_disp2_batch(dtype: torch.dtype) -> None:
-    sample1, sample2, sample3 = samples["PbH4-BiH3"], samples["C6H5I-CH3SH"], samples["AmF3"]
+    sample1, sample2, sample3 = (
+        samples["PbH4-BiH3"],
+        samples["C6H5I-CH3SH"],
+        samples["AmF3"],
+    )
     numbers = util.pack(
         (
             sample1["numbers"],
