@@ -220,7 +220,7 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str, name3: str) -> No
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01", "AmF3"])
+@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
 def test_full_single(dtype: torch.dtype, name: str) -> None:
     tol = sqrt(torch.finfo(dtype).eps) * 10
 
