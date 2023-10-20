@@ -50,7 +50,7 @@ Example
 >>> energy = d3.disp.dispersion(numbers, positions, param, c6)
 >>> torch.set_printoptions(precision=7)
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
-tensor(-0.0003964)
+tensor(-0.0003964, dtype=torch.float64)
 """
 import torch
 
