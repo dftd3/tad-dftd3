@@ -172,5 +172,5 @@ def test_reference_fail() -> None:
 
     assert (
         repr(reference.Reference())
-        == "Reference(n_element=95, n_reference=5, dtype=torch.float64, device=cpu)"
+        == "Reference(n_element=104, n_reference=7, dtype=torch.float64, device=cpu)"
     )
