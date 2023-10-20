@@ -139,17 +139,14 @@ def dftd3(
     if ref is None:
         ref = reference.Reference(**dd)
     if rcov is None:
-        rcov = data.covalent_rad_d3[numbers].type(positions.dtype).to(positions.device)
+        rcov = data.covalent_rad_d3[numbers].to(**dd)
     if rvdw is None:
-        rvdw = (
-            data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-            .type(positions.dtype)
-            .to(positions.device)
-        )
+        rvdw = data.vdw_rad_d3[
+            numbers.unsqueeze(-1),
+            numbers.unsqueeze(-2),
+        ].to(**dd)
     if r4r2 is None:
-        r4r2 = (
-            data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
-        )
+        r4r2 = data.sqrt_z_r4_over_r2[numbers].to(**dd)
 
     cn = ncoord.coordination_number(numbers, positions, rcov, counting_function)
     weights = model.weight_references(numbers, cn, ref, weighting_function)

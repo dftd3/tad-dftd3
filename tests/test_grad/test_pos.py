@@ -26,7 +26,7 @@ from tad_dftd3._typing import Callable, Tensor, Tuple
 from ..samples import samples
 from ..utils import dgradcheck, dgradgradcheck
 
-sample_list = ["LiH", "SiH4", "MB16_43_01"]
+sample_list = ["LiH", "AmF3", "SiH4", "MB16_43_01"]
 
 tol = 1e-8
 
@@ -68,8 +68,6 @@ def test_gradcheck(dtype: torch.dtype, name: str) -> None:
     func, diffvars = gradchecker(dtype, name)
     assert dgradcheck(func, diffvars, atol=tol)
 
-    diffvars.detach_()
-
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
@@ -81,8 +79,6 @@ def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
     """
     func, diffvars = gradchecker(dtype, name)
     assert dgradgradcheck(func, diffvars, atol=tol)
-
-    diffvars.detach_()
 
 
 def gradchecker_batch(
@@ -133,8 +129,6 @@ def test_gradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     func, diffvars = gradchecker_batch(dtype, name1, name2)
     assert dgradcheck(func, diffvars, atol=tol)
 
-    diffvars.detach_()
-
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
@@ -147,8 +141,6 @@ def test_gradgradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None
     """
     func, diffvars = gradchecker_batch(dtype, name1, name2)
     assert dgradgradcheck(func, diffvars, atol=tol)
-
-    diffvars.detach_()
 
 
 @pytest.mark.grad
@@ -178,9 +170,9 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
     energy = torch.sum(dftd3(numbers, positions, param))
     (grad,) = torch.autograd.grad(energy, positions)
 
-    assert pytest.approx(ref, abs=tol) == grad
-
     positions.detach_()
+
+    assert pytest.approx(ref, abs=tol) == grad
 
 
 @pytest.mark.grad
@@ -213,6 +205,8 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
     assert positions.grad is not None
     grad_backward = positions.grad.clone()
 
-    assert pytest.approx(ref, abs=tol) == grad_backward
-
+    # also zero out gradients when using `.backward()`
     positions.detach_()
+    positions.grad.data.zero_()
+
+    assert pytest.approx(ref, abs=tol) == grad_backward
