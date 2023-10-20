@@ -24,11 +24,12 @@ from .samples import samples
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-def test_single(dtype: torch.dtype) -> None:
-    sample = samples["PbH4-BiH3"]
+@pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
+def test_single(dtype: torch.dtype, name: str) -> None:
+    sample = samples[name]
     numbers = sample["numbers"]
     positions = sample["positions"].type(dtype)
-    ref = sample["disp2"].type(dtype)
+    ref = (sample["disp2"] + sample["disp3"]).type(dtype)
 
     rcov = data.covalent_rad_d3[numbers]
     rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
@@ -36,9 +37,12 @@ def test_single(dtype: torch.dtype) -> None:
     cutoff = torch.tensor(50, dtype=dtype)
 
     param = {
-        "a1": positions.new_tensor(0.49484001),
-        "s8": positions.new_tensor(0.78981345),
-        "a2": positions.new_tensor(5.73083694),
+        "s6": torch.tensor(1.0),
+        "s8": torch.tensor(1.2576),
+        "s9": torch.tensor(1.0),
+        "alp": torch.tensor(14.0),
+        "a1": torch.tensor(0.3768),
+        "a2": torch.tensor(4.5865),
     }
 
     energy = dftd3(
@@ -56,7 +60,7 @@ def test_single(dtype: torch.dtype) -> None:
     )
 
     assert energy.dtype == dtype
-    assert torch.allclose(energy, ref)
+    assert pytest.approx(ref) == energy
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -82,12 +86,15 @@ def test_batch(dtype: torch.dtype) -> None:
     )
 
     param = {
-        "a1": positions.new_tensor(0.49484001),
-        "s8": positions.new_tensor(0.78981345),
-        "a2": positions.new_tensor(5.73083694),
+        "s6": torch.tensor(1.0),
+        "s8": torch.tensor(1.2576),
+        "s9": torch.tensor(0.0),  # no ATM!
+        "alp": torch.tensor(14.0),
+        "a1": torch.tensor(0.3768),
+        "a2": torch.tensor(4.5865),
     }
 
     energy = dftd3(numbers, positions, param)
 
     assert energy.dtype == dtype
-    assert torch.allclose(energy, ref)
+    assert pytest.approx(ref) == energy

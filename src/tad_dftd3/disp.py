@@ -102,9 +102,7 @@ def dispersion(
     if cutoff is None:
         cutoff = torch.tensor(50.0, **dd)
     if r4r2 is None:
-        r4r2 = (
-            data.sqrt_z_r4_over_r2[numbers].type(positions.dtype).to(positions.device)
-        )
+        r4r2 = data.sqrt_z_r4_over_r2[numbers].to(**dd)
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
             "Shape of positions is not consistent with atomic numbers.",
@@ -122,11 +120,10 @@ def dispersion(
     # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
         if rvdw is None:
-            rvdw = (
-                data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-                .type(positions.dtype)
-                .to(positions.device)
-            )
+            rvdw = data.vdw_rad_d3[
+                numbers.unsqueeze(-1),
+                numbers.unsqueeze(-2),
+            ].to(**dd)
 
         energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 

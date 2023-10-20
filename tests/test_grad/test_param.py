@@ -26,7 +26,7 @@ from tad_dftd3._typing import Callable, Tensor, Tuple
 from ..samples import samples
 from ..utils import dgradcheck, dgradgradcheck
 
-sample_list = ["LiH", "SiH4", "MB16_43_01"]
+sample_list = ["LiH", "AmF3", "SiH4", "MB16_43_01"]
 
 tol = 1e-8
 
