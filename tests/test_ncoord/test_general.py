@@ -18,7 +18,7 @@ Test error handling in coordination number calculation.
 import pytest
 import torch
 
-from tad_dftd3._typing import Any, CountingFunction, Protocol, Tensor
+from tad_dftd3._typing import Any, CountingFunction, Optional, Protocol, Tensor
 from tad_dftd3.ncoord import coordination_number, exp_count
 
 
@@ -32,9 +32,9 @@ class CNFunction(Protocol):
         numbers: Tensor,
         positions: Tensor,
         counting_function: CountingFunction = exp_count,
-        rcov: Tensor | None = None,
-        en: Tensor | None = None,
-        cutoff: Tensor | None = None,
+        rcov: Optional[Tensor] = None,
+        en: Optional[Tensor] = None,
+        cutoff: Optional[Tensor] = None,
         **kwargs: Any,
     ) -> Tensor:
         ...
