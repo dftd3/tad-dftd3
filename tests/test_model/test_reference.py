@@ -21,7 +21,7 @@ import torch
 from tad_dftd3 import reference
 from tad_dftd3._typing import DD
 
-from ..conftest import DEVICE as device
+from ..conftest import DEVICE
 from ..utils import get_device_from_str
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
@@ -29,8 +29,8 @@ sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_reference_dtype(dtype: torch.dtype) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
-    ref = reference.Reference(device=device).to(**dd)
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+    ref = reference.Reference(device=DEVICE).to(**dd)
     assert ref.dtype == dtype
 
 

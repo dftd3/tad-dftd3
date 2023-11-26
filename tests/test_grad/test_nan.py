@@ -23,7 +23,7 @@ import torch
 from tad_dftd3 import dftd3, utils
 from tad_dftd3._typing import DD
 
-from ..conftest import DEVICE as device
+from ..conftest import DEVICE
 from ..molecules import mols as samples
 
 tol = 1e-8
@@ -65,9 +65,9 @@ param = {
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 def test_single(dtype: torch.dtype) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    nums = numbers.to(device=device)
+    nums = numbers.to(DEVICE)
     pos = positions.to(**dd)
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -92,12 +92,12 @@ def test_single(dtype: torch.dtype) -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", ["LiH", "SiH4"])
 def test_batch(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     nums = utils.pack(
         (
-            numbers.to(device=device),
-            samples[name]["numbers"].to(device=device),
+            numbers.to(DEVICE),
+            samples[name]["numbers"].to(DEVICE),
         )
     )
     pos = utils.pack(

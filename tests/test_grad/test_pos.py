@@ -23,7 +23,7 @@ import torch
 from tad_dftd3 import dftd3, utils
 from tad_dftd3._typing import DD, Callable, Tensor, Tuple
 
-from ..conftest import DEVICE as device
+from ..conftest import DEVICE
 from ..samples import samples
 from ..utils import dgradcheck, dgradgradcheck
 
@@ -38,10 +38,10 @@ def gradchecker(
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device=device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
 
     param = {
@@ -91,13 +91,13 @@ def gradchecker_batch(
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample1, sample2 = samples[name1], samples[name2]
     numbers = utils.pack(
         [
-            sample1["numbers"].to(device=device),
-            sample2["numbers"].to(device=device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         ]
     )
     positions = utils.pack(

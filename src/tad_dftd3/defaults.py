@@ -19,19 +19,6 @@ Default values
 This module defines the default values for all parameters within DFT-D3.
 """
 
-import torch
-
-# PyTorch
-
-TORCH_DTYPE = torch.double
-"""Default data type for floating point tensors."""
-
-TORCH_DTYPE_CHOICES = ["float32", "float64", "double", "sp", "dp"]
-"""List of possible choices for `TORCH_DTYPE`."""
-
-TORCH_DEVICE = "cpu"
-"""Default device for tensors."""
-
 # DFT-D3
 
 D3_CN_CUTOFF = 25.0

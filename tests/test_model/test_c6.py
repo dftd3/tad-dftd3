@@ -21,7 +21,7 @@ import torch
 from tad_dftd3 import model, reference, utils
 from tad_dftd3._typing import DD
 
-from ..conftest import DEVICE as device
+from ..conftest import DEVICE
 from ..samples import samples
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
@@ -30,11 +30,11 @@ sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("name", sample_list)
 def test_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
     weights = sample["weights"].to(**dd)
     refc6 = sample["c6"].to(**dd)
@@ -49,7 +49,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name1", ["SiH4"])
 @pytest.mark.parametrize("name2", sample_list)
 def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
     sample1, sample2 = (
@@ -58,8 +58,8 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     )
     numbers = utils.pack(
         (
-            sample1["numbers"].to(device),
-            sample2["numbers"].to(device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         )
     )
     ref = reference.Reference(**dd)

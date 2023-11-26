@@ -121,10 +121,14 @@ def pytest_configure(config: pytest.Config) -> None:
             raise RuntimeError("No cuda devices available.")
 
         if FAST_MODE is True:
-            raise RuntimeError(
-                "Fast mode for gradient checks not compatible with default "
-                "device settings used here. Use the '--slow' flag for GPU "
-                "tests with '--cuda' to avoid this error."
+            FAST_MODE = False
+
+            from warnings import warn
+
+            warn(
+                "Fast mode for gradient checks not compatible with GPU "
+                "execution. Switching to slow mode. Use the '--slow' flag "
+                "for GPU tests ('--cuda') to avoid this warning."
             )
 
         DEVICE = torch.device("cuda:0")
@@ -133,9 +137,9 @@ def pytest_configure(config: pytest.Config) -> None:
         # `torch.set_default_tensor_type` is deprecated since 2.1.0 and version
         # 2.0.0 introduces `torch.set_default_device`
         if torch.__version__ < (2, 0, 0):  # type: ignore
-            torch.set_default_tensor_type("torch.cuda.FloatTensor")  # type:ignore
+            torch.set_default_tensor_type("torch.cuda.FloatTensor")  # type: ignore
         else:
-            torch.set_default_device("cuda")  # type:ignore
+            torch.set_default_device(DEVICE)  # type: ignore
     else:
         torch.use_deterministic_algorithms(True)
         DEVICE = None

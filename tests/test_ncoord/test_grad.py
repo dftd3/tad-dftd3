@@ -16,14 +16,13 @@
 Test derivative (w.r.t. positions) of the exponential and error counting
 functions used for the coordination number.
 """
-
-from math import sqrt
-
 import pytest
 import torch
 
-from tad_dftd3._typing import CountingFunction
+from tad_dftd3._typing import DD, CountingFunction
 from tad_dftd3.ncoord import dexp_count, exp_count
+
+from ..conftest import DEVICE
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -31,11 +30,13 @@ from tad_dftd3.ncoord import dexp_count, exp_count
 def test_count_grad(
     dtype: torch.dtype, function: tuple[CountingFunction, CountingFunction]
 ) -> None:
-    tol = sqrt(torch.finfo(dtype).eps) * 10
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
+    tol = torch.finfo(dtype).eps ** 0.5 * 10
     cf, dcf = function
 
-    a = torch.rand(4, dtype=dtype)
-    b = torch.rand(4, dtype=dtype)
+    a = torch.rand(4, **dd)
+    b = torch.rand(4, **dd)
 
     a_grad = a.detach().clone().requires_grad_(True)
     count = cf(a_grad, b)

@@ -21,17 +21,17 @@ import torch
 from tad_dftd3 import damping, data, dftd3, model, ncoord, reference, utils
 from tad_dftd3._typing import DD
 
-from .conftest import DEVICE as device
+from .conftest import DEVICE
 from .samples import samples
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
 def test_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
     ref = (sample["disp2"] + sample["disp3"]).to(**dd)
 
@@ -69,13 +69,13 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_batch(dtype: torch.dtype) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
     numbers = utils.pack(
         (
-            sample1["numbers"].to(device),
-            sample2["numbers"].to(device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         )
     )
     positions = utils.pack(

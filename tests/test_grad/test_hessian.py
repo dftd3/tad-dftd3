@@ -23,7 +23,7 @@ import torch
 from tad_dftd3 import dftd3, utils
 from tad_dftd3._typing import DD, Tensor
 
-from ..conftest import DEVICE as device
+from ..conftest import DEVICE
 from ..samples import samples
 from ..utils import reshape_fortran
 
@@ -57,10 +57,10 @@ def test_zeros() -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
 
     # GFN1-xTB parameters
@@ -91,13 +91,13 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)
 def skip_test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample1, sample2 = samples[name1], samples[name2]
     numbers = utils.pack(
         [
-            sample1["numbers"].to(device),
-            sample2["numbers"].to(device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         ]
     )
     positions = utils.pack(

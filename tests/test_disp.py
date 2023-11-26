@@ -23,7 +23,7 @@ import torch
 from tad_dftd3 import damping, data, disp, utils
 from tad_dftd3._typing import DD
 
-from .conftest import DEVICE as device
+from .conftest import DEVICE
 from .samples import samples
 
 sample_list = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
@@ -61,11 +61,11 @@ def test_fail() -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_disp2_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
     c6 = sample["c6"].to(**dd)
@@ -94,14 +94,14 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name1", sample_list)
 @pytest.mark.parametrize("name2", ["SiH4"])
 def test_disp2_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
     sample1, sample2 = samples[name1], samples[name2]
     numbers = utils.pack(
         [
-            sample1["numbers"].to(device),
-            sample2["numbers"].to(device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         ]
     )
     positions = utils.pack(
@@ -134,11 +134,11 @@ def test_disp2_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_atm_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
     c6 = sample["c6"].to(**dd)
     ref = sample["disp3"].to(**dd)
@@ -165,14 +165,14 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name1", sample_list)
 @pytest.mark.parametrize("name2", ["SiH4"])
 def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
     sample1, sample2 = samples[name1], samples[name2]
     numbers = utils.pack(
         [
-            sample1["numbers"].to(device),
-            sample2["numbers"].to(device),
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         ]
     )
     positions = utils.pack(
@@ -215,11 +215,11 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_full_single(dtype: torch.dtype, name: str) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
     sample = samples[name]
-    numbers = sample["numbers"].to(device)
+    numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
     c6 = sample["c6"].to(**dd)
     ref = (sample["disp2"] + sample["disp3"]).to(**dd)
