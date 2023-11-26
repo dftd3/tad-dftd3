@@ -19,33 +19,38 @@ Test the utility functions.
 import pytest
 import torch
 
-from tad_dftd3 import util
+from tad_dftd3 import utils
+from tad_dftd3._typing import DD
+
+from ..conftest import DEVICE as device
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_all(dtype: torch.dtype) -> None:
+    dd: DD = {"device": device, "dtype": dtype}
     tol = 1e-6 if dtype == torch.float else 1e-14
 
-    x = torch.randn(2, 3, 4, dtype=dtype)
+    x = torch.randn(2, 3, 4, **dd)
 
-    d1 = util.cdist(x)
-    d2 = util.distance.cdist_direct_expansion(x, x, p=2)
-    d3 = util.distance.euclidean_dist_quadratic_expansion(x, x)
+    d1 = utils.cdist(x)
+    d2 = utils.distance.cdist_direct_expansion(x, x, p=2)
+    d3 = utils.distance.euclidean_dist_quadratic_expansion(x, x)
 
-    assert pytest.approx(d1, abs=tol) == d2
-    assert pytest.approx(d2, abs=tol) == d3
-    assert pytest.approx(d3, abs=tol) == d1
+    assert pytest.approx(d1.cpu(), abs=tol) == d2.cpu()
+    assert pytest.approx(d2.cpu(), abs=tol) == d3.cpu()
+    assert pytest.approx(d3.cpu(), abs=tol) == d1.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("p", [2, 3, 4, 5])
 def test_ps(dtype: torch.dtype, p: int) -> None:
+    dd: DD = {"device": device, "dtype": dtype}
     tol = 1e-6 if dtype == torch.float else 1e-14
 
-    x = torch.randn(2, 4, 5, dtype=dtype)
-    y = torch.randn(2, 4, 5, dtype=dtype)
+    x = torch.randn(2, 4, 5, **dd)
+    y = torch.randn(2, 4, 5, **dd)
 
-    d1 = util.cdist(x, y, p=p)
+    d1 = utils.cdist(x, y, p=p)
     d2 = torch.cdist(x, y, p=p)
 
-    assert pytest.approx(d1, abs=tol) == d2
+    assert pytest.approx(d1.cpu(), abs=tol) == d2.cpu()

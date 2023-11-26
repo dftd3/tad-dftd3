@@ -20,9 +20,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util
-from tad_dftd3._typing import Callable, Tensor, Tuple
+from tad_dftd3 import dftd3, utils
+from tad_dftd3._typing import DD, Callable, Tensor, Tuple
 
+from ..conftest import DEVICE as device
 from ..samples import samples
 from ..utils import dgradcheck, dgradgradcheck
 
@@ -37,16 +38,18 @@ def gradchecker(
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
     Tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
+    numbers = sample["numbers"].to(device=device)
+    positions = sample["positions"].to(**dd)
 
     # variables to be differentiated
     param = (
-        torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
-        torch.tensor(0.78981345, requires_grad=True, dtype=dtype),
-        torch.tensor(0.49484001, requires_grad=True, dtype=dtype),
-        torch.tensor(5.73083694, requires_grad=True, dtype=dtype),
+        torch.tensor(1.00000000, requires_grad=True, **dd),
+        torch.tensor(0.78981345, requires_grad=True, **dd),
+        torch.tensor(0.49484001, requires_grad=True, **dd),
+        torch.tensor(5.73083694, requires_grad=True, **dd),
     )
     label = ("s6", "s8", "a1", "a2")
 
@@ -87,26 +90,28 @@ def gradchecker_batch(
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
     Tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample1, sample2 = samples[name1], samples[name2]
-    numbers = util.pack(
+    numbers = utils.pack(
         [
-            sample1["numbers"],
-            sample2["numbers"],
+            sample1["numbers"].to(device=device),
+            sample2["numbers"].to(device=device),
         ]
     )
-    positions = util.pack(
+    positions = utils.pack(
         [
-            sample1["positions"].type(dtype),
-            sample2["positions"].type(dtype),
+            sample1["positions"].to(**dd),
+            sample2["positions"].to(**dd),
         ]
     )
 
     # variables to be differentiated
     param = (
-        torch.tensor(1.00000000, requires_grad=True, dtype=dtype),
-        torch.tensor(0.78981345, requires_grad=True, dtype=dtype),
-        torch.tensor(0.49484001, requires_grad=True, dtype=dtype),
-        torch.tensor(5.73083694, requires_grad=True, dtype=dtype),
+        torch.tensor(1.00000000, requires_grad=True, **dd),
+        torch.tensor(0.78981345, requires_grad=True, **dd),
+        torch.tensor(0.49484001, requires_grad=True, **dd),
+        torch.tensor(5.73083694, requires_grad=True, **dd),
     )
     label = ("s6", "s8", "a1", "a2")
 

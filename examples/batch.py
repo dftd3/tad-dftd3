@@ -4,7 +4,7 @@ import torch
 import tad_dftd3 as d3
 
 sample1 = dict(
-    numbers=d3.util.to_number("Pb H H H H Bi H H H".split()),
+    numbers=d3.utils.to_number("Pb H H H H Bi H H H".split()),
     positions=torch.tensor(
         [
             [-0.00000020988889, -4.98043478877778, +0.00000000000000],
@@ -20,7 +20,7 @@ sample1 = dict(
     ),
 )
 sample2 = dict(
-    numbers=d3.util.to_number("C C C C C C I H H H H H S H C H H H".split(" ")),
+    numbers=d3.utils.to_number("C C C C C C I H H H H H S H C H H H".split(" ")),
     positions=torch.tensor(
         [
             [-1.42754169820131, -1.50508961850828, -1.93430551124333],
@@ -44,13 +44,13 @@ sample2 = dict(
         ]
     ),
 )
-numbers = d3.util.pack(
+numbers = d3.utils.pack(
     (
         sample1["numbers"],
         sample2["numbers"],
     )
 )
-positions = d3.util.pack(
+positions = d3.utils.pack(
     (
         sample1["positions"],
         sample2["positions"],
@@ -66,7 +66,7 @@ param = {
     "a2": torch.tensor(5.73083694),
 }
 
-cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
+cn = d3.ncoord.coordination_number(numbers, positions, d3.ncoord.exp_count, rcov)
 weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
 c6 = d3.model.atomic_c6(numbers, weights, ref)
 energy = d3.disp.dispersion(

@@ -159,7 +159,9 @@ def _load_c6(
     n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
     c6 = torch.zeros(
-        (n_element, n_element, n_reference, n_reference), dtype=ref.dtype, device=device
+        (n_element, n_element, n_reference, n_reference),
+        dtype=ref.dtype,
+        device=ref.device,
     )
 
     for i in range(1, n_element):
@@ -243,7 +245,9 @@ class Reference:
         """Floating point dtype used by reference object."""
         return self.__dtype
 
-    def to(self, device: torch.device) -> "Reference":
+    def to(
+        self, device: torch.device | None, dtype: torch.dtype | None = None
+    ) -> "Reference":
         """
         Returns a copy of the `Reference` instance on the specified device.
 
@@ -266,11 +270,13 @@ class Reference:
         will be returned.
         """
         if self.__device == device:
+            if dtype is not None:
+                return self.type(dtype)
             return self
 
         return self.__class__(
-            self.cn.to(device=device),
-            self.c6.to(device=device),
+            self.cn.to(device=device, dtype=dtype),
+            self.c6.to(device=device, dtype=dtype),
         )
 
     def type(self, dtype: torch.dtype) -> "Reference":

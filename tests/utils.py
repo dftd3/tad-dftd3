@@ -16,6 +16,7 @@
 Collection of utility functions for testing.
 """
 
+import pytest
 import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 

@@ -15,22 +15,29 @@
 """
 Setup for pytest.
 """
-
 import pytest
 import torch
 
 # avoid randomness and non-deterministic algorithms
 torch.manual_seed(0)
-torch.use_deterministic_algorithms(True)
 
 torch.set_printoptions(precision=10)
 
 FAST_MODE: bool = True
 """Flag for fast gradient tests."""
 
+DEVICE: torch.device | None = None
+"""Name of Device."""
+
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Set up additional command line options."""
+
+    parser.addoption(
+        "--cuda",
+        action="store_true",
+        help="Use GPU as default device.",
+    )
 
     parser.addoption(
         "--detect-anomaly",
@@ -107,6 +114,31 @@ def pytest_configure(config: pytest.Config) -> None:
         FAST_MODE = True
     if config.getoption("--slow"):
         FAST_MODE = False
+
+    global DEVICE
+    if config.getoption("--cuda"):
+        if not torch.cuda.is_available():
+            raise RuntimeError("No cuda devices available.")
+
+        if FAST_MODE is True:
+            raise RuntimeError(
+                "Fast mode for gradient checks not compatible with default "
+                "device settings used here. Use the '--slow' flag for GPU "
+                "tests with '--cuda' to avoid this error."
+            )
+
+        DEVICE = torch.device("cuda:0")
+        torch.use_deterministic_algorithms(False)
+
+        # `torch.set_default_tensor_type` is deprecated since 2.1.0 and version
+        # 2.0.0 introduces `torch.set_default_device`
+        if torch.__version__ < (2, 0, 0):  # type: ignore
+            torch.set_default_tensor_type("torch.cuda.FloatTensor")  # type:ignore
+        else:
+            torch.set_default_device("cuda")  # type:ignore
+    else:
+        torch.use_deterministic_algorithms(True)
+        DEVICE = None
 
     if config.getoption("--tpo-linewidth"):
         torch.set_printoptions(linewidth=config.getoption("--tpo-linewidth"))

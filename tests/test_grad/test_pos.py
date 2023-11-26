@@ -20,9 +20,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util
-from tad_dftd3._typing import Callable, Tensor, Tuple
+from tad_dftd3 import dftd3, utils
+from tad_dftd3._typing import DD, Callable, Tensor, Tuple
 
+from ..conftest import DEVICE as device
 from ..samples import samples
 from ..utils import dgradcheck, dgradgradcheck
 
@@ -37,15 +38,18 @@ def gradchecker(
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
+    numbers = sample["numbers"].to(device=device)
+    positions = sample["positions"].to(**dd)
+
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(0.78981345),
-        "s9": positions.new_tensor(1.00000000),
-        "a1": positions.new_tensor(0.49484001),
-        "a2": positions.new_tensor(5.73083694),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(0.78981345, **dd),
+        "s9": torch.tensor(1.00000000, **dd),
+        "a1": torch.tensor(0.49484001, **dd),
+        "a2": torch.tensor(5.73083694, **dd),
     }
 
     # variable to be differentiated
@@ -87,25 +91,27 @@ def gradchecker_batch(
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
 ]:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample1, sample2 = samples[name1], samples[name2]
-    numbers = util.pack(
+    numbers = utils.pack(
         [
-            sample1["numbers"],
-            sample2["numbers"],
+            sample1["numbers"].to(device=device),
+            sample2["numbers"].to(device=device),
         ]
     )
-    positions = util.pack(
+    positions = utils.pack(
         [
-            sample1["positions"].type(dtype),
-            sample2["positions"].type(dtype),
+            sample1["positions"].to(**dd),
+            sample2["positions"].to(**dd),
         ]
     )
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(0.78981345),
-        "s9": positions.new_tensor(1.00000000),
-        "a1": positions.new_tensor(0.49484001),
-        "a2": positions.new_tensor(5.73083694),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(0.78981345, **dd),
+        "s9": torch.tensor(1.00000000, **dd),
+        "a1": torch.tensor(0.49484001, **dd),
+        "a2": torch.tensor(5.73083694, **dd),
     }
 
     # variable to be differentiated
@@ -172,7 +178,7 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
 
     positions.detach_()
 
-    assert pytest.approx(ref, abs=tol) == grad
+    assert pytest.approx(ref.cpu(), abs=tol) == grad.cpu()
 
 
 @pytest.mark.grad
@@ -209,4 +215,4 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
     positions.detach_()
     positions.grad.data.zero_()
 
-    assert pytest.approx(ref, abs=tol) == grad_backward
+    assert pytest.approx(ref.cpu(), abs=tol) == grad_backward.cpu()

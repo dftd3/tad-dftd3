@@ -20,9 +20,10 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util
-from tad_dftd3._typing import Tensor
+from tad_dftd3 import dftd3, utils
+from tad_dftd3._typing import DD, Tensor
 
+from ..conftest import DEVICE as device
 from ..samples import samples
 from ..utils import reshape_fortran
 
@@ -39,7 +40,7 @@ def test_fail() -> None:
 
     # differentiable variable is not a tensor
     with pytest.raises(RuntimeError):
-        util.hessian(dftd3, (numbers, positions, param), argnums=2)
+        utils.hessian(dftd3, (numbers, positions, param), argnums=2)
 
 
 def test_zeros() -> None:
@@ -48,36 +49,39 @@ def test_zeros() -> None:
     def dummy(x: Tensor) -> Tensor:
         return torch.zeros_like(x)
 
-    hess = util.hessian(dummy, (d,), argnums=0)
-    assert pytest.approx(torch.zeros([*d.shape, *d.shape])) == hess.detach()
+    hess = utils.hessian(dummy, (d,), argnums=0)
+    zeros = torch.zeros([*d.shape, *d.shape])
+    assert pytest.approx(zeros.cpu()) == hess.detach().cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_single(dtype: torch.dtype, name: str) -> None:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
+    numbers = sample["numbers"].to(device)
+    positions = sample["positions"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(2.40000000),
-        "s9": positions.new_tensor(0.00000000),
-        "a1": positions.new_tensor(0.63000000),
-        "a2": positions.new_tensor(5.00000000),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(2.40000000, **dd),
+        "s9": torch.tensor(0.00000000, **dd),
+        "a1": torch.tensor(0.63000000, **dd),
+        "a2": torch.tensor(5.00000000, **dd),
     }
 
     ref = reshape_fortran(
-        sample["hessian"].type(dtype),
+        sample["hessian"].to(**dd),
         torch.Size(2 * (numbers.shape[-1], 3)),
     )
 
     # variable to be differentiated
     positions.requires_grad_(True)
 
-    hess = util.hessian(dftd3, (numbers, positions, param), argnums=1)
-    assert pytest.approx(ref, abs=tol, rel=tol) == hess.detach()
+    hess = utils.hessian(dftd3, (numbers, positions, param), argnums=1)
+    assert pytest.approx(ref.cpu(), abs=tol, rel=tol) == hess.detach().cpu()
 
     positions.detach_()
 
@@ -87,37 +91,39 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)
 def skip_test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+    dd: DD = {"device": device, "dtype": dtype}
+
     sample1, sample2 = samples[name1], samples[name2]
-    numbers = util.pack(
+    numbers = utils.pack(
         [
-            sample1["numbers"],
-            sample2["numbers"],
+            sample1["numbers"].to(device),
+            sample2["numbers"].to(device),
         ]
     )
-    positions = util.pack(
+    positions = utils.pack(
         [
-            sample1["positions"].type(dtype),
-            sample2["positions"].type(dtype),
+            sample1["positions"].to(**dd),
+            sample2["positions"].to(**dd),
         ]
     )
 
     # GFN1-xTB parameters
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(2.40000000),
-        "s9": positions.new_tensor(0.00000000),
-        "a1": positions.new_tensor(0.63000000),
-        "a2": positions.new_tensor(5.00000000),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(2.40000000, **dd),
+        "s9": torch.tensor(0.00000000, **dd),
+        "a1": torch.tensor(0.63000000, **dd),
+        "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = util.pack(
+    ref = utils.pack(
         [
             reshape_fortran(
-                sample1["hessian"].type(dtype),
+                sample1["hessian"].to(**dd),
                 torch.Size(2 * (sample1["numbers"].shape[-1], 3)),
             ),
             reshape_fortran(
-                sample2["hessian"].type(dtype),
+                sample2["hessian"].to(**dd),
                 torch.Size(2 * (sample2["numbers"].shape[-1], 3)),
             ),
         ]
@@ -126,7 +132,7 @@ def skip_test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     # variable to be differentiated
     positions.requires_grad_(True)
 
-    hess = util.hessian(dftd3, (numbers, positions, param), argnums=1)
-    assert pytest.approx(ref, abs=tol, rel=tol) == hess.detach()
+    hess = utils.hessian(dftd3, (numbers, positions, param), argnums=1)
+    assert pytest.approx(ref.cpu(), abs=tol, rel=tol) == hess.detach().cpu()
 
     positions.detach_()

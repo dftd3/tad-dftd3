@@ -57,7 +57,7 @@ import torch
 from . import data, defaults
 from ._typing import DD, Any, DampingFunction, Dict, Optional, Tensor
 from .damping import dispersion_atm, rational_damping
-from .util import cdist, real_pairs
+from .utils import cdist, real_pairs
 
 
 def dispersion(
@@ -100,9 +100,9 @@ def dispersion(
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     if cutoff is None:
-        cutoff = torch.tensor(50.0, **dd)
+        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2[numbers].to(**dd)
+        r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
             "Shape of positions is not consistent with atomic numbers.",
@@ -120,10 +120,9 @@ def dispersion(
     # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
         if rvdw is None:
-            rvdw = data.vdw_rad_d3[
-                numbers.unsqueeze(-1),
-                numbers.unsqueeze(-2),
-            ].to(**dd)
+            rvdw = data.vdw_rad_d3.to(**dd)[
+                numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+            ]
 
         energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 
