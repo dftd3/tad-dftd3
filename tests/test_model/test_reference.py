@@ -29,6 +29,19 @@ sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_reference_dtype(dtype: torch.dtype) -> None:
+    ref = reference.Reference().type(dtype)
+    assert ref.dtype == dtype
+
+
+def test_reference_dtype_both() -> None:
+    dev = torch.device("cpu")
+    dd = {"device": dev, "dtype": torch.float16}
+    ref = reference.Reference(device=dev).to(**dd)
+    assert ref.dtype == torch.float16
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_reference_move_both(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     ref = reference.Reference(device=DEVICE).to(**dd)
     assert ref.dtype == dtype
@@ -68,7 +81,8 @@ def test_reference_fail() -> None:
             c6=c6.type(torch.float32),
         )
 
+    ref = reference.Reference(device=torch.device("cpu"), dtype=torch.float64)
     assert (
-        repr(reference.Reference(device=torch.device("cpu")))
+        repr(ref)
         == "Reference(n_element=104, n_reference=7, dtype=torch.float64, device=cpu)"
     )
