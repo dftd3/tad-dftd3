@@ -19,7 +19,7 @@ import pytest
 import torch
 
 from tad_dftd3 import reference
-from tad_dftd3._typing import DD
+from tad_dftd3._typing import DD, Union
 
 from ..conftest import DEVICE
 from ..utils import get_device_from_str
@@ -33,11 +33,12 @@ def test_reference_dtype(dtype: torch.dtype) -> None:
     assert ref.dtype == dtype
 
 
-def test_reference_dtype_both() -> None:
+@pytest.mark.parametrize("dtype", [torch.float16, None])
+def test_reference_dtype_both(dtype: Union[torch.dtype, None]) -> None:
     dev = torch.device("cpu")
-    dd = {"device": dev, "dtype": torch.float16}
+    dd = {"device": dev, "dtype": dtype}
     ref = reference.Reference(device=dev).to(**dd)
-    assert ref.dtype == torch.float16
+    assert ref.dtype == torch.tensor(1.0, dtype=dtype).dtype
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
