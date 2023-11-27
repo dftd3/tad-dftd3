@@ -19,7 +19,7 @@ functions used for the coordination number.
 import pytest
 import torch
 
-from tad_dftd3._typing import DD, CountingFunction
+from tad_dftd3._typing import DD, CountingFunction, Tuple
 from tad_dftd3.ncoord import dexp_count, exp_count
 
 from ..conftest import DEVICE
@@ -28,7 +28,7 @@ from ..conftest import DEVICE
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("function", [(exp_count, dexp_count)])
 def test_count_grad(
-    dtype: torch.dtype, function: tuple[CountingFunction, CountingFunction]
+    dtype: torch.dtype, function: Tuple[CountingFunction, CountingFunction]
 ) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
@@ -41,7 +41,7 @@ def test_count_grad(
     a_grad = a.detach().clone().requires_grad_(True)
     count = cf(a_grad, b)
 
-    grad_auto = torch.autograd.grad(count.sum(-1), a_grad)[0]
+    (grad_auto,) = torch.autograd.grad(count.sum(-1), a_grad)
     grad_expl = dcf(a, b)
 
     assert pytest.approx(grad_auto.cpu(), abs=tol) == grad_expl.cpu()
