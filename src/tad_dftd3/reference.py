@@ -24,6 +24,7 @@ import os.path as op
 import torch
 
 from ._typing import Any, NoReturn, Optional, Tensor
+from .utils import get_default_device, get_default_dtype
 
 
 def _load_cn(
@@ -159,7 +160,9 @@ def _load_c6(
     n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
     n_reference = ref.shape[-1]
     c6 = torch.zeros(
-        (n_element, n_element, n_reference, n_reference), dtype=ref.dtype, device=device
+        (n_element, n_element, n_reference, n_reference),
+        dtype=ref.dtype,
+        device=ref.device,
     )
 
     for i in range(1, n_element):
@@ -197,13 +200,14 @@ class Reference:
     ):
         if cn is None:
             cn = _load_cn(
-                dtype=dtype if dtype is not None else torch.double,
-                device=device,
+                dtype=dtype if dtype is not None else get_default_dtype(),
+                device=device if device is not None else get_default_device(),
             )
         self.cn = cn
         if c6 is None:
             c6 = _load_c6(
-                dtype=dtype if dtype is not None else torch.double, device=device
+                dtype=dtype if dtype is not None else get_default_dtype(),
+                device=device if device is not None else get_default_device(),
             )
         self.c6 = c6
 
@@ -243,7 +247,11 @@ class Reference:
         """Floating point dtype used by reference object."""
         return self.__dtype
 
-    def to(self, device: torch.device) -> "Reference":
+    def to(
+        self,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+    ) -> "Reference":
         """
         Returns a copy of the `Reference` instance on the specified device.
 
@@ -252,8 +260,10 @@ class Reference:
 
         Parameters
         ----------
-        device : torch.device
+        device : torch.device, optional
             Device to which all associated tensors should be moved.
+        dtype : torch.dtype, optional
+            Floating point type of the tensors.
 
         Returns
         -------
@@ -266,23 +276,25 @@ class Reference:
         will be returned.
         """
         if self.__device == device:
+            if dtype is not None:
+                return self.type(dtype)
             return self
 
         return self.__class__(
-            self.cn.to(device=device),
-            self.c6.to(device=device),
+            self.cn.to(device=device, dtype=dtype),
+            self.c6.to(device=device, dtype=dtype),
         )
 
     def type(self, dtype: torch.dtype) -> "Reference":
         """
-        Returns a copy of the `Reference` instance with specified floating point type.
-        This method creates and returns a new copy of the `Reference` instance
-        with the specified dtype.
+        Returns a copy of the `Reference` instance with specified floating
+        point type. This method creates and returns a new copy of the
+        `Reference` instance with the specified dtype.
 
         Parameters
         ----------
         dtype : torch.dtype
-            Type of the
+            Floating point type of the tensors.
 
         Returns
         -------
@@ -302,10 +314,14 @@ class Reference:
             self.c6.type(dtype),
         )
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         """Creates a string representation of the Reference object."""
         return (
             f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, "
             f"n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, "
             f"device={self.__device})"
         )
+
+    def __repr__(self) -> str:
+        """Creates a string representation of the Reference object."""
+        return str(self)

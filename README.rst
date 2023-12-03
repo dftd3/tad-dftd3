@@ -229,7 +229,7 @@ The next example shows the calculation of dispersion energies for a batch of str
        "a2": torch.tensor(5.73083694),
    }
 
-   cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
+   cn = d3.ncoord.coordination_number(numbers, positions, d3.ncoord.exp_count, rcov)
    weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
    c6 = d3.model.atomic_c6(numbers, weights, ref)
    energy = d3.disp.dispersion(

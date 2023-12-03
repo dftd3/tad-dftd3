@@ -43,7 +43,7 @@ import torch
 
 from ._typing import Any, Tensor, WeightingFunction
 from .reference import Reference
-from .util import real_atoms
+from .utils import real_atoms
 
 
 def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:

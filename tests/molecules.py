@@ -18,7 +18,7 @@ Molecules for testing. Taken from https://github.com/grimme-lab/mstore.
 import torch
 
 from tad_dftd3._typing import Dict, Molecule
-from tad_dftd3.util import to_number
+from tad_dftd3.utils import to_number
 
 mols: Dict[str, Molecule] = {
     "LiH": {

@@ -3,7 +3,7 @@ import torch
 
 import tad_dftd3 as d3
 
-numbers = d3.util.to_number(symbols="C C C C N C S H H H H H".split())
+numbers = d3.utils.to_number(symbols="C C C C N C S H H H H H".split())
 positions = torch.Tensor(
     [
         [-2.56745685564671, -0.02509985979910, 0.00000000000000],

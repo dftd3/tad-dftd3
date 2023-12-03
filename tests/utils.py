@@ -15,7 +15,6 @@
 """
 Collection of utility functions for testing.
 """
-
 import torch
 from torch.autograd.gradcheck import gradcheck, gradgradcheck
 

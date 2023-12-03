@@ -18,7 +18,7 @@ Test the utility functions.
 
 import torch
 
-from tad_dftd3 import util
+from tad_dftd3 import utils
 
 
 def test_real_atoms() -> None:
@@ -34,7 +34,7 @@ def test_real_atoms() -> None:
             [True, True, True, True, True],  # CH4
         ],
     )
-    mask = util.real_atoms(numbers)
+    mask = utils.real_atoms(numbers)
     assert (mask == ref).all()
 
 
@@ -43,11 +43,11 @@ def test_real_pairs_single() -> None:
     size = numbers.shape[0]
 
     ref = torch.full((size, size), True)
-    mask = util.real_pairs(numbers, diagonal=True)
+    mask = utils.real_pairs(numbers, diagonal=True)
     assert (mask == ref).all()
 
     ref *= ~torch.diag_embed(torch.ones(size, dtype=torch.bool))
-    mask = util.real_pairs(numbers, diagonal=False)
+    mask = utils.real_pairs(numbers, diagonal=False)
     assert (mask == ref).all()
 
 
@@ -73,7 +73,7 @@ def test_real_pairs_batch() -> None:
             ],
         ]
     )
-    mask = util.real_pairs(numbers, diagonal=True)
+    mask = utils.real_pairs(numbers, diagonal=True)
     assert (mask == ref).all()
 
     ref = torch.tensor(
@@ -90,7 +90,7 @@ def test_real_pairs_batch() -> None:
             ],
         ]
     )
-    mask = util.real_pairs(numbers, diagonal=False)
+    mask = utils.real_pairs(numbers, diagonal=False)
     assert (mask == ref).all()
 
 
@@ -99,11 +99,11 @@ def test_real_triples_single() -> None:
     size = numbers.shape[0]
 
     ref = torch.full((size, size, size), True)
-    mask = util.real_triples(numbers, diagonal=True)
+    mask = utils.real_triples(numbers, diagonal=True)
     assert (mask == ref).all()
 
     ref *= ~torch.diag_embed(torch.ones(size, dtype=torch.bool))
-    mask = util.real_pairs(numbers, diagonal=False)
+    mask = utils.real_pairs(numbers, diagonal=False)
     assert (mask == ref).all()
 
 
@@ -153,7 +153,7 @@ def test_real_triples_batch() -> None:
             ],
         ]
     )
-    mask = util.real_triples(numbers, diagonal=True)
+    mask = utils.real_triples(numbers, diagonal=True)
     assert (mask == ref).all()
 
     ref = torch.tensor(
@@ -194,7 +194,7 @@ def test_real_triples_batch() -> None:
             ],
         ]
     )
-    mask = util.real_triples(numbers, diagonal=False)
+    mask = utils.real_triples(numbers, diagonal=False)
     assert (mask == ref).all()
 
 
@@ -222,7 +222,7 @@ def test_real_triples_self_single() -> None:
         dtype=torch.bool,
     )
 
-    mask = util.real_triples(numbers, self=False)
+    mask = utils.real_triples(numbers, self=False)
     assert (mask == ref).all()
 
 
@@ -273,7 +273,7 @@ def test_real_triples_self_batch() -> None:
         ]
     )
 
-    mask = util.real_triples(numbers, self=False)
+    mask = utils.real_triples(numbers, self=False)
     assert (mask == ref).all()
 
 
@@ -282,7 +282,7 @@ def test_pack() -> None:
     mol2 = torch.tensor([8, 1, 1])  # H2O
 
     # dummy test: only give single tensor
-    assert (mol1 == util.pack(mol1)).all()
+    assert (mol1 == utils.pack(mol1)).all()
 
     # standard packing
     ref = torch.tensor(
@@ -291,9 +291,9 @@ def test_pack() -> None:
             [8, 1, 1],  # H2O
         ],
     )
-    packed = util.pack([mol1, mol2])
+    packed = utils.pack([mol1, mol2])
     assert (packed == ref).all()
 
     # different axis
-    packed = util.pack([mol1, mol2], axis=-1)
+    packed = utils.pack([mol1, mol2], axis=-1)
     assert (packed == ref.T).all()

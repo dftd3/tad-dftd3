@@ -20,14 +20,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tad_dftd3 import dftd3, util
+from tad_dftd3 import dftd3, utils
 from tad_dftd3._typing import DD
 
+from ..conftest import DEVICE
 from ..molecules import mols as samples
 
 tol = 1e-8
 
-device = None
 
 # sample, which previously failed with NaN's
 numbers = torch.tensor([6, 6, 6, 6, 6, 6, 6, 6, 1, 1, 1, 1, 1, 7, 8, 8, 8])
@@ -54,25 +54,26 @@ positions = torch.tensor(
 )
 
 param = {
-    "s6": positions.new_tensor(1.00000000),
-    "s8": positions.new_tensor(0.78981345),
-    "s9": positions.new_tensor(1.00000000),
-    "a1": positions.new_tensor(0.49484001),
-    "a2": positions.new_tensor(5.73083694),
+    "s6": torch.tensor(1.00000000),
+    "s8": torch.tensor(0.78981345),
+    "s9": torch.tensor(1.00000000),
+    "a1": torch.tensor(0.49484001),
+    "a2": torch.tensor(5.73083694),
 }
 
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 def test_single(dtype: torch.dtype) -> None:
-    dd: DD = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    nums = numbers.to(device=device)
+    nums = numbers.to(DEVICE)
     pos = positions.to(**dd)
+    par = {k: v.to(**dd) for k, v in param.items()}
 
     pos.requires_grad_(True)
 
-    energy = dftd3(nums, pos, param)
+    energy = dftd3(nums, pos, par)
     assert not torch.isnan(energy).any(), "Energy contains NaN values"
 
     energy.sum().backward()
@@ -91,24 +92,25 @@ def test_single(dtype: torch.dtype) -> None:
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("name", ["LiH", "SiH4"])
 def test_batch(dtype: torch.dtype, name: str) -> None:
-    dd = {"device": device, "dtype": dtype}
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    nums = util.pack(
+    nums = utils.pack(
         (
-            numbers.to(device=device),
-            samples[name]["numbers"].to(device=device),
+            numbers.to(DEVICE),
+            samples[name]["numbers"].to(DEVICE),
         )
     )
-    pos = util.pack(
+    pos = utils.pack(
         (
             positions.to(**dd),
             samples[name]["positions"].to(**dd),
         )
     )
+    par = {k: v.to(**dd) for k, v in param.items()}
 
     pos.requires_grad_(True)
 
-    energy = dftd3(nums, pos, param)
+    energy = dftd3(nums, pos, par)
     assert not torch.isnan(energy).any(), "Energy contains NaN values"
 
     energy.sum().backward()

@@ -18,38 +18,42 @@ Test calculation of dispersion energy and nuclear gradients.
 import pytest
 import torch
 
-from tad_dftd3 import damping, data, dftd3, model, ncoord, reference, util
+from tad_dftd3 import damping, data, dftd3, model, ncoord, reference, utils
+from tad_dftd3._typing import DD
 
+from .conftest import DEVICE
 from .samples import samples
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
 def test_single(dtype: torch.dtype, name: str) -> None:
-    sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
-    ref = (sample["disp2"] + sample["disp3"]).type(dtype)
+    dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    rcov = data.covalent_rad_d3[numbers]
-    rvdw = data.vdw_rad_d3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.sqrt_z_r4_over_r2[numbers]
-    cutoff = torch.tensor(50, dtype=dtype)
+    sample = samples[name]
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+    ref = (sample["disp2"] + sample["disp3"]).to(**dd)
+
+    rcov = data.covalent_rad_d3.to(**dd)[numbers]
+    rvdw = data.vdw_rad_d3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
+    cutoff = torch.tensor(50, **dd)
 
     param = {
-        "s6": torch.tensor(1.0),
-        "s8": torch.tensor(1.2576),
-        "s9": torch.tensor(1.0),
-        "alp": torch.tensor(14.0),
-        "a1": torch.tensor(0.3768),
-        "a2": torch.tensor(4.5865),
+        "s6": torch.tensor(1.0000, **dd),
+        "s8": torch.tensor(1.2576, **dd),
+        "s9": torch.tensor(1.0000, **dd),
+        "alp": torch.tensor(14.00, **dd),
+        "a1": torch.tensor(0.3768, **dd),
+        "a2": torch.tensor(4.5865, **dd),
     }
 
     energy = dftd3(
         numbers,
         positions,
         param,
-        ref=reference.Reference(dtype=dtype),
+        ref=reference.Reference(**dd),
         rcov=rcov,
         rvdw=rvdw,
         r4r2=r4r2,
@@ -60,41 +64,43 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref) == energy
+    assert pytest.approx(ref.cpu()) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_batch(dtype: torch.dtype) -> None:
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
     sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
-    numbers = util.pack(
+    numbers = utils.pack(
         (
-            sample1["numbers"],
-            sample2["numbers"],
+            sample1["numbers"].to(DEVICE),
+            sample2["numbers"].to(DEVICE),
         )
     )
-    positions = util.pack(
+    positions = utils.pack(
         (
-            sample1["positions"].type(dtype),
-            sample2["positions"].type(dtype),
+            sample1["positions"].to(**dd),
+            sample2["positions"].to(**dd),
         )
     )
-    ref = util.pack(
+    ref = utils.pack(
         (
-            sample1["disp2"].type(dtype),
-            sample2["disp2"].type(dtype),
+            sample1["disp2"].to(**dd),
+            sample2["disp2"].to(**dd),
         )
     )
 
     param = {
-        "s6": torch.tensor(1.0),
-        "s8": torch.tensor(1.2576),
-        "s9": torch.tensor(0.0),  # no ATM!
-        "alp": torch.tensor(14.0),
-        "a1": torch.tensor(0.3768),
-        "a2": torch.tensor(4.5865),
+        "s6": torch.tensor(1.0000, **dd),
+        "s8": torch.tensor(1.2576, **dd),
+        "s9": torch.tensor(0.0000, **dd),  # no ATM!
+        "alp": torch.tensor(14.00, **dd),
+        "a1": torch.tensor(0.3768, **dd),
+        "a2": torch.tensor(4.5865, **dd),
     }
 
     energy = dftd3(numbers, positions, param)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref) == energy
+    assert pytest.approx(ref.cpu()) == energy.cpu()

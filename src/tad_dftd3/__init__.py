@@ -74,7 +74,7 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import damping, data, disp, model, ncoord, reference
+from . import damping, data, defaults, disp, model, ncoord, reference
 from ._typing import (
     DD,
     CountingFunction,
@@ -84,7 +84,7 @@ from ._typing import (
     Tensor,
     WeightingFunction,
 )
-from .util import misc
+from .utils import misc
 
 
 def dftd3(
@@ -135,20 +135,17 @@ def dftd3(
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     if cutoff is None:
-        cutoff = torch.tensor(50.0, **dd)
+        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if ref is None:
         ref = reference.Reference(**dd)
     if rcov is None:
-        rcov = data.covalent_rad_d3[numbers].to(**dd)
+        rcov = data.covalent_rad_d3.to(**dd)[numbers]
     if rvdw is None:
-        rvdw = data.vdw_rad_d3[
-            numbers.unsqueeze(-1),
-            numbers.unsqueeze(-2),
-        ].to(**dd)
+        rvdw = data.vdw_rad_d3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2[numbers].to(**dd)
+        r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
 
-    cn = ncoord.coordination_number(numbers, positions, rcov, counting_function)
+    cn = ncoord.coordination_number(numbers, positions, counting_function, rcov)
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
     energy = disp.dispersion(

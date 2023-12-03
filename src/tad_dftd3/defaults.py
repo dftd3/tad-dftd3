@@ -19,6 +19,19 @@ Default values
 This module defines the default values for all parameters within DFT-D3.
 """
 
+# DFT-D3
+
+D3_CN_CUTOFF = 25.0
+"""Coordination number cutoff (25.0)."""
+
+D3_DISP_CUTOFF = 50.0
+"""Two/three-body interaction cutoff (50.0)."""
+
+D3_KCN = 16.0
+"""Steepness of counting function (16.0)."""
+
+# DFT-D3 damping parameters
+
 A1 = 0.4
 """Scaling for the C8 / C6 ratio in the critical radius (0.4)."""
 

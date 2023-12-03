@@ -34,7 +34,7 @@ import torch
 
 from .. import defaults
 from .._typing import DD, Tensor
-from ..util import cdist, real_pairs, real_triples
+from ..utils import cdist, real_pairs, real_triples
 
 
 def dispersion_atm(
