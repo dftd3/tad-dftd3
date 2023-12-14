@@ -20,7 +20,7 @@ import torch
 from tad_dftd3 import reference
 
 
-def test_ref():
+def test_ref() -> None:
     c6_np = reference._load_c6_npy(dtype=torch.double)
     c6_pt = reference._load_c6_pt(dtype=torch.double)
 
