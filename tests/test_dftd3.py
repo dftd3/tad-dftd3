@@ -26,7 +26,6 @@ from .samples import samples
 
 
 def test_fail() -> None:
-    numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 
     # TPSS0-D3BJ-ATM parameters
@@ -41,13 +40,11 @@ def test_fail() -> None:
 
     # unsupported element
     with pytest.raises(ValueError):
-        numbers = torch.tensor([1, 105])
-        dftd3(numbers, positions, param)
+        dftd3(torch.tensor([1, 105]), positions, param)
 
     # wrong numbers
     with pytest.raises(ValueError):
-        numbers = torch.tensor([1])
-        dftd3(numbers, positions, param)
+        dftd3(torch.tensor([1]), positions, param)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
