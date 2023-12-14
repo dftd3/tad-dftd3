@@ -54,8 +54,11 @@ def test_fail() -> None:
 
     # wrong numbers
     with pytest.raises(ValueError):
-        numbers = torch.tensor([1])
-        disp.dispersion(numbers, positions, param, c6)
+        disp.dispersion(torch.tensor([1]), positions, param, c6)
+
+    # unsupported element
+    with pytest.raises(ValueError):
+        disp.dispersion(torch.tensor([1, 105]), positions, param, c6)
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])

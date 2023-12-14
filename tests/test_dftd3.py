@@ -39,7 +39,7 @@ def test_fail() -> None:
         "a2": torch.tensor(4.5865),
     }
 
-    # r4r2 wrong shape
+    # unsupported element
     with pytest.raises(ValueError):
         numbers = torch.tensor([1, 105])
         dftd3(numbers, positions, param)
