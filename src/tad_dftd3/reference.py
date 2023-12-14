@@ -20,7 +20,6 @@ This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
 import os.path as op
-
 import torch
 
 from ._typing import Any, NoReturn, Optional, Tensor
@@ -142,11 +141,29 @@ def _load_cn(
     )
 
 
-def _load_c6(
+def _load_c6_pt(
     dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
     """
-    Load reference C6 coefficients from file and fill them into a tensor
+    Load reference C6 coefficients from torch file.
+    """
+    path = op.join(op.dirname(__file__), "reference-c6.pt")
+    ref = torch.load(path).type(dtype).to(device)
+    return ref
+
+
+def _load_c6_npy(
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
+) -> Tensor:
+    """
+    Load reference C6 coefficients from file and fill them into a tensor.
+
+    Warning
+    -------
+    The loops in this function are actually really slow and create a bottleneck
+    for the whole calculation. Since the output of this function is not
+    dependent on the system, we only use it to store the tensor (".pt" file)
+    and now skip the calculation.
     """
 
     # pylint: disable=import-outside-toplevel
@@ -170,7 +187,14 @@ def _load_c6(
             ij = i * (i - 1) // 2 + j - 1 if j < i else j * (j - 1) // 2 + i - 1
             c6[i, j, :, :] = ref[ij, :, :].T if j < i else ref[ij, :, :]
 
+    # torch.save(c6, "reference-c6.pt")
     return c6
+
+
+def _load_c6(
+    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
+) -> Tensor:
+    return _load_c6_pt(dtype=dtype, device=device)
 
 
 class Reference:
