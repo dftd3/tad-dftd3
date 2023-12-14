@@ -54,7 +54,7 @@ tensor(-0.0003964, dtype=torch.float64)
 """
 import torch
 
-from . import data, defaults, constants
+from . import constants, data, defaults
 from ._typing import DD, Any, DampingFunction, Dict, Optional, Tensor
 from .damping import dispersion_atm, rational_damping
 from .utils import cdist, real_pairs
