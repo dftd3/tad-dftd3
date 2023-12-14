@@ -25,6 +25,31 @@ from .conftest import DEVICE
 from .samples import samples
 
 
+def test_fail() -> None:
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+
+    # TPSS0-D3BJ-ATM parameters
+    param = {
+        "s6": torch.tensor(1.0000),
+        "s8": torch.tensor(1.2576),
+        "s9": torch.tensor(1.0000),
+        "alp": torch.tensor(14.00),
+        "a1": torch.tensor(0.3768),
+        "a2": torch.tensor(4.5865),
+    }
+
+    # r4r2 wrong shape
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1, 105])
+        dftd3(numbers, positions, param)
+
+    # wrong numbers
+    with pytest.raises(ValueError):
+        numbers = torch.tensor([1])
+        dftd3(numbers, positions, param)
+
+
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
 def test_single(dtype: torch.dtype, name: str) -> None:

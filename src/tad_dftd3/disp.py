@@ -54,7 +54,7 @@ tensor(-0.0003964, dtype=torch.float64)
 """
 import torch
 
-from . import data, defaults
+from . import data, defaults, constants
 from ._typing import DD, Any, DampingFunction, Dict, Optional, Tensor
 from .damping import dispersion_atm, rational_damping
 from .utils import cdist, real_pairs
@@ -103,6 +103,7 @@ def dispersion(
         cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if r4r2 is None:
         r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
+
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
             "Shape of positions is not consistent with atomic numbers.",
@@ -110,6 +111,11 @@ def dispersion(
     if numbers.shape != r4r2.shape:
         raise ValueError(
             "Shape of expectation values is not consistent with atomic numbers.",
+        )
+    if torch.max(numbers) >= constants.MAX_ELEMENT:
+        raise ValueError(
+            f"No D3 parameters available for Z > {constants.MAX_ELEMENT-1} "
+            f"({constants.PSE_Z2S[constants.MAX_ELEMENT]})."
         )
 
     # two-body dispersion

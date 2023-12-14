@@ -30,6 +30,21 @@ from .utils import get_default_device, get_default_dtype
 def _load_cn(
     dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
+    """
+    Load reference coordination numbers.
+
+    Parameters
+    ----------
+    dtype : torch.dtype, optional
+        Floating point precision for tensor. Defaults to `torch.double`.
+    device : Optional[torch.device], optional
+        Device of tensor. Defaults to None.
+
+    Returns
+    -------
+    Tensor
+        Reference coordination numbers.
+    """
     return torch.tensor(
         [
             [-1.0000, -1.0000, -1.0000, -1.0000, -1.0000, -1.0000, -1.0000],  # None
@@ -142,60 +157,26 @@ def _load_cn(
     )
 
 
-def _load_c6_pt(
-    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
-) -> Tensor:
-    """
-    Load reference C6 coefficients from torch file.
-    """
-    path = op.join(op.dirname(__file__), "reference-c6.pt")
-    ref = torch.load(path).type(dtype).to(device)
-    return ref
-
-
-def _load_c6_npy(
-    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
-) -> Tensor:
-    """
-    Load reference C6 coefficients from file and fill them into a tensor.
-
-    Warning
-    -------
-    The loops in this function are actually really slow and create a bottleneck
-    for the whole calculation. Since the output of this function is not
-    dependent on the system, we only use it to store the tensor (".pt" file)
-    and now skip the calculation.
-    """
-
-    # pylint: disable=import-outside-toplevel
-    import math
-
-    import numpy as np
-
-    path = op.join(op.dirname(__file__), "reference-c6.npy")
-    ref = torch.from_numpy(np.load(path)).type(dtype).to(device)
-
-    n_element = (math.isqrt(8 * ref.shape[0] + 1) - 1) // 2 + 1
-    n_reference = ref.shape[-1]
-    c6 = torch.zeros(
-        (n_element, n_element, n_reference, n_reference),
-        dtype=ref.dtype,
-        device=ref.device,
-    )
-
-    for i in range(1, n_element):
-        for j in range(1, n_element):
-            ij = i * (i - 1) // 2 + j - 1 if j < i else j * (j - 1) // 2 + i - 1
-            c6[i, j, :, :] = ref[ij, :, :].T if j < i else ref[ij, :, :]
-
-    # torch.save(c6, "reference-c6.pt")
-    return c6
-
-
 def _load_c6(
     dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
 ) -> Tensor:
-    return _load_c6_pt(dtype=dtype, device=device)
+    """
+    Load reference C6 coefficients from file.
+
+    Parameters
+    ----------
+    dtype : torch.dtype, optional
+        Floating point precision for tensor. Defaults to `torch.double`.
+    device : Optional[torch.device], optional
+        Device of tensor. Defaults to None.
+
+    Returns
+    -------
+    Tensor
+        Reference C6 coefficients.
+    """
+    path = op.join(op.dirname(__file__), "reference-c6.pt")
+    return torch.load(path).type(dtype).to(device)
 
 
 class Reference:

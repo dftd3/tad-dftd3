@@ -16,13 +16,16 @@
 This module contains fundamental constants and conversion factors.
 """
 
+MAX_ELEMENT = 104
+"""Atomic number (+1 for dummy) of last element supported by DFT-D3."""
+
 BOHR_TO_ANGSTROM = 0.529177210903
 """Bohr radius in Angstroms."""
 
 ANGSTROM_TO_BOHR = 1.0 / BOHR_TO_ANGSTROM
 """Conversion factor from Angstrom to Bohr."""
 
-PSE = {
+PSE_S2Z = {
     "H": 1,
     "He": 2,
     "Li": 3,
@@ -142,3 +145,7 @@ PSE = {
     "Ts": 117,
     "Og": 118,
 }
+"""PSE with mapping from symbol to atomic number."""
+
+PSE_Z2S = {v: k for k, v in PSE_S2Z.items()}
+"""PSE with mapping from atomic number to symbol."""
