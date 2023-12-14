@@ -17,7 +17,7 @@ Test loading C6 coefficients.
 """
 import torch
 
-from tad_dftd3 import reference, constants
+from tad_dftd3 import constants, reference
 
 
 def test_ref() -> None:

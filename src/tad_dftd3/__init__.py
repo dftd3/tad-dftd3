@@ -74,7 +74,7 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import damping, data, defaults, disp, model, ncoord, reference, constants
+from . import constants, damping, data, defaults, disp, model, ncoord, reference
 from ._typing import (
     DD,
     CountingFunction,
