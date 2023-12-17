@@ -22,7 +22,7 @@ symbols and atomic numbers.
 import torch
 
 from .._typing import List, Optional, Size, Tensor, TensorOrTensors, Union
-from ..constants import PSE
+from ..constants import PSE_S2Z
 
 __all__ = [
     "real_atoms",
@@ -174,7 +174,7 @@ def to_number(symbols: List[str]) -> Tensor:
     Obtain atomic numbers from element symbols.
     """
     return torch.flatten(
-        torch.tensor([PSE.get(symbol.capitalize(), 0) for symbol in symbols])
+        torch.tensor([PSE_S2Z.get(symbol.capitalize(), 0) for symbol in symbols])
     )
 
 

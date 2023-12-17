@@ -74,7 +74,7 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import damping, data, defaults, disp, model, ncoord, reference
+from . import constants, damping, data, defaults, disp, model, ncoord, reference
 from ._typing import (
     DD,
     CountingFunction,
@@ -133,6 +133,12 @@ def dftd3(
         Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
+
+    if torch.max(numbers) >= constants.MAX_ELEMENT:
+        raise ValueError(
+            f"No D3 parameters available for Z > {constants.MAX_ELEMENT-1} "
+            f"({constants.PSE_Z2S[constants.MAX_ELEMENT]})."
+        )
 
     if cutoff is None:
         cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
