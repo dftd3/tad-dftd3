@@ -20,4 +20,7 @@ DFT-D3-specific type annotations.
 """
 from tad_mctc.typing import Callable, Tensor
 
+__all__ = ["WeightingFunction"]
+
+
 WeightingFunction = Callable[[Tensor], Tensor]
