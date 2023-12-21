@@ -3,5 +3,6 @@ sphinx-book-theme
 sphinx-copybutton
 sphinx-design
 numpy
+tad-mctc
 torch
 jinja2<3.1

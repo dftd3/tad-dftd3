@@ -22,7 +22,8 @@ Examples
 --------
 >>> import torch
 >>> import tad_dftd3 as d3
->>> numbers = d3.util.to_number(["O", "H", "H"])
+>>> import tad_mctc as mctc
+>>> numbers = mctc.convert.symbol_to_number(["O", "H", "H"])
 >>> positions = torch.Tensor([
 ...     [+0.00000000000000, +0.00000000000000, -0.73578586109551],
 ...     [+1.44183152868459, +0.00000000000000, +0.36789293054775],
@@ -30,7 +31,7 @@ Examples
 ... ])
 >>> ref = d3.reference.Reference()
 >>> rcov = d3.data.covalent_rad_d3[numbers]
->>> cn = d3.ncoord.coordination_number(numbers, positions, rcov, d3.ncoord.exp_count)
+>>> cn = mctc.ncoord.cn_d3(numbers, positions, rcov=rcov, counting_function=d3.ncoord.exp_count)
 >>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
 >>> torch.set_printoptions(precision=7)
@@ -40,10 +41,10 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
         [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
 import torch
+from tad_mctc.batch import real_atoms
 
-from ._typing import Any, Tensor, WeightingFunction
 from .reference import Reference
-from .utils import real_atoms
+from .typing import Any, Tensor, WeightingFunction
 
 
 def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:

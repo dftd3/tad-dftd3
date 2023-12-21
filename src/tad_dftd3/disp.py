@@ -52,12 +52,106 @@ Example
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
 tensor(-0.0003964, dtype=torch.float64)
 """
-import torch
+from typing import Dict, Optional
 
-from . import constants, data, defaults
-from ._typing import DD, Any, DampingFunction, Dict, Optional, Tensor
+import torch
+from tad_mctc import ncoord, storch
+from tad_mctc.batch import real_pairs
+from tad_mctc.data import pse
+
+from . import data, defaults, model
 from .damping import dispersion_atm, rational_damping
-from .utils import cdist, real_pairs
+from .reference import Reference
+from .typing import (
+    DD,
+    Any,
+    CountingFunction,
+    DampingFunction,
+    Tensor,
+    WeightingFunction,
+)
+
+
+def dftd3(
+    numbers: Tensor,
+    positions: Tensor,
+    param: Dict[str, Tensor],
+    *,
+    ref: Optional[Reference] = None,
+    rcov: Optional[Tensor] = None,
+    rvdw: Optional[Tensor] = None,
+    r4r2: Optional[Tensor] = None,
+    cutoff: Optional[Tensor] = None,
+    counting_function: CountingFunction = ncoord.exp_count,
+    weighting_function: WeightingFunction = model.gaussian_weight,
+    damping_function: DampingFunction = rational_damping,
+) -> Tensor:
+    """
+    Evaluate DFT-D3 dispersion energy for a batch of geometries.
+
+    Parameters
+    ----------
+    numbers : torch.Tensor
+        Atomic numbers of the atoms in the system.
+    positions : torch.Tensor
+        Cartesian coordinates of the atoms in the system.
+    param : dict[str, Tensor]
+        DFT-D3 damping parameters.
+    ref : reference.Reference, optional
+        Reference C6 coefficients.
+    rcov : torch.Tensor, optional
+        Covalent radii of the atoms in the system.
+    rvdw : torch.Tensor, optional
+        Van der Waals radii of the atoms in the system.
+    r4r2 : torch.Tensor, optional
+        r⁴ over r² expectation values of the atoms in the system.
+    damping_function : Callable, optional
+        Damping function evaluate distance dependent contributions.
+    weighting_function : Callable, optional
+        Function to calculate weight of individual reference systems.
+    counting_function : Callable, optional
+        Calculates counting value in range 0 to 1 for each atom pair.
+
+    Returns
+    -------
+    Tensor
+        Atom-resolved DFT-D3 dispersion energy for each geometry.
+    """
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
+
+    if torch.max(numbers) >= defaults.MAX_ELEMENT:
+        raise ValueError(
+            f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
+            f"({pse.Z2S[defaults.MAX_ELEMENT]})."
+        )
+
+    if cutoff is None:
+        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
+    if ref is None:
+        ref = Reference(**dd)
+    if rcov is None:
+        rcov = data.COV_D3.to(**dd)[numbers]
+    if rvdw is None:
+        rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    if r4r2 is None:
+        r4r2 = data.R4R2.to(**dd)[numbers]
+
+    cn = ncoord.cn_d3(
+        numbers, positions, counting_function=counting_function, rcov=rcov
+    )
+    weights = model.weight_references(numbers, cn, ref, weighting_function)
+    c6 = model.atomic_c6(numbers, weights, ref)
+
+    return dispersion(
+        numbers,
+        positions,
+        param,
+        c6,
+        rvdw,
+        r4r2,
+        damping_function,
+        cutoff=cutoff,
+    )
 
 
 def dispersion(
@@ -102,7 +196,7 @@ def dispersion(
     if cutoff is None:
         cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
+        r4r2 = data.R4R2.to(**dd)[numbers]
 
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
@@ -112,10 +206,10 @@ def dispersion(
         raise ValueError(
             "Shape of expectation values is not consistent with atomic numbers.",
         )
-    if torch.max(numbers) >= constants.MAX_ELEMENT:
+    if torch.max(numbers) >= defaults.MAX_ELEMENT:
         raise ValueError(
-            f"No D3 parameters available for Z > {constants.MAX_ELEMENT-1} "
-            f"({constants.PSE_Z2S[constants.MAX_ELEMENT]})."
+            f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
+            f"({pse.Z2S[defaults.MAX_ELEMENT]})."
         )
 
     # two-body dispersion
@@ -126,9 +220,7 @@ def dispersion(
     # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
         if rvdw is None:
-            rvdw = data.vdw_rad_d3.to(**dd)[
-                numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-            ]
+            rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
 
         energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 
@@ -166,10 +258,10 @@ def dispersion2(
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    mask = real_pairs(numbers, diagonal=False)
+    mask = real_pairs(numbers, mask_diagonal=True)
     distances = torch.where(
         mask,
-        cdist(positions, positions, p=2),
+        storch.cdist(positions, positions, p=2),
         torch.tensor(torch.finfo(positions.dtype).eps, **dd),
     )
 

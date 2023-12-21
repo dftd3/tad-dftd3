@@ -11,7 +11,7 @@
   "python.analysis.diagnosticSeverityOverrides": {
     "reportPrivateImportUsage": "information"
   },
-  "python.defaultInterpreterPath": "${env:CONDA_PREFIX}/envs/dxtb/bin/python",
+  "python.defaultInterpreterPath": "${env:CONDA_PREFIX}/envs/torch/bin/python",
   "python.testing.pytestArgs": [],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true

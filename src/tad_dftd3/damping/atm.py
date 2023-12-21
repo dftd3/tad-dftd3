@@ -31,10 +31,13 @@ Axilrod-Teller-Muto dispersion term.
     \dfrac{1}{1+ 6 \left(\overline{R}_\text{ABC}\right)^{-16}}
 """
 import torch
+from tad_mctc import storch
+from tad_mctc.batch import real_pairs, real_triples
 
 from .. import defaults
-from .._typing import DD, Tensor
-from ..utils import cdist, real_pairs, real_triples
+from ..typing import DD, Tensor
+
+__all__ = ["dispersion_atm"]
 
 
 def dispersion_atm(
@@ -83,18 +86,16 @@ def dispersion_atm(
     cutoff2 = cutoff * cutoff
     srvdw = rs9 * rvdw
 
-    mask_pairs = real_pairs(numbers, diagonal=False)
-    mask_triples = real_triples(numbers, self=False)
+    mask_pairs = real_pairs(numbers, mask_diagonal=True)
+    mask_triples = real_triples(numbers, mask_self=True)
 
     eps = torch.tensor(torch.finfo(positions.dtype).eps, **dd)
     zero = torch.tensor(0.0, **dd)
     one = torch.tensor(1.0, **dd)
 
     # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)
-    c9 = s9 * torch.sqrt(
-        torch.clamp(
-            torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3)), min=eps
-        )
+    c9 = s9 * storch.sqrt(
+        torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3))
     )
 
     r0ij = srvdw.unsqueeze(-1)
@@ -107,7 +108,7 @@ def dispersion_atm(
     distances = torch.pow(
         torch.where(
             mask_pairs,
-            cdist(positions, positions, p=2),
+            storch.cdist(positions, positions, p=2),
             eps,
         ),
         2.0,
@@ -124,7 +125,7 @@ def dispersion_atm(
 
     # dividing by tiny numbers leads to huge numbers, which result in NaN's
     # upon exponentiation in the subsequent step
-    mask = real_triples(numbers, self=False)
+    mask = real_triples(numbers, mask_self=True)
     base = r0 / torch.where(mask_triples, r1, one)
 
     # to fix the previous mask, we mask again (not strictly necessary because

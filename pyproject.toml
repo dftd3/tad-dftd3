@@ -18,10 +18,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
-testpaths = ["tests"]
+testpaths = ["test"]
 pythonpath = ["src"]
 markers = [
   "grad: Marks tests which perform 'gradcheck' evaluations, this can be slow.",
+  "large: Marks tests for large molecules, this can be slow.",
 ]
 
 
@@ -32,7 +33,11 @@ disallow_incomplete_defs = true
 disallow_untyped_defs = true
 warn_redundant_casts = true
 warn_unreachable = true
-warn_unused_ignores = false
+warn_unused_ignores = true
+exclude = '''
+  (?x)
+  ^test?s/conftest.py$
+'''
 
 
 [tool.coverage.run]

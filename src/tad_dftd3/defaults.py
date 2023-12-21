@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Default values
-==============
+Defaults
+========
 
 This module defines the default values for all parameters within DFT-D3.
 """
@@ -52,3 +52,8 @@ RS9 = 4.0 / 3.0
 
 ALP = 14.0
 """Exponent of zero damping function (14.0)."""
+
+# other
+
+MAX_ELEMENT = 104
+"""Atomic number (+1 for dummy) of last element supported by DFT-D3."""

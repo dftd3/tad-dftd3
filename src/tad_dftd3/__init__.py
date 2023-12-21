@@ -32,11 +32,12 @@ Example
 -------
 >>> import torch
 >>> import tad_dftd3 as d3
->>> numbers = d3.util.pack((  # S22 system 4: formamide dimer
-...     d3.util.to_number("C C N N H H H H H H O O".split()),
-...     d3.util.to_number("C O N H H H".split()),
+>>> import tad_mctc as mctc
+>>> numbers = mctc.batch.pack((  # S22 system 4: formamide dimer
+...     mctc.convert.symbol_to_number("C C N N H H H H H H O O".split()),
+...     mctc.convert.symbol_to_number("C O N H H H".split()),
 ... ))
->>> positions = d3.util.pack((
+>>> positions = mctcd3.batch.pack((
 ...     torch.tensor([  # coordinates in Bohr
 ...         [-3.81469488143921, +0.09993441402912, 0.00000000000000],
 ...         [+3.81469488143921, -0.09993441402912, 0.00000000000000],
@@ -74,95 +75,5 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import constants, damping, data, defaults, disp, model, ncoord, reference
-from ._typing import (
-    DD,
-    CountingFunction,
-    DampingFunction,
-    Dict,
-    Optional,
-    Tensor,
-    WeightingFunction,
-)
-from .utils import misc
-
-
-def dftd3(
-    numbers: Tensor,
-    positions: Tensor,
-    param: Dict[str, Tensor],
-    *,
-    ref: Optional[reference.Reference] = None,
-    rcov: Optional[Tensor] = None,
-    rvdw: Optional[Tensor] = None,
-    r4r2: Optional[Tensor] = None,
-    cutoff: Optional[Tensor] = None,
-    counting_function: CountingFunction = ncoord.exp_count,
-    weighting_function: WeightingFunction = model.gaussian_weight,
-    damping_function: DampingFunction = damping.rational_damping,
-) -> Tensor:
-    """
-    Evaluate DFT-D3 dispersion energy for a batch of geometries.
-
-    Parameters
-    ----------
-    numbers : torch.Tensor
-        Atomic numbers of the atoms in the system.
-    positions : torch.Tensor
-        Cartesian coordinates of the atoms in the system.
-    param : dict[str, Tensor]
-        DFT-D3 damping parameters.
-    ref : reference.Reference, optional
-        Reference C6 coefficients.
-    rcov : torch.Tensor, optional
-        Covalent radii of the atoms in the system.
-    rvdw : torch.Tensor, optional
-        Van der Waals radii of the atoms in the system.
-    r4r2 : torch.Tensor, optional
-        r⁴ over r² expectation values of the atoms in the system.
-    damping_function : Callable, optional
-        Damping function evaluate distance dependent contributions.
-    weighting_function : Callable, optional
-        Function to calculate weight of individual reference systems.
-    counting_function : Callable, optional
-        Calculates counting value in range 0 to 1 for each atom pair.
-
-    Returns
-    -------
-    Tensor
-        Atom-resolved DFT-D3 dispersion energy for each geometry.
-    """
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
-
-    if torch.max(numbers) >= constants.MAX_ELEMENT:
-        raise ValueError(
-            f"No D3 parameters available for Z > {constants.MAX_ELEMENT-1} "
-            f"({constants.PSE_Z2S[constants.MAX_ELEMENT]})."
-        )
-
-    if cutoff is None:
-        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
-    if ref is None:
-        ref = reference.Reference(**dd)
-    if rcov is None:
-        rcov = data.covalent_rad_d3.to(**dd)[numbers]
-    if rvdw is None:
-        rvdw = data.vdw_rad_d3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    if r4r2 is None:
-        r4r2 = data.sqrt_z_r4_over_r2.to(**dd)[numbers]
-
-    cn = ncoord.coordination_number(numbers, positions, counting_function, rcov)
-    weights = model.weight_references(numbers, cn, ref, weighting_function)
-    c6 = model.atomic_c6(numbers, weights, ref)
-    energy = disp.dispersion(
-        numbers,
-        positions,
-        param,
-        c6,
-        rvdw,
-        r4r2,
-        damping_function,
-        cutoff=cutoff,
-    )
-
-    return energy
+from . import damping, data, defaults, disp, model, reference
+from .disp import dftd3
