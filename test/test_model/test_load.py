@@ -12,18 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-[tox]
-min_version = 4.0
-isolated_build = True
-envlist = py{38,39,310,311}
+"""
+Test loading C6 coefficients.
+"""
+import torch
 
-[testenv]
-deps = .[tox]
-commands =
-    pytest -vv {posargs: \
-      -n logical \
-      --random-order-bucket=global \
-      --cov=tad_dftd3 \
-      --cov-report=term-missing \
-      --cov-report=xml:coverage.xml \
-      test}
+from tad_dftd3 import defaults, reference
+
+
+def test_ref() -> None:
+    c6 = reference._load_c6(dtype=torch.double)
+    assert c6.shape == torch.Size(
+        (defaults.MAX_ELEMENT, defaults.MAX_ELEMENT, 7, 7),
+    )

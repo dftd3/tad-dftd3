@@ -12,10 +12,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: tad-dftd3
+name: torch
 channels:
+  - defaults
   - conda-forge
+  - pytorch
 dependencies:
   - numpy
-  - python >=3.8
-  - pytorch
+  - python>=3.8
+  - pytorch>=1.11.0
+  - pip:
+    - tad-mctc

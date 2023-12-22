@@ -20,11 +20,11 @@ This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
 import os.path as op
+from typing import Optional
 
 import torch
 
-from ._typing import Any, NoReturn, Optional, Tensor
-from .utils import get_default_device, get_default_dtype
+from .typing import Any, NoReturn, Tensor, get_default_device, get_default_dtype
 
 
 def _load_cn(

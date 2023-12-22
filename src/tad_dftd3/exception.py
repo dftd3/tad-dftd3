@@ -13,11 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
+Exceptions
+==========
+
 Possible exceptions which can be raised by this module.
 """
+__all__ = ["DFTD3Error"]
 
 
 class DFTD3Error(Exception):
-    """Base class for exceptions raised by this module."""
+    """
+    Base class for exceptions raised by this module.
+    """
 
     pass

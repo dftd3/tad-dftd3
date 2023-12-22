@@ -12,18 +12,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-[tox]
-min_version = 4.0
-isolated_build = True
-envlist = py{38,39,310,311}
+"""
+Type annotations: PyTorch
+=========================
 
-[testenv]
-deps = .[tox]
-commands =
-    pytest -vv {posargs: \
-      -n logical \
-      --random-order-bucket=global \
-      --cov=tad_dftd3 \
-      --cov-report=term-missing \
-      --cov-report=xml:coverage.xml \
-      test}
+PyTorch-related type annotations for this project.
+"""
+from tad_mctc.typing import (
+    DD,
+    CountingFunction,
+    DampingFunction,
+    Molecule,
+    Tensor,
+    TensorOrTensors,
+    get_default_device,
+    get_default_dtype,
+)
+
+__all__ = [
+    "DD",
+    "CountingFunction",
+    "DampingFunction",
+    "Molecule",
+    "Tensor",
+    "TensorOrTensors",
+    "get_default_device",
+    "get_default_dtype",
+]

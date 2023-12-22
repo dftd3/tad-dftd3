@@ -12,18 +12,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-[tox]
-min_version = 4.0
-isolated_build = True
-envlist = py{38,39,310,311}
+"""
+Type annotations: D3
+====================
 
-[testenv]
-deps = .[tox]
-commands =
-    pytest -vv {posargs: \
-      -n logical \
-      --random-order-bucket=global \
-      --cov=tad_dftd3 \
-      --cov-report=term-missing \
-      --cov-report=xml:coverage.xml \
-      test}
+DFT-D3-specific type annotations.
+"""
+from tad_mctc.typing import Callable, Tensor
+
+__all__ = ["WeightingFunction"]
+
+
+WeightingFunction = Callable[[Tensor], Tensor]

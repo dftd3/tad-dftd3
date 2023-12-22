@@ -7,11 +7,10 @@ The following modules are contained with `tad-dftd3`.
 
 .. toctree::
 
-   dftd3
+   damping/index
+   data/index
+   defaults
    disp
-   damping
    model
-   ncoord
    reference
-   data
-   util
+   typing/index
