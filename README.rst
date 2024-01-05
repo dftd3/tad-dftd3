@@ -91,7 +91,7 @@ Install this project with ``pip`` in the environment
 The following dependencies are required
 
 - `numpy <https://numpy.org/>`__
-- `tad_mctc <https://github.com/tad-mctc/tad_mctc/>`__
+- `tad-mctc <https://github.com/tad-mctc/tad-mctc/>`__
 - `torch <https://pytorch.org/>`__
 - `pytest <https://docs.pytest.org/>`__ (tests only)
 
@@ -103,7 +103,8 @@ For development, additionally install the following tools in your environment.
 
 .. code::
 
-    mamba install black covdefaults coverage mypy pre-commit pylint tox
+    mamba install black covdefaults mypy pre-commit pylint pytest pytest-cov pytest-xdist tox
+    pip install pytest-random-order
 
 With pip, add the option ``-e`` for installing in development mode, and add ``[dev]`` for the development dependencies
 

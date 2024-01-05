@@ -75,6 +75,6 @@ tensor(-0.0034288)
 """
 import torch
 
-from . import damping, data, defaults, disp, model, reference
+from . import damping, data, defaults, disp, model, reference, typing
 from .__version__ import __version__
 from .disp import dftd3
