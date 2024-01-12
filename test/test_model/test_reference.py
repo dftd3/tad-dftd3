@@ -15,14 +15,15 @@
 """
 Test the reference.
 """
-from typing import Union
+from typing import Optional, Union
+from unittest.mock import patch
 
 import pytest
 import torch
 from tad_mctc.convert import str_to_device
 
 from tad_dftd3 import reference
-from tad_dftd3.typing import DD
+from tad_dftd3.typing import DD, Any, Tensor, TypedDict
 
 from ..conftest import DEVICE
 
@@ -37,8 +38,12 @@ def test_reference_dtype(dtype: torch.dtype) -> None:
 
 @pytest.mark.parametrize("dtype", [torch.float16, None])
 def test_reference_dtype_both(dtype: Union[torch.dtype, None]) -> None:
+    class DDNone(TypedDict):
+        device: torch.device
+        dtype: Optional[torch.dtype]
+
     dev = torch.device("cpu")
-    dd = {"device": dev, "dtype": dtype}
+    dd: DDNone = {"device": dev, "dtype": dtype}
     ref = reference.Reference(device=dev).to(**dd)
     assert ref.dtype == torch.tensor(1.0, dtype=dtype).dtype
 
@@ -61,6 +66,38 @@ def test_reference_device(device_str: str, device_str2: str) -> None:
 
     with pytest.raises(AttributeError):
         ref.device = device
+
+
+def test_reference_different_devices() -> None:
+    # Custom Tensor class with overridable device property
+    class MockTensor(Tensor):
+        @property
+        def device(self) -> Any:
+            return self._device
+
+        @device.setter
+        def device(self, value: Any) -> None:
+            self._device = value
+
+    # Custom mock functions
+    def mock_load_cn(*_: Any, **__: Any) -> Tensor:
+        tensor = MockTensor([1, 2, 3])
+        tensor.device = torch.device("cpu")
+        return tensor
+
+    def mock_load_c6(*_: Any, **__: Any) -> Tensor:
+        tensor = MockTensor([4, 5, 6])
+        tensor.device = torch.device("cuda")
+        return tensor
+
+    with patch("tad_dftd3.reference._load_cn", new=mock_load_cn):
+        with patch("tad_dftd3.reference._load_c6", new=mock_load_c6):
+            with pytest.raises(RuntimeError) as exc:
+                # Assuming the device is not explicitly passed, so it picks
+                # from _load_cn and _load_c6
+                reference.Reference()
+
+            assert "All tensors must be on the same device!" in str(exc.value)
 
 
 def test_reference_fail() -> None:
