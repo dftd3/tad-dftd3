@@ -65,4 +65,5 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-all]
-        exclude: 'test/conftest.py'
+        pass_filenames: false
+        args: [--config-file=pyproject.toml, --ignore-missing-imports, src]
