@@ -54,24 +54,31 @@ def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
     Parameters
     ----------
     numbers : Tensor
-        The atomic numbers of the atoms in the system.
+        The atomic numbers of the atoms in the system of shape `(..., nat)`.
     weights : Tensor
-        Weights of all reference systems.
+        Weights of all reference systems of shape `(..., nat, 7)`.
     reference : Reference
-        Reference systems for D3 model.
+        Reference systems for D3 model. Contains the reference C6 coefficients
+        of shape `(..., nelements, nelements, 7, 7)`.
 
     Returns
     -------
     Tensor
-        Atomic dispersion coefficients.
+        Atomic dispersion coefficients of shape `(..., nat, nat)`.
     """
-
+    # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
     c6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    gw = torch.mul(
-        weights.unsqueeze(-1).unsqueeze(-3), weights.unsqueeze(-2).unsqueeze(-4)
-    )
 
-    return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
+    # This old version creates large intermediate tensors and builds the full
+    # matrix before the sum reduction, which requires a lot of memory.
+    # gw = torch.mul(
+    #     weights.unsqueeze(-1).unsqueeze(-3),
+    #     weights.unsqueeze(-2).unsqueeze(-4),
+    # )
+    # return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
+
+    # (..., nat, 7) * (..., nat, 7) * (..., nat, nat, 7, 7) -> (..., nat, nat)
+    return torch.einsum("...ia,...jb,...ijab->...ij", weights, weights, c6)
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
