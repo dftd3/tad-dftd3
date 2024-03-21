@@ -42,6 +42,7 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
 """
 import torch
 from tad_mctc.batch import real_atoms
+from tad_mctc.math import einsum
 
 from .reference import Reference
 from .typing import Any, Tensor, WeightingFunction
@@ -78,7 +79,11 @@ def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
     # return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
 
     # (..., nat, 7) * (..., nat, 7) * (..., nat, nat, 7, 7) -> (..., nat, nat)
-    return torch.einsum("...ia,...jb,...ijab->...ij", weights, weights, c6)
+    return einsum(
+        "...ia,...jb,...ijab->...ij",
+        *(weights, weights, c6),
+        optimize=[(1, 2), (0, 1)],  # fastest path
+    )
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
