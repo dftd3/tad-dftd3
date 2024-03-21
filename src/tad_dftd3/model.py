@@ -68,22 +68,21 @@ def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
         Atomic dispersion coefficients of shape `(..., nat, nat)`.
     """
     # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
-    c6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
 
-    # This old version creates large intermediate tensors and builds the full
-    # matrix before the sum reduction, which requires a lot of memory.
-    # gw = torch.mul(
-    #     weights.unsqueeze(-1).unsqueeze(-3),
-    #     weights.unsqueeze(-2).unsqueeze(-4),
-    # )
-    # return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
-
-    # (..., nat, 7) * (..., nat, 7) * (..., nat, nat, 7, 7) -> (..., nat, nat)
+    # The default einsum path is fastest if the large tensors comes first.
+    # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
     return einsum(
-        "...ia,...jb,...ijab->...ij",
-        *(weights, weights, c6),
-        optimize=[(1, 2), (0, 1)],  # fastest path
+        "...ijab,...ia,...jb->...ij",
+        *(rc6, weights, weights),
+        optimize=[(0, 1), (0, 1)],
     )
+
+    # NOTE: This old version creates large intermediate tensors and builds the
+    # full matrix before the sum reduction, which requires a lot of memory.
+    #
+    # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
+    # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
