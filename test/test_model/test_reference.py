@@ -21,6 +21,7 @@ from unittest.mock import patch
 import pytest
 import torch
 from tad_mctc.convert import str_to_device
+from tad_mctc.typing import MockTensor
 
 from tad_dftd3 import reference
 from tad_dftd3.typing import DD, Any, Tensor, TypedDict
@@ -69,16 +70,6 @@ def test_reference_device(device_str: str, device_str2: str) -> None:
 
 
 def test_reference_different_devices() -> None:
-    # Custom Tensor class with overridable device property
-    class MockTensor(Tensor):
-        @property
-        def device(self) -> Any:
-            return self._device
-
-        @device.setter
-        def device(self, value: Any) -> None:
-            self._device = value
-
     # Custom mock functions
     def mock_load_cn(*_: Any, **__: Any) -> Tensor:
         tensor = MockTensor([1, 2, 3])

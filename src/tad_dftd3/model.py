@@ -42,6 +42,7 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
 """
 import torch
 from tad_mctc.batch import real_atoms
+from tad_mctc.math import einsum
 
 from .reference import Reference
 from .typing import Any, Tensor, WeightingFunction
@@ -54,24 +55,34 @@ def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
     Parameters
     ----------
     numbers : Tensor
-        The atomic numbers of the atoms in the system.
+        The atomic numbers of the atoms in the system of shape `(..., nat)`.
     weights : Tensor
-        Weights of all reference systems.
+        Weights of all reference systems of shape `(..., nat, 7)`.
     reference : Reference
-        Reference systems for D3 model.
+        Reference systems for D3 model. Contains the reference C6 coefficients
+        of shape `(..., nelements, nelements, 7, 7)`.
 
     Returns
     -------
     Tensor
-        Atomic dispersion coefficients.
+        Atomic dispersion coefficients of shape `(..., nat, nat)`.
     """
+    # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
+    rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
 
-    c6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    gw = torch.mul(
-        weights.unsqueeze(-1).unsqueeze(-3), weights.unsqueeze(-2).unsqueeze(-4)
+    # The default einsum path is fastest if the large tensors comes first.
+    # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
+    return einsum(
+        "...ijab,...ia,...jb->...ij",
+        *(rc6, weights, weights),
+        optimize=[(0, 1), (0, 1)],
     )
 
-    return torch.sum(torch.sum(torch.mul(gw, c6), dim=-1), dim=-1)
+    # NOTE: This old version creates large intermediate tensors and builds the
+    # full matrix before the sum reduction, which requires a lot of memory.
+    #
+    # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
+    # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
