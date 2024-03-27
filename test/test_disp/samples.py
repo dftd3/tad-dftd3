@@ -1544,6 +1544,30 @@ refs: Dict[str, Refs] = {
             ),
         }
     ),
+    "La3N@C80": Refs(
+        {
+            "cn": torch.tensor(
+                [],
+                dtype=torch.double,
+            ),
+            "weights": torch.tensor(
+                [],
+                dtype=torch.double,
+            ),
+            "c6": torch.tensor(
+                [],
+                dtype=torch.double,
+            ),
+            "disp2": torch.tensor(
+                [],
+                dtype=torch.double,
+            ),
+            "disp3": torch.tensor(
+                [],
+                dtype=torch.double,
+            ),
+        }
+    ),
     "AmF3": Refs(
         {
             "cn": torch.tensor(

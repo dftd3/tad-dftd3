@@ -41,6 +41,7 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
         [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
 import torch
+from tad_mctc import storch
 from tad_mctc.batch import real_atoms
 from tad_mctc.math import einsum
 
@@ -167,4 +168,4 @@ def weight_references(
         torch.sum(weights, dim=-1),
         torch.tensor(torch.finfo(dcn.dtype).eps, device=cn.device, dtype=dcn.dtype),
     )
-    return (weights / norms.unsqueeze(-1)).type(cn.dtype)
+    return storch.divide(weights, norms.unsqueeze(-1)).type(cn.dtype)

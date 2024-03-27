@@ -92,6 +92,48 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("name", ["La3N@C80"])
+def test_special(dtype: torch.dtype, name: str) -> None:
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
+    sample = samples[name]
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+    ref = sample["disp2"].to(**dd)
+
+    rcov = data.COV_D3.to(**dd)[numbers]
+    rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    r4r2 = data.R4R2.to(**dd)[numbers]
+    cutoff = torch.tensor(50, **dd)
+
+    param = {
+        "s6": torch.tensor(1.0000, **dd),
+        "s8": torch.tensor(1.2576, **dd),
+        "s9": torch.tensor(0.0000, **dd),
+        "alp": torch.tensor(14.00, **dd),
+        "a1": torch.tensor(0.3768, **dd),
+        "a2": torch.tensor(4.5865, **dd),
+    }
+
+    energy = dftd3(
+        numbers,
+        positions,
+        param,
+        ref=reference.Reference(**dd),
+        rcov=rcov,
+        rvdw=rvdw,
+        r4r2=r4r2,
+        cutoff=cutoff,
+        counting_function=exp_count,
+        weighting_function=model.gaussian_weight,
+        damping_function=damping.rational_damping,
+    )
+
+    assert energy.dtype == dtype
+    assert pytest.approx(ref.cpu()) == energy.cpu()
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_batch(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
