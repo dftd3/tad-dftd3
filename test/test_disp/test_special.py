@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Test calculation of dispersion energy and nuclear gradients.
+Test calculation of dispersion energy for a system, which fail without the
+weird handling of exceptional values in the calculation of the weights.
 """
 import pytest
 import torch
@@ -27,50 +28,29 @@ from ..conftest import DEVICE
 from .samples import samples
 
 
-def test_fail() -> None:
-    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-
-    # TPSS0-D3BJ-ATM parameters
-    param = {
-        "s6": torch.tensor(1.0000),
-        "s8": torch.tensor(1.2576),
-        "s9": torch.tensor(1.0000),
-        "alp": torch.tensor(14.00),
-        "a1": torch.tensor(0.3768),
-        "a2": torch.tensor(4.5865),
-    }
-
-    # unsupported element
-    with pytest.raises(ValueError):
-        dftd3(torch.tensor([1, 105]), positions, param)
-
-    # wrong numbers
-    with pytest.raises(ValueError):
-        dftd3(torch.tensor([1]), positions, param)
-
-
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
+@pytest.mark.parametrize("name", ["La3N@C80"])
 def test_single(dtype: torch.dtype, name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    ref = (sample["disp2"] + sample["disp3"]).to(**dd)
+    ref = sample["disp2"].to(**dd)
 
     rcov = data.COV_D3.to(**dd)[numbers]
     rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.R4R2.to(**dd)[numbers]
     cutoff = torch.tensor(50, **dd)
 
+    # GFN1-xTB parameters
     param = {
         "s6": torch.tensor(1.0000, **dd),
-        "s8": torch.tensor(1.2576, **dd),
-        "s9": torch.tensor(1.0000, **dd),
+        "s8": torch.tensor(2.4000, **dd),
+        "s9": torch.tensor(0.0000, **dd),
         "alp": torch.tensor(14.00, **dd),
-        "a1": torch.tensor(0.3768, **dd),
-        "a2": torch.tensor(4.5865, **dd),
+        "a1": torch.tensor(0.6300, **dd),
+        "a2": torch.tensor(5.0000, **dd),
     }
 
     energy = dftd3(
@@ -95,7 +75,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 def test_batch(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
+    sample1, sample2 = (samples["LiH"], samples["La3N@C80"])
     numbers = pack(
         (
             sample1["numbers"].to(DEVICE),
@@ -110,21 +90,29 @@ def test_batch(dtype: torch.dtype) -> None:
     )
     ref = pack(
         (
-            sample1["disp2"].to(**dd),
+            torch.tensor(
+                [
+                    -4.1054019506089849e-05,
+                    -4.1054019506089849e-05,
+                ],
+                **dd
+            ),
             sample2["disp2"].to(**dd),
         )
     )
 
+    # GFN1-xTB parameters
     param = {
         "s6": torch.tensor(1.0000, **dd),
-        "s8": torch.tensor(1.2576, **dd),
-        "s9": torch.tensor(0.0000, **dd),  # no ATM!
+        "s8": torch.tensor(2.4000, **dd),
+        "s9": torch.tensor(0.0000, **dd),
         "alp": torch.tensor(14.00, **dd),
-        "a1": torch.tensor(0.3768, **dd),
-        "a2": torch.tensor(4.5865, **dd),
+        "a1": torch.tensor(0.6300, **dd),
+        "a2": torch.tensor(5.0000, **dd),
     }
 
     energy = dftd3(numbers, positions, param)
-
+    print(energy.sum(-1))
+    print(ref.sum(-1))
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()

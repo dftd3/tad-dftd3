@@ -140,7 +140,9 @@ def dftd3(
         numbers, positions, counting_function=counting_function, rcov=rcov
     )
     weights = model.weight_references(numbers, cn, ref, weighting_function)
+    print(weights)
     c6 = model.atomic_c6(numbers, weights, ref)
+    print(c6)
 
     return dispersion(
         numbers,

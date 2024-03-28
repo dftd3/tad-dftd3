@@ -132,8 +132,12 @@ def weight_references(
     Tensor
         Weights of all reference systems
     """
+    refcn = reference.cn[numbers]
+    mask = refcn >= 0
 
-    mask = reference.cn[numbers] >= 0
+    zero = torch.tensor(0.0, device=cn.device, dtype=cn.dtype)
+    zero_double = torch.tensor(0.0, device=cn.device, dtype=torch.double)
+    one = torch.tensor(1.0, device=cn.device, dtype=cn.dtype)
 
     # Due to the exponentiation, `norms` and `weights` may become very small.
     # This may cause problems for the division by `norms`. It may occur that
@@ -149,23 +153,46 @@ def weight_references(
     weights = torch.where(
         mask,
         weighting_function(dcn, **kwargs),
-        torch.tensor(0.0, device=dcn.device, dtype=dcn.dtype),  # not eps!
+        zero_double,  # not eps!
     )
 
-    # Nevertheless, we must avoid zero division here in batched calculations.
-    #
     # Previously, a small value was added to `norms` to prevent division by zero
     # (`norms = torch.add(torch.sum(weights, dim=-1), 1e-20)`). However, even
     # such small values can lead to relatively large deviations because the
     # small value is not added to the weights, and hence, the case where
     # `weights` and `norms` are equal does not yield one anymore. In fact, the
     # test suite fails because some elements deviate up to around 1e-4.
-    #
-    # We solve this issue by using a mask from the atoms and only add a small
-    # value, where the actual padding zeros are.
-    norms = torch.where(
-        real_atoms(numbers),
-        torch.sum(weights, dim=-1),
-        torch.tensor(torch.finfo(dcn.dtype).eps, device=cn.device, dtype=dcn.dtype),
+    # We solve this by running in double precision, adding a very small number
+    # and using multiple masks.
+
+    # normalize weights
+    norm = torch.where(
+        mask,
+        torch.sum(weights, dim=-1, keepdim=True),
+        torch.tensor(1e-300, device=cn.device, dtype=torch.double),  # double!
     )
-    return storch.divide(weights, norms.unsqueeze(-1)).type(cn.dtype)
+
+    # back to real dtype
+    gw_temp = (weights / norm).type(cn.dtype)
+
+    # The following section handles cases with large CNs that lead to zeros in
+    # after the exponential in the weighting function. If this happens all
+    # weights become zero, which is not desired. Instead, we set the weight of
+    # the largest reference number to one.
+    # This case can occur if the CN of the current (actual) system is too far
+    # away from the largest CN of the reference systems. An example would be an
+    # atom within a fullerene (La3N@C80).
+
+    # maximum reference CN for each atom
+    maxcn = torch.max(refcn, dim=-1, keepdim=True)[0]
+
+    # prevent division by 0 and small values
+    exceptional = (torch.isnan(gw_temp)) | (gw_temp > torch.finfo(cn.dtype).max)
+
+    gw = torch.where(
+        exceptional,
+        torch.where(refcn == maxcn, one, zero),
+        gw_temp,
+    )
+
+    return torch.where(mask, gw, zero)
