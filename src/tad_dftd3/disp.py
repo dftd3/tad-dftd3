@@ -55,11 +55,11 @@ tensor(-0.0003964, dtype=torch.float64)
 from typing import Dict, Optional
 
 import torch
-from tad_mctc import ncoord, storch
+from tad_mctc import storch
 from tad_mctc.batch import real_pairs
 from tad_mctc.data import pse
 
-from . import data, defaults, model
+from . import data, defaults, model, ncoord
 from .damping import dispersion_atm, rational_damping
 from .reference import Reference
 from .typing import (
@@ -70,6 +70,8 @@ from .typing import (
     Tensor,
     WeightingFunction,
 )
+
+__all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
 
 
 def dftd3(
