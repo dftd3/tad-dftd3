@@ -19,9 +19,9 @@ weird handling of exceptional values in the calculation of the weights.
 import pytest
 import torch
 from tad_mctc.batch import pack
-from tad_mctc.ncoord import exp_count
 
 from tad_dftd3 import damping, data, dftd3, model, reference
+from tad_dftd3.ncoord import exp_count
 from tad_dftd3.typing import DD
 
 from ..conftest import DEVICE

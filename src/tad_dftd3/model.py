@@ -41,12 +41,12 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
         [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
 import torch
-from tad_mctc import storch
-from tad_mctc.batch import real_atoms
 from tad_mctc.math import einsum
 
 from .reference import Reference
 from .typing import Any, Tensor, WeightingFunction
+
+__all__ = ["atomic_c6", "gaussian_weight", "weight_references"]
 
 
 def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
