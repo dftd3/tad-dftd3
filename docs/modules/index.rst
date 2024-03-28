@@ -12,5 +12,6 @@ The following modules are contained with `tad-dftd3`.
    defaults
    disp
    model
+   ncoord/index
    reference
    typing/index
