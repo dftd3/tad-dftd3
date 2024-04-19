@@ -19,7 +19,7 @@ import pytest
 import torch
 from tad_mctc.batch import pack
 
-from tad_dftd3 import model, reference
+from tad_dftd3 import model, reference, ncoord
 from tad_dftd3.typing import DD
 
 from ..conftest import DEVICE
@@ -81,3 +81,24 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
     assert c6.dtype == dtype
     assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("size", [100, 200, 500])
+@pytest.mark.parametrize("chunk_size", [10, 100])
+def test_chunked(dtype: torch.dtype, size: int, chunk_size: int) -> None:
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+    tol = torch.finfo(dtype).eps ** 0.5
+
+    ref = reference.Reference(**dd)
+    numbers = torch.randint(1, 86, (size,), device=DEVICE)
+    positions = torch.rand((size, 3), **dd) * 10
+
+    cn = ncoord.cn_d3(numbers, positions)
+    weights = model.weight_references(numbers, cn, ref)
+
+    c6 = model.atomic_c6(numbers, weights, ref)
+    c6_chunked = model.atomic_c6(numbers, weights, ref, chunk_size=chunk_size)
+
+    assert c6.dtype == c6_chunked.dtype == dtype
+    assert pytest.approx(c6.cpu(), abs=tol, rel=tol) == c6_chunked.cpu()

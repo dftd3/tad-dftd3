@@ -49,7 +49,12 @@ from .typing import Any, Tensor, WeightingFunction
 __all__ = ["atomic_c6", "gaussian_weight", "weight_references"]
 
 
-def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
+def atomic_c6(
+    numbers: Tensor,
+    weights: Tensor,
+    reference: Reference,
+    chunk_size: None | int = None,
+) -> Tensor:
     """
     Calculate atomic dispersion coefficients.
 
@@ -68,22 +73,51 @@ def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
     Tensor
         Atomic dispersion coefficients of shape `(..., nat, nat)`.
     """
-    # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
-    rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
 
-    # The default einsum path is fastest if the large tensors comes first.
-    # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
-    return einsum(
-        "...ijab,...ia,...jb->...ij",
-        *(rc6, weights, weights),
-        optimize=[(0, 1), (0, 1)],
+    def _einsum(rc6: Tensor, weights_i: Tensor, weights_j: Tensor) -> Tensor:
+        # The default einsum path is fastest if the large tensors comes first.
+        # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
+        return einsum(
+            "...ijab,...ia,...jb->...ij",
+            *(rc6, weights_i, weights_j),
+            optimize=[(0, 1), (0, 1)],
+        )
+
+    if chunk_size is None:
+        # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
+        rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+
+        # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
+        return _einsum(rc6, weights, weights)
+
+        # NOTE: This old version creates large intermediate tensors by building
+        # the full matrix before the sum reduction, requiring a lot of memory.
+        #
+        # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
+        # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
+
+    nat = numbers.shape[-1]
+    c6_output = torch.zeros(
+        (*numbers.shape, nat), device=numbers.device, dtype=weights.dtype
     )
 
-    # NOTE: This old version creates large intermediate tensors and builds the
-    # full matrix before the sum reduction, which requires a lot of memory.
-    #
-    # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
-    # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
+    for start in range(0, nat, chunk_size):
+        end = min(start + chunk_size, nat)
+        num_chunk = numbers[..., start:end]  # (..., chunk_size)
+
+        # Chunked indexing into reference.c6: (..., chunk_size, nat, 7, 7)
+        rc6_chunk = reference.c6[num_chunk.unsqueeze(-1), numbers.unsqueeze(-2)]
+
+        # Also chunk the weights: (..., chunk_size, 7)
+        weights_chunk = weights[..., start:end, :]
+
+        # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
+        contribution = _einsum(rc6_chunk, weights_chunk, weights)
+
+        # Add contributions to the correct slice of the output tensor
+        c6_output[..., start:end, :] += contribution
+
+    return c6_output
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
