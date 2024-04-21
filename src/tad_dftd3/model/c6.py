@@ -193,10 +193,7 @@ def _atomic_c6_full(
     # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
 
     rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    return torch.einsum(
-        "...ijab,...ia,...jb->...ij",
-        *(rc6, weights, weights),
-    )
+    return _einsum(rc6, weights, weights)
 
 
 def _atomic_c6_chunked(

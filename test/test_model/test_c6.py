@@ -109,8 +109,6 @@ def test_chunked(dtype: torch.dtype, size: int, chunk_size: int) -> None:
 
 ###############################################################################
 
-Callable[[Tensor, Tensor, reference.Reference], Tensor]
-
 
 class C6Func(Protocol):
     """
