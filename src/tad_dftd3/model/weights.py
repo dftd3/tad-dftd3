@@ -46,6 +46,7 @@ import torch
 
 from ..reference import Reference
 from ..typing import Any, Tensor, WeightingFunction
+from tad_mctc import storch
 
 __all__ = ["gaussian_weight", "weight_references"]
 
@@ -129,15 +130,18 @@ def weight_references(
     # We solve this by running in double precision, adding a very small number
     # and using multiple masks.
 
+    small = torch.tensor(1e-300, device=cn.device, dtype=torch.double)
+
     # normalize weights
     norm = torch.where(
         mask,
         torch.sum(weights, dim=-1, keepdim=True),
-        torch.tensor(1e-300, device=cn.device, dtype=torch.double),  # double!
+        small,  # double!
     )
 
     # back to real dtype
-    gw_temp = (weights / norm).type(cn.dtype)
+    # gw_temp = (storch.divide(weights, norm, eps=small)).type(cn.dtype)
+    gw_temp = storch.divide(weights, norm, eps=small).type(cn.dtype)
 
     # The following section handles cases with large CNs that lead to zeros in
     # after the exponential in the weighting function. If this happens all
