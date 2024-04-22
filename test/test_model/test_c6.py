@@ -15,6 +15,8 @@
 """
 Test C6 coefficients.
 """
+from __future__ import annotations
+
 import pytest
 import torch
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
