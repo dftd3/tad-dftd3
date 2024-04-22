@@ -52,7 +52,7 @@ Example
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
 tensor(-0.0003964, dtype=torch.float64)
 """
-from typing import Dict, Optional
+from __future__ import annotations
 
 import torch
 from tad_mctc import storch
@@ -77,17 +77,17 @@ __all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
 def dftd3(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, Tensor],
+    param: dict[str, Tensor],
     *,
-    ref: Optional[Reference] = None,
-    rcov: Optional[Tensor] = None,
-    rvdw: Optional[Tensor] = None,
-    r4r2: Optional[Tensor] = None,
-    cutoff: Optional[Tensor] = None,
+    ref: Reference | None = None,
+    rcov: Tensor | None = None,
+    rvdw: Tensor | None = None,
+    r4r2: Tensor | None = None,
+    cutoff: Tensor | None = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
     damping_function: DampingFunction = rational_damping,
-    chunk_size: None | int = None,
+    chunk_size: int | None = None,
 ) -> Tensor:
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
@@ -163,12 +163,12 @@ def dftd3(
 def dispersion(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, Tensor],
+    param: dict[str, Tensor],
     c6: Tensor,
-    rvdw: Optional[Tensor] = None,
-    r4r2: Optional[Tensor] = None,
+    rvdw: Tensor | None = None,
+    r4r2: Tensor | None = None,
     damping_function: DampingFunction = rational_damping,
-    cutoff: Optional[Tensor] = None,
+    cutoff: Tensor | None = None,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -236,7 +236,7 @@ def dispersion(
 def dispersion2(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, Tensor],
+    param: dict[str, Tensor],
     c6: Tensor,
     r4r2: Tensor,
     damping_function: DampingFunction,
@@ -296,7 +296,7 @@ def dispersion2(
 def dispersion3(
     numbers: Tensor,
     positions: Tensor,
-    param: Dict[str, Tensor],
+    param: dict[str, Tensor],
     c6: Tensor,
     rvdw: Tensor,
     cutoff: Tensor,
