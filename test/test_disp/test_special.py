@@ -112,7 +112,5 @@ def test_batch(dtype: torch.dtype) -> None:
     }
 
     energy = dftd3(numbers, positions, param)
-    print(energy.sum(-1))
-    print(ref.sum(-1))
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()

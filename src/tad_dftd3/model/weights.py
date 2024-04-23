@@ -140,8 +140,8 @@ def weight_references(
     )
 
     # back to real dtype
-    # gw_temp = (storch.divide(weights, norm, eps=small)).type(cn.dtype)
     gw_temp = storch.divide(weights, norm, eps=small).type(cn.dtype)
+    assert torch.isnan(gw_temp).sum() == 0
 
     # The following section handles cases with large CNs that lead to zeros in
     # after the exponential in the weighting function. If this happens all
@@ -154,8 +154,11 @@ def weight_references(
     # maximum reference CN for each atom
     maxcn = torch.max(refcn, dim=-1, keepdim=True)[0]
 
-    # prevent division by 0 and small values
-    exceptional = (torch.isnan(gw_temp)) | (gw_temp > torch.finfo(cn.dtype).max)
+    # Here, we catch the potential NaN's from `gw_temp`. We cannot use `gw_temp`
+    # directly, because we have to use safe divide to not get NaN's in the
+    # backward. But `norm == 0` is equivalent. Additionally, we catch very
+    # large values occuring because of division by small values.
+    exceptional = (norm == 0) | (gw_temp > torch.finfo(cn.dtype).max)
 
     gw = torch.where(
         exceptional,
