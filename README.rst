@@ -303,9 +303,17 @@ terms or conditions.
    :target: LICENSE
    :alt: Apache-2.0
 
-.. |testubuntu| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml/badge.svg
-   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml
-   :alt: CI
+.. |testubuntu| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/ubuntu.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/ubuntu.yaml
+   :alt: Tests Ubuntu
+
+.. |testmacos| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/macos.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/macos.yaml
+   :alt: Tests macOS
+
+.. |testwindows| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/windows.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/windows.yaml
+   :alt: Tests Windows
 
 .. |docs| image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
    :target: https://tad-dftd3.readthedocs.io
