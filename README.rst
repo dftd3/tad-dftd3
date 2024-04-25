@@ -1,34 +1,14 @@
 Torch autodiff for DFT-D3
 =========================
 
-.. image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
-   :target: https://github.com/dftd3/tad-dftd3/releases/latest
-   :alt: Release
-
-.. image:: https://img.shields.io/pypi/v/tad-dftd3
-   :target: https://pypi.org/project/tad-dftd3/
-   :alt: PyPI
-
-.. image:: https://img.shields.io/github/license/dftd3/tad-dftd3
-   :target: LICENSE
-   :alt: Apache-2.0
-
-.. image:: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml/badge.svg
-   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml
-   :alt: CI
-
-.. image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
-   :target: https://tad-dftd3.readthedocs.io
-   :alt: Documentation Status
-
-.. image:: https://codecov.io/gh/dftd3/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
-   :target: https://codecov.io/gh/dftd3/tad-dftd3
-   :alt: Coverage
-
-.. image:: https://results.pre-commit.ci/badge/github/dftd3/tad-dftd3/main.svg
-   :target: https://results.pre-commit.ci/latest/github/dftd3/tad-dftd3/main
-   :alt: pre-commit.ci status
-
+|release|
+|license|
+|testubuntu|
+|testmacos|
+|testwindows|
+|docs|
+|coverage|
+|precommit|
 
 Implementation of the DFT-D3 dispersion model in PyTorch.
 This module allows to process a single structure or a batch of structures for the calculation of atom-resolved dispersion energies.
@@ -56,11 +36,24 @@ Installation
 pip
 ~~~
 
+|pypi|
+
 The project can easily be installed with ``pip``.
 
 .. code::
 
     pip install tad-dftd3
+
+conda
+~~~~~
+
+|conda|
+
+*tad-dftd3* is also available from ``conda``.
+
+.. code::
+
+    conda install tad-dftd3
 
 From source
 ~~~~~~~~~~~
@@ -292,3 +285,36 @@ Unless you explicitly state otherwise, any contribution intentionally
 submitted for inclusion in this project by you, as defined in the
 Apache-2.0 license, shall be licensed as above, without any additional
 terms or conditions.
+
+
+.. |release| image:: https://img.shields.io/github/v/release/dftd3/tad-dftd3
+   :target: https://github.com/dftd3/tad-dftd3/releases/latest
+   :alt: Release
+
+.. |pypi| image:: https://img.shields.io/pypi/v/tad-dftd3
+   :target: https://pypi.org/project/tad-dftd3/
+   :alt: PyPI
+
+.. |conda| image:: https://img.shields.io/conda/vn/conda-forge/tad-dftd3.svg
+    :target: https://anaconda.org/conda-forge/tad-dftd3
+    :alt: Conda Version
+
+.. |license| image:: https://img.shields.io/github/license/dftd3/tad-dftd3
+   :target: LICENSE
+   :alt: Apache-2.0
+
+.. |testubuntu| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/python.yaml
+   :alt: CI
+
+.. |docs| image:: https://readthedocs.org/projects/tad-dftd3/badge/?version=latest
+   :target: https://tad-dftd3.readthedocs.io
+   :alt: Documentation Status
+
+.. |coverage| image:: https://codecov.io/gh/dftd3/tad-dftd3/branch/main/graph/badge.svg?token=D3rMNnl26t
+   :target: https://codecov.io/gh/dftd3/tad-dftd3
+   :alt: Coverage
+
+.. |precommit| image:: https://results.pre-commit.ci/badge/github/dftd3/tad-dftd3/main.svg
+   :target: https://results.pre-commit.ci/latest/github/dftd3/tad-dftd3/main
+   :alt: pre-commit.ci status
