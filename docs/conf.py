@@ -29,12 +29,11 @@ copyright = f"2022 {author}"
 extensions = [
     "sphinx_design",
     "sphinx_copybutton",
-    "sphinx_design",
     "sphinx.ext.autosummary",
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
-    "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
 ]
 
 html_theme = "sphinx_book_theme"

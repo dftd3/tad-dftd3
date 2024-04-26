@@ -4,11 +4,28 @@ Installation
 pip
 ~~~
 
-The project can easily be installed with ``pip``.
+.. image:: https://img.shields.io/pypi/v/tad-dftd3
+    :target: https://pypi.org/project/tad-dftd3/
+    :alt: PyPI
+
+*tad-dftd3* can easily be installed with ``pip``.
 
 .. code::
 
     pip install tad-dftd3
+
+conda
+~~~~~
+
+.. image:: https://img.shields.io/conda/vn/conda-forge/tad-dftd3.svg
+    :target: https://anaconda.org/conda-forge/tad-dftd3
+    :alt: Conda Version
+
+*tad-dftd3* is also available from ``conda``.
+
+.. code::
+
+    conda install tad-dftd3
 
 From source
 ~~~~~~~~~~~
