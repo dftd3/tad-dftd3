@@ -67,6 +67,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v3
         with:
+          name: artifact
           path: dist
 
       - name: Publish to Test PyPI
@@ -85,6 +86,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v3
         with:
+          name: artifact
           path: dist
 
       - name: Publish to PyPI
