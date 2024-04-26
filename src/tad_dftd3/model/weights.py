@@ -40,50 +40,15 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
         [ 5.4368822,  3.0930154,  3.0930154],
         [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
+from __future__ import annotations
+
 import torch
-from tad_mctc.math import einsum
+from tad_mctc import storch
 
-from .reference import Reference
-from .typing import Any, Tensor, WeightingFunction
+from ..reference import Reference
+from ..typing import Any, Tensor, WeightingFunction
 
-__all__ = ["atomic_c6", "gaussian_weight", "weight_references"]
-
-
-def atomic_c6(numbers: Tensor, weights: Tensor, reference: Reference) -> Tensor:
-    """
-    Calculate atomic dispersion coefficients.
-
-    Parameters
-    ----------
-    numbers : Tensor
-        The atomic numbers of the atoms in the system of shape `(..., nat)`.
-    weights : Tensor
-        Weights of all reference systems of shape `(..., nat, 7)`.
-    reference : Reference
-        Reference systems for D3 model. Contains the reference C6 coefficients
-        of shape `(..., nelements, nelements, 7, 7)`.
-
-    Returns
-    -------
-    Tensor
-        Atomic dispersion coefficients of shape `(..., nat, nat)`.
-    """
-    # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
-    rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-
-    # The default einsum path is fastest if the large tensors comes first.
-    # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
-    return einsum(
-        "...ijab,...ia,...jb->...ij",
-        *(rc6, weights, weights),
-        optimize=[(0, 1), (0, 1)],
-    )
-
-    # NOTE: This old version creates large intermediate tensors and builds the
-    # full matrix before the sum reduction, which requires a lot of memory.
-    #
-    # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
-    # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
+__all__ = ["gaussian_weight", "weight_references"]
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
@@ -165,15 +130,18 @@ def weight_references(
     # We solve this by running in double precision, adding a very small number
     # and using multiple masks.
 
+    small = torch.tensor(1e-300, device=cn.device, dtype=torch.double)
+
     # normalize weights
     norm = torch.where(
         mask,
         torch.sum(weights, dim=-1, keepdim=True),
-        torch.tensor(1e-300, device=cn.device, dtype=torch.double),  # double!
+        small,  # double!
     )
 
     # back to real dtype
-    gw_temp = (weights / norm).type(cn.dtype)
+    gw_temp = storch.divide(weights, norm, eps=small).type(cn.dtype)
+    assert torch.isnan(gw_temp).sum() == 0
 
     # The following section handles cases with large CNs that lead to zeros in
     # after the exponential in the weighting function. If this happens all
@@ -186,8 +154,11 @@ def weight_references(
     # maximum reference CN for each atom
     maxcn = torch.max(refcn, dim=-1, keepdim=True)[0]
 
-    # prevent division by 0 and small values
-    exceptional = (torch.isnan(gw_temp)) | (gw_temp > torch.finfo(cn.dtype).max)
+    # Here, we catch the potential NaN's from `gw_temp`. We cannot use `gw_temp`
+    # directly, because we have to use safe divide to not get NaN's in the
+    # backward. But `norm == 0` is equivalent. Additionally, we catch very
+    # large values occuring because of division by small values.
+    exceptional = (norm == 0) | (gw_temp > torch.finfo(cn.dtype).max)
 
     gw = torch.where(
         exceptional,

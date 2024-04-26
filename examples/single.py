@@ -5,7 +5,7 @@ import torch
 import tad_dftd3 as d3
 
 numbers = mctc.convert.symbol_to_number(symbols="C C C C N C S H H H H H".split())
-positions = torch.Tensor(
+positions = torch.tensor(
     [
         [-2.56745685564671, -0.02509985979910, 0.00000000000000],
         [-1.39177582455797, +2.27696188880014, 0.00000000000000],
