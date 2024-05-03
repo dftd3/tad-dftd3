@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 import torch
-from tad_mctc.autograd import dgradcheck, dgradgradcheck
+from tad_mctc.autograd import dgradcheck, dgradgradcheck, jacrev
 from tad_mctc.batch import pack
 
 from tad_dftd3 import dftd3
@@ -151,29 +151,29 @@ def test_gradgradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None
 @pytest.mark.parametrize("name", sample_list)
 def test_autograd(dtype: torch.dtype, name: str) -> None:
     """Compare with reference values from tblite."""
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
     sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+
+    ref = sample["grad"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(2.40000000),
-        "s9": positions.new_tensor(0.00000000),
-        "a1": positions.new_tensor(0.63000000),
-        "a2": positions.new_tensor(5.00000000),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(2.40000000, **dd),
+        "s9": torch.tensor(0.00000000, **dd),
+        "a1": torch.tensor(0.63000000, **dd),
+        "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = sample["grad"].type(dtype)
-
     # variable to be differentiated
-    positions.requires_grad_(True)
+    pos = positions.clone().requires_grad_(True)
 
     # automatic gradient
-    energy = torch.sum(dftd3(numbers, positions, param))
-    (grad,) = torch.autograd.grad(energy, positions)
-
-    positions.detach_()
+    energy = torch.sum(dftd3(numbers, pos, param))
+    (grad,) = torch.autograd.grad(energy, pos)
 
     assert pytest.approx(ref.cpu(), abs=tol) == grad.cpu()
 
@@ -183,20 +183,22 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("name", sample_list)
 def test_backward(dtype: torch.dtype, name: str) -> None:
     """Compare with reference values from tblite."""
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
     sample = samples[name]
-    numbers = sample["numbers"]
-    positions = sample["positions"].type(dtype)
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+
+    ref = sample["grad"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
-        "s6": positions.new_tensor(1.00000000),
-        "s8": positions.new_tensor(2.40000000),
-        "s9": positions.new_tensor(0.00000000),
-        "a1": positions.new_tensor(0.63000000),
-        "a2": positions.new_tensor(5.00000000),
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(2.40000000, **dd),
+        "s9": torch.tensor(0.00000000, **dd),
+        "a1": torch.tensor(0.63000000, **dd),
+        "a2": torch.tensor(5.00000000, **dd),
     }
-
-    ref = sample["grad"].type(dtype)
 
     # variable to be differentiated
     positions.requires_grad_(True)
@@ -213,3 +215,38 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
     positions.grad.data.zero_()
 
     assert pytest.approx(ref.cpu(), abs=tol) == grad_backward.cpu()
+
+
+@pytest.mark.grad
+@pytest.mark.parametrize("dtype", [torch.double])
+@pytest.mark.parametrize("name", sample_list)
+def test_functorch(dtype: torch.dtype, name: str) -> None:
+    """Compare with reference values from tblite."""
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
+    sample = samples[name]
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+
+    ref = sample["grad"].to(**dd)
+
+    # GFN1-xTB parameters
+    param = {
+        "s6": torch.tensor(1.00000000, **dd),
+        "s8": torch.tensor(2.40000000, **dd),
+        "s9": torch.tensor(0.00000000, **dd),
+        "a1": torch.tensor(0.63000000, **dd),
+        "a2": torch.tensor(5.00000000, **dd),
+    }
+
+    # variable to be differentiated
+    pos = positions.clone().requires_grad_(True)
+
+    def dftd3_func(p: Tensor) -> Tensor:
+        return dftd3(numbers, p, param).sum()
+
+    grad = jacrev(dftd3_func)(pos)
+    assert isinstance(grad, Tensor)
+
+    assert grad.shape == ref.shape
+    assert pytest.approx(ref.cpu(), abs=tol) == grad.detach().cpu()

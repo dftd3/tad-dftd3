@@ -69,6 +69,25 @@ def atomic_c6(
     """
     _check_memory(numbers, weights, chunk_size)
 
+    # PyTorch 2.0.x has a bug with functorch and custom autograd functions as
+    # documented in: https://github.com/pytorch/pytorch/issues/99973
+    #
+    # RuntimeError: unwrapped_count > 0 INTERNAL ASSERT FAILED at "../aten/src/
+    # ATen/functorch/TensorWrapper.cpp":202, please report a bug to PyTorch.
+    # Should have at least one dead wrapper
+    #
+    # Hence, we cannot use the custom backwards for reduced memory consumption.
+    if __tversion__[0] == 2 and __tversion__[1] == 0:  # pragma: no cover
+        track_weights = torch._C._functorch.is_gradtrackingtensor(weights)
+        track_numbers = torch._C._functorch.is_gradtrackingtensor(numbers)
+        if track_weights or track_numbers:
+
+            if chunk_size is None:
+                return _atomic_c6_full(numbers, weights, reference)
+
+            return _atomic_c6_chunked(numbers, weights, reference, chunk_size)
+
+    # Use custom autograd function for reduced memory consumption
     AtomicC6 = AtomicC6_V1 if __tversion__ < (2, 0, 0) else AtomicC6_V2
     res = AtomicC6.apply(numbers, weights, reference, chunk_size)
     assert res is not None
