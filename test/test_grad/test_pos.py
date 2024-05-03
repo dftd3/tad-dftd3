@@ -200,8 +200,6 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
         "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = sample["grad"].type(dtype)
-
     # variable to be differentiated
     positions.requires_grad_(True)
 
