@@ -179,7 +179,7 @@ def _load_c6(
         Reference C6 coefficients.
     """
     kwargs: dict = {"map_location": device}
-    if __tversion__ > (1, 12):
+    if __tversion__ > (1, 12, 1):
         kwargs["weights_only"] = True
 
     path = op.join(op.dirname(__file__), "reference-c6.pt")
