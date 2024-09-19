@@ -4,7 +4,8 @@ Torch autodiff for DFT-D3
 |release|
 |license|
 |testubuntu|
-|testmacos|
+|testmacos_x86|
+|testmacos_arm|
 |testwindows|
 |docs|
 |coverage|
@@ -307,9 +308,13 @@ terms or conditions.
    :target: https://github.com/dftd3/tad-dftd3/actions/workflows/ubuntu.yaml
    :alt: Tests Ubuntu
 
-.. |testmacos| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/macos.yaml/badge.svg
-   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/macos.yaml
-   :alt: Tests macOS
+.. |testmacos_x86| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/macos-x86.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/macos-x86.yaml
+   :alt: Tests macOS (x86)
+
+.. |testmacos_arm| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/macos-arm.yaml/badge.svg
+   :target: https://github.com/dftd3/tad-dftd3/actions/workflows/macos-arm.yaml
+   :alt: Tests macOS (ARM)
 
 .. |testwindows| image:: https://github.com/dftd3/tad-dftd3/actions/workflows/windows.yaml/badge.svg
    :target: https://github.com/dftd3/tad-dftd3/actions/workflows/windows.yaml

@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: Tests (Ubuntu)
+name: Tests (macOS x86)
 
 on:
   push:
@@ -39,9 +39,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
-        torch-version: ["1.11.0", "1.12.1", "1.13.1", "2.0.1", "2.1.2", "2.2.2", "2.3.1", "2.4.1"]
+        os: [macos-12, macos-13]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        # only test oldest and newest version of torch
+        torch-version: ["1.11.0", "2.2.2"]
         exclude:
           # Check latest versions here: https://download.pytorch.org/whl/torch/
           #
@@ -50,7 +51,9 @@ jobs:
           # 3.12: https://github.com/pytorch/pytorch/issues/110436
           # 3.13: https://github.com/pytorch/pytorch/issues/130249
           #
-          # PyTorch<2.2.0 does only support Python<3.12 (all platforms)
+          # Wheels for macOS x86_64 are deprecated since 2.3.0
+          #
+          # PyTorch<2.2 does only support Python<3.12 (all platforms)
           - python-version: "3.12"
             torch-version: "1.11.0"
           - python-version: "3.12"
@@ -61,11 +64,13 @@ jobs:
             torch-version: "2.0.1"
           - python-version: "3.12"
             torch-version: "2.1.2"
-          # PyTorch<1.13.0 does only support Python<3.11 (Linux)
+          # PyTorch<2.0 does only support Python<3.11 (macOS and Windows)
           - python-version: "3.11"
             torch-version: "1.11.0"
           - python-version: "3.11"
             torch-version: "1.12.1"
+          - python-version: "3.11"
+            torch-version: "1.13.1"
 
     runs-on: ${{ matrix.os }}
 
@@ -95,12 +100,3 @@ jobs:
 
       - name: Unittests with tox
         run: tox -e ${{ env.TOXENV }}
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        if: >
-          matrix.python-version == '3.11' &&
-          matrix.torch-version == '2.2.2' &&
-          matrix.os == 'ubuntu-latest'
-        with:
-          files: ./coverage.xml # optional

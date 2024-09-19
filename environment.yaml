@@ -18,8 +18,7 @@ channels:
   - conda-forge
   - pytorch
 dependencies:
-  - numpy
-  - python>=3.8
-  - pytorch>=1.11.0
-  - pip:
-    - tad-mctc
+  - numpy<2
+  - python>=3.8,<3.13
+  - pytorch>=1.11.0,<2.5
+  - tad-mctc
