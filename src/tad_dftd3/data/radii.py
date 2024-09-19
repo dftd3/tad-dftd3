@@ -53,7 +53,7 @@ def _load_vdw_rad_d3(
         VDW radii.
     """
     kwargs: dict = {"map_location": device}
-    if __tversion__ > (1, 12, 1):
+    if __tversion__ > (1, 12, 1):  # pragma: no cover
         kwargs["weights_only"] = True
 
     path = op.join(op.dirname(__file__), "vdw-d3.pt")
