@@ -27,6 +27,7 @@ from typing import Optional
 
 import torch
 from tad_mctc.data.radii import COV_D3
+from tad_mctc._version import __tversion__
 
 from ..typing import Tensor
 
@@ -51,8 +52,12 @@ def _load_vdw_rad_d3(
     Tensor
         VDW radii.
     """
+    kwargs: dict = {"map_location": device}
+    if __tversion__ > (1, 12):
+        kwargs["weights_only"] = True
+
     path = op.join(op.dirname(__file__), "vdw-d3.pt")
-    return torch.load(path, weights_only=True).to(device=device, dtype=dtype)
+    return torch.load(path, **kwargs).type(dtype=dtype)
 
 
 VDW_D3 = _load_vdw_rad_d3()

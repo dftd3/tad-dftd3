@@ -21,7 +21,7 @@ C6 dispersion coefficients.
 """
 import os.path as op
 from typing import Optional
-
+from tad_mctc._version import __tversion__
 import torch
 
 from .typing import Any, NoReturn, Tensor, get_default_device, get_default_dtype
@@ -177,8 +177,12 @@ def _load_c6(
     Tensor
         Reference C6 coefficients.
     """
+    kwargs: dict = {"map_location": device}
+    if __tversion__ > (1, 12):
+        kwargs["weights_only"] = True
+
     path = op.join(op.dirname(__file__), "reference-c6.pt")
-    return torch.load(path, weights_only=True).to(device=device, dtype=dtype)
+    return torch.load(path, **kwargs).type(dtype=dtype)
 
 
 class Reference:
