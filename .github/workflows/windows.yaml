@@ -40,27 +40,34 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
         # only test oldest and newest version of torch
-        torch-version: ["1.11.0", "2.2.2"]
+        torch-version: ["1.11.0", "2.4.1"]
         exclude:
           # Check latest versions here: https://download.pytorch.org/whl/torch/
           #
-          # PyTorch now fully supports Python=<3.11
-          # see: https://github.com/pytorch/pytorch/issues/86566
+          # PyTorch issues:
+          # 3.11: https://github.com/pytorch/pytorch/issues/86566
+          # 3.12: https://github.com/pytorch/pytorch/issues/110436
+          # 3.13: https://github.com/pytorch/pytorch/issues/130249
           #
-          # PyTorch does not support Python 3.12 (all platforms)
-          # see: https://github.com/pytorch/pytorch/issues/110436
+          # PyTorch<2.2.0 does only support Python<3.12 (all platforms)
           - python-version: "3.12"
             torch-version: "1.11.0"
-          # PyTorch<1.13.0 does only support Python=<3.10
+          - python-version: "3.12"
+            torch-version: "1.12.1"
+          - python-version: "3.12"
+            torch-version: "1.13.1"
+          - python-version: "3.12"
+            torch-version: "2.0.1"
+          - python-version: "3.12"
+            torch-version: "2.1.2"
+          # PyTorch<2.0.0 does only support Python<3.11 (macOS and Windows)
           - python-version: "3.11"
             torch-version: "1.11.0"
           - python-version: "3.11"
             torch-version: "1.12.1"
-          # On macOS and Windows, 1.13.x is also not supported for Python>=3.10
-          - os: windows-latest
-            python-version: "3.11"
+          - python-version: "3.11"
             torch-version: "1.13.1"
 
     runs-on: ${{ matrix.os }}
