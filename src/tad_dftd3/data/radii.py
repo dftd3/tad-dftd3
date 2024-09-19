@@ -52,7 +52,7 @@ def _load_vdw_rad_d3(
         VDW radii.
     """
     path = op.join(op.dirname(__file__), "vdw-d3.pt")
-    return torch.load(path).type(dtype).to(device)
+    return torch.load(path, weights_only=True).to(device=device, dtype=dtype)
 
 
 VDW_D3 = _load_vdw_rad_d3()

@@ -178,7 +178,7 @@ def _load_c6(
         Reference C6 coefficients.
     """
     path = op.join(op.dirname(__file__), "reference-c6.pt")
-    return torch.load(path).type(dtype).to(device)
+    return torch.load(path, weights_only=True).to(device=device, dtype=dtype)
 
 
 class Reference:
