@@ -21,8 +21,9 @@ C6 dispersion coefficients.
 """
 import os.path as op
 from typing import Optional
-from tad_mctc._version import __tversion__
+
 import torch
+from tad_mctc._version import __tversion__
 
 from .typing import Any, NoReturn, Tensor, get_default_device, get_default_dtype
 

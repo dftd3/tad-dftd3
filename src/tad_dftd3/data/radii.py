@@ -26,8 +26,8 @@ import os.path as op
 from typing import Optional
 
 import torch
-from tad_mctc.data.radii import COV_D3
 from tad_mctc._version import __tversion__
+from tad_mctc.data.radii import COV_D3
 
 from ..typing import Tensor
 
