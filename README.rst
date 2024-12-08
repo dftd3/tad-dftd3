@@ -16,7 +16,7 @@ This module allows to process a single structure or a batch of structures for th
 
 If you use this software, please cite the following publication
 
-- *J. Chem. Phys.*, **2024**, 161, 062501. (`DOI <https://doi.org/10.1063/5.0216715>`__)
+- *J. Chem. Phys.*, **2024**, *161*, 062501. (`DOI <https://doi.org/10.1063/5.0216715>`__)
 
 For details on the D3 dispersion model see
 
