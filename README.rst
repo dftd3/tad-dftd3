@@ -14,6 +14,10 @@ Torch autodiff for DFT-D3
 Implementation of the DFT-D3 dispersion model in PyTorch.
 This module allows to process a single structure or a batch of structures for the calculation of atom-resolved dispersion energies.
 
+If you use this software, please cite the following publication
+
+- *J. Chem. Phys.*, **2024**, 161, 062501. (`DOI <https://doi.org/10.1063/5.0216715>`__)
+
 For details on the D3 dispersion model see
 
 - *J. Chem. Phys.*, **2010**, *132*, 154104 (`DOI <https://dx.doi.org/10.1063/1.3382344>`__)
