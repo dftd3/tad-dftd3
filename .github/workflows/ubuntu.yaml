@@ -90,6 +90,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -105,13 +107,17 @@ jobs:
         run: echo "TOXENV=py$(echo ${{ matrix.python-version }} | tr -d '.')-torch$(echo ${{ matrix.torch-version }} | tr -d '.')" >> $GITHUB_ENV
 
       - name: Print TOXENV
-        run: echo "TOXENV is set to '${{ env.TOXENV }}'."
+        run: echo "TOXENV is set to '${TOXENV}'."
+        env:
+          TOXENV: ${{ env.TOXENV }}
 
       - name: Unittests with tox
-        run: tox -e ${{ env.TOXENV }}
+        run: tox -e $TOXENV
+        env:
+          TOXENV: ${{ env.TOXENV }}
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@7f8b4b4bde536c465e797be725718b88c5d95e0e # 5.1.1
         if: >
           matrix.python-version == '3.11' &&
           matrix.torch-version == '2.2.2' &&
