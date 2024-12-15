@@ -15,7 +15,7 @@
 """
 Test the reference.
 """
-from typing import Optional
+from typing import Optional, Union
 from unittest.mock import patch
 
 import pytest
