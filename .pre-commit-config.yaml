@@ -38,7 +38,7 @@ repos:
             --min-py-version,
             "3.8",
             --max-py-version,
-            "3.11",
+            "3.12",
           ]
 
   - repo: https://github.com/asottile/pyupgrade
@@ -60,10 +60,14 @@ repos:
       - id: black
         stages: [pre-commit]
 
+  - repo: https://github.com/woodruffw/zizmor-pre-commit
+    rev: v0.9.2
+    hooks:
+      - id: zizmor
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-all]
         pass_filenames: false
         args: [--config-file=pyproject.toml, --ignore-missing-imports, src]

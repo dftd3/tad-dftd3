@@ -29,7 +29,7 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.data.radii import COV_D3
 
-from ..typing import Tensor
+from ..typing import Any, Tensor
 
 __all__ = ["COV_D3", "VDW_D3"]
 
@@ -52,7 +52,7 @@ def _load_vdw_rad_d3(
     Tensor
         VDW radii.
     """
-    kwargs: dict = {"map_location": device}
+    kwargs: dict[str, Any] = {"map_location": device}
     if __tversion__ > (1, 12, 1):  # pragma: no cover
         kwargs["weights_only"] = True
 

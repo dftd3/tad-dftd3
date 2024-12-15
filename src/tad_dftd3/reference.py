@@ -20,7 +20,7 @@ This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
 import os.path as op
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 from tad_mctc._version import __tversion__
@@ -48,6 +48,7 @@ def _load_cn(
     Tensor
         Reference coordination numbers.
     """
+    # fmt: off
     return torch.tensor(
         [
             [-1.0000, -1.0000, -1.0000, -1.0000, -1.0000, -1.0000, -1.0000],  # None
@@ -158,6 +159,7 @@ def _load_cn(
         device=device,
         dtype=dtype,
     )
+    # fmt: on
 
 
 def _load_c6(
@@ -178,7 +180,7 @@ def _load_c6(
     Tensor
         Reference C6 coefficients.
     """
-    kwargs: dict = {"map_location": device}
+    kwargs: dict[str, Any] = {"map_location": device}
     if __tversion__ > (1, 12, 1):  # pragma: no cover
         kwargs["weights_only"] = True
 
