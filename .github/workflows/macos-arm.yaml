@@ -64,6 +64,9 @@ jobs:
           - python-version: "3.11"
             torch-version: "1.13.1"
 
+    permissions:
+      contents: read
+
     runs-on: ${{ matrix.os }}
 
     defaults:
