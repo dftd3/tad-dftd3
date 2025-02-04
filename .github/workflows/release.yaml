@@ -28,26 +28,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  wheel:
-    permissions:
-      contents: read
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          persist-credentials: false
-
-      - name: Build wheel (bdist)
-        run: pipx run build --wheel
-
-      - name: Upload wheel as artifact
-        uses: actions/upload-artifact@v3
-        with:
-          path: dist/*.whl
-
   sdist:
     permissions:
       contents: read
@@ -56,7 +36,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
@@ -64,9 +44,31 @@ jobs:
         run: pipx run build --sdist
 
       - name: Upload source distribution as artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
+          name: dxtb-sdist
           path: dist/*.tar.gz
+
+  wheel:
+    permissions:
+      contents: read
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build wheel (bdist)
+        run: pipx run build --wheel
+
+      - name: Upload wheel as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dxtb-wheel
+          path: dist/*.whl
 
   upload_test_pypi:
     needs: [sdist, wheel]
@@ -82,9 +84,8 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: artifact
           path: dist
 
       - name: Publish to Test PyPI
@@ -106,7 +107,7 @@ jobs:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: artifact
           path: dist
