@@ -1,6 +1,6 @@
 .. _typing:
 
-.. automodule:: tad_dftd4.typing
+.. automodule:: tad_dftd3.typing
 
 .. toctree::
 
