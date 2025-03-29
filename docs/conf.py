@@ -18,7 +18,7 @@ Config file for docs.
 import os.path as op
 import sys
 
-sys.path.insert(0, op.join(op.dirname(__file__), "..", "..", "src"))
+sys.path.insert(0, op.join(op.dirname(__file__), "..", "src"))
 
 import tad_dftd3  # pylint: disable=unused-import
 
