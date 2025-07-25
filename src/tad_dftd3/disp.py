@@ -136,7 +136,7 @@ def dftd3(
     if ref is None:
         ref = Reference(**dd)
     if rcov is None:
-        rcov = data.COV_D3.to(**dd)[numbers]
+        rcov = data.COV_D3().to(**dd)[numbers]
     if rvdw is None:
         rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     if r4r2 is None:
