@@ -38,7 +38,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
 
-    rcov = data.COV_D3.to(**dd)[numbers]
+    rcov = data.COV_D3().to(**dd)[numbers]
     rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
     r4r2 = data.R4R2.to(**dd)[numbers]
     cutoff = torch.tensor(50, **dd)
