@@ -42,11 +42,15 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
 """
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from tad_mctc import storch
+from tad_mctc.autograd import is_functorch_tensor
+from tad_mctc.typing import Tensor
 
 from ..reference import Reference
-from ..typing import Any, Tensor, WeightingFunction
+from ..typing import WeightingFunction
 
 __all__ = ["gaussian_weight", "weight_references"]
 
@@ -141,7 +145,10 @@ def weight_references(
 
     # back to real dtype
     gw_temp = storch.divide(weights, norm, eps=small).type(cn.dtype)
-    assert torch.isnan(gw_temp).sum() == 0
+
+    # If the tensor is not a grad tracking tensor, we can check for NaN's
+    if not is_functorch_tensor(gw_temp):
+        assert torch.isnan(gw_temp).sum() == 0
 
     # The following section handles cases with large CNs that lead to zeros in
     # after the exponential in the weighting function. If this happens all

@@ -18,6 +18,5 @@ Type annotations
 
 All type annotations for this project.
 """
-from .builtin import *
 from .d3 import *
 from .pytorch import *

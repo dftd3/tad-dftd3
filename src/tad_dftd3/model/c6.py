@@ -23,13 +23,15 @@ function (i.e., analytical gradient) and options for chunking.
 """
 from __future__ import annotations
 
+from typing import NamedTuple, Protocol
+
 import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.math import einsum
 from tad_mctc.tools import memory
+from tad_mctc.typing import Callable, Tensor
 
 from ..reference import Reference
-from ..typing import Callable, Protocol, Tensor
 
 __all__ = ["atomic_c6"]
 
@@ -260,13 +262,18 @@ def _atomic_c6_chunked(
         # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
         contribution = _einsum(rc6_chunk, weights_chunk, weights)
 
-        # Add contributions to the correct slice of the output tensor
-        c6_output[..., start:end, :] += contribution
+        # Add contributions to the correct slice of the output tensor with
+        # out-of-place aggregation along the "i" axis. In-place aggregation:
+        # c6_output[..., start:end, :] += contribution
+        idx = torch.arange(start, end, device=numbers.device)
+        c6_output = torch.index_add(
+            c6_output, dim=-2, index=idx, source=contribution
+        )
 
     return c6_output
 
 
-# custom autograd functions
+# typing
 
 
 class CTX(Protocol):
@@ -276,6 +283,14 @@ class CTX(Protocol):
     reference: Reference
 
 
+class VmapInfo(NamedTuple):
+    batch_size: int
+    randomness: str
+
+
+# custom autograd functions
+
+
 class AtomicC6Base(torch.autograd.Function):
     """
     Base class for the version-specific autograd function for atomic C6.
@@ -283,7 +298,9 @@ class AtomicC6Base(torch.autograd.Function):
     """
 
     @staticmethod
-    def backward(ctx: CTX, grad_out: Tensor) -> tuple[None, Tensor, None, None]:
+    def backward(
+        ctx: CTX, grad_outputs: Tensor
+    ) -> tuple[None, Tensor, None, None]:
         numbers, weights = ctx.saved_tensors
         chunk_size = ctx.chunk_size
         ref = ctx.reference
@@ -304,14 +321,14 @@ class AtomicC6Base(torch.autograd.Function):
             g_jb = einsum("...ijab,...ia->...ijb", rc6, weights)
 
             # vjp: (..., n1, n2) * (..., n1, n2, r2) -> (..., n2, r2)
-            _gj = einsum("...ij,...ijb->...jb", grad_out, g_jb)
+            _gj = einsum("...ij,...ijb->...jb", grad_outputs, g_jb)
 
             # ∂c_ij/∂w_ia = ∑b w_jb * c_ijab
             # (..., n1, n2, r1, r2) * (..., n2, r2) -> (..., n1, n2, r1)
             g_ia = einsum("...ijab,...jb->...ija", rc6, weights)
 
             # vjp: (..., n1, n2) * (..., n1, n2, r1) -> (..., n1, r1)
-            _gi = einsum("...ij,...ija->...ia", grad_out, g_ia)
+            _gi = einsum("...ij,...ija->...ia", grad_outputs, g_ia)
 
             weights_bar = _gi + _gj
 
@@ -322,13 +339,14 @@ class AtomicC6Base(torch.autograd.Function):
         #######################
 
         nat = weights.shape[-2]
-        weights_bar = torch.zeros_like(weights)
+        gi_accum = torch.zeros_like(weights)
+        gj_accum = torch.zeros_like(weights)
 
         for start in range(0, nat, chunk_size):
             end = min(start + chunk_size, nat)
 
             # Numbers and derivatives for this chunk
-            grad_chunk = grad_out[..., start:end, :]  # (..., chunk_size, nat)
+            grad_chunk = grad_outputs[..., start:end, :]  # (..., c_size, nat)
             num_chunk = numbers[..., start:end]  # (..., chunk_size)
 
             # Chunked indexing into reference.c6: (..., chunk_size, nat, 7, 7)
@@ -346,11 +364,14 @@ class AtomicC6Base(torch.autograd.Function):
             g_jb = einsum("...ijab,...ia->...ijb", rc6_chunk, weights_chunk)
             _gj = einsum("...ij,...ijb->...jb", grad_chunk, g_jb)
 
-            # Accumulate gradients for the current chunk
-            weights_bar[..., start:end, :] += _gi
-            weights_bar += _gj
+            # Accumulate gradients for current chunk with using out-of-place ops
+            # to allow vmap. Old version: weights_bar[..., start:end, :] += _gi
+            idx = torch.arange(start, end, device=weights.device)
+            gi_accum = torch.index_add(gi_accum, dim=-2, index=idx, source=_gi)
 
-        return None, weights_bar, None, None
+            gj_accum = gj_accum + _gj
+
+        return None, gi_accum + gj_accum, None, None
 
 
 class AtomicC6_V1(AtomicC6Base):
@@ -383,16 +404,17 @@ class AtomicC6_V2(AtomicC6Base):
     This is supposed to reduce memory usage.
     """
 
-    generate_vmap_rule = True
-    # https://pytorch.org/docs/master/notes/extending.func.html#automatically-generate-a-vmap-rule
-    # should work since we only use PyTorch operations
+    generate_vmap_rule = False
+    # Auto-generation should work since we only use PyTorch operations,
+    # however, it does not: PyTorch throws an internal error when indexing
+    # `reference.c6` with the `numbers` tensor.
 
     @staticmethod
     def forward(
         numbers: Tensor,
         weights: Tensor,
         reference: Reference,
-        chunk_size: None | int = None,
+        chunk_size: int | None = None,
     ) -> Tensor:
         if chunk_size is None:
             return _atomic_c6_full(numbers, weights, reference)
@@ -410,3 +432,49 @@ class AtomicC6_V2(AtomicC6Base):
         ctx.save_for_backward(numbers, weights)
         ctx.chunk_size = chunk_size
         ctx.reference = reference
+
+    @staticmethod
+    def vmap(
+        info: VmapInfo,
+        in_dims: tuple[int | None, ...],
+        numbers: Tensor,
+        weights: Tensor,
+        reference: Reference,
+        chunk_size: int | None,
+    ) -> tuple[Tensor, int]:
+        bd_n, bd_w, bd_ref, bd_cs = in_dims
+
+        # Only numbers and weights are batched
+        if bd_ref is not None or bd_cs is not None:  # pragma: no cover
+            raise ValueError(
+                "`Reference` and `chunk_size` must be static under vmap."
+            )
+
+        # Move batch dimensions to the front if necessary
+        if info.batch_size != numbers.shape[0]:
+            raise ValueError(
+                f"Batch size mismatch: expected {info.batch_size}, got "
+                f"{numbers.shape[0]} in `numbers`. The first dimension "
+                "should be the batch dimension."
+            )
+
+        if info.batch_size != weights.shape[0]:
+            raise ValueError(
+                f"Batch size mismatch: expected {info.batch_size}, got "
+                f"{weights.shape[0]} in `weights`. The first dimension "
+                "should be the batch dimension."
+            )
+
+        if bd_n not in (0, None):  # pragma: no cover
+            raise ValueError(
+                f"Batch dimension for `numbers` must be 0 (first dimension) "
+                f"or `None`, got {bd_n}."
+            )
+        if bd_w not in (0, None):  # pragma: no cover
+            raise ValueError(
+                f"Batch dimension for `weights` must be 0 (first dimension) "
+                f"or `None`, got {bd_w}."
+            )
+
+        out = AtomicC6_V2.forward(numbers, weights, reference, chunk_size)
+        return out, 0

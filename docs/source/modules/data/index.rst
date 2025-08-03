@@ -5,4 +5,3 @@
 .. toctree::
 
    r4r2
-   radii

@@ -15,16 +15,15 @@
 """
 Test the reference.
 """
-from typing import Optional, Union
+from typing import Any, Optional, TypedDict, Union
 from unittest.mock import patch
 
 import pytest
 import torch
 from tad_mctc.convert import str_to_device
-from tad_mctc.typing import MockTensor
+from tad_mctc.typing import DD, MockTensor, Tensor
 
 from tad_dftd3 import reference
-from tad_dftd3.typing import DD, Any, Tensor, TypedDict
 
 from ..conftest import DEVICE
 

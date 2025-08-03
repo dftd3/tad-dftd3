@@ -17,13 +17,16 @@ Test C6 coefficients.
 """
 from __future__ import annotations
 
+from typing import Protocol
+
 import pytest
 import torch
+from tad_mctc._version import __tversion__
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
+from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import model, ncoord, reference
-from tad_dftd3.typing import DD, Callable, Protocol, Tensor
 
 from ..conftest import DEVICE, FAST_MODE
 from .samples import samples
@@ -107,6 +110,53 @@ def test_chunked(dtype: torch.dtype, size: int, chunk_size: int) -> None:
 
     assert c6.dtype == c6_chunked.dtype == dtype
     assert pytest.approx(c6.cpu(), abs=tol, rel=tol) == c6_chunked.cpu()
+
+
+@pytest.mark.skipif(__tversion__ < (2, 1, 0), reason="Requires PyTorch>=2.1.0")
+def test_fail() -> None:
+    dd: DD = {"device": DEVICE, "dtype": torch.float64}
+    size = 10
+    nbatch = 2
+
+    ref = reference.Reference(**dd)
+    numbers = torch.randint(1, 86, (nbatch, size), device=DEVICE)
+    positions = torch.rand((nbatch, size, 3), **dd) * 10
+
+    cn = ncoord.cn_d3(numbers, positions)
+    weights = model.weight_references(numbers, cn, ref)
+
+    def _c6(nums: Tensor, ws: Tensor) -> Tensor:
+        return model.atomic_c6(nums, ws, ref)
+
+    jac = torch.func.jacrev(_c6, argnums=1)
+
+    # Correct batch dimensions
+    with pytest.raises(ValueError) as excinfo:
+        vjac = torch.func.vmap(jac, in_dims=(0, None))
+        _ = vjac(numbers, weights.moveaxis(1, 0))
+
+    assert "Batch size mismatch" in str(excinfo.value)
+    assert "weights" in str(excinfo.value)
+
+    # Correct batch dimensions
+    with pytest.raises(ValueError) as excinfo:
+        vjac = torch.func.vmap(jac, in_dims=(None, 0))
+        _ = vjac(numbers.moveaxis(1, 0), weights)
+
+    assert "Batch size mismatch" in str(excinfo.value)
+    assert "numbers" in str(excinfo.value)
+
+    # Internal vmap errors
+
+    # Batch dimensions is always 0 for numbers and weights
+    with pytest.raises(ValueError) as excinfo:
+        vjac = torch.func.vmap(jac, in_dims=(1, 0))
+        _ = vjac(numbers, weights)
+
+    # Batch dimensions is always 0 for numbers and weights
+    with pytest.raises(ValueError):
+        vjac = torch.func.vmap(jac, in_dims=(0, 1))
+        _ = vjac(numbers, weights)
 
 
 ###############################################################################
