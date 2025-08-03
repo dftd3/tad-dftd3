@@ -22,6 +22,7 @@ import torch
 from tad_mctc.autograd import hess_fn_rev, hessian
 from tad_mctc.batch import pack
 from tad_mctc.convert import reshape_fortran
+from tad_mctc._version import __tversion__
 
 from tad_dftd3 import dftd3
 from tad_dftd3.typing import DD, Tensor
@@ -103,6 +104,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     assert isinstance(hess, Tensor)
 
 
+@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_single_v2(dtype: torch.dtype, name: str) -> None:
@@ -147,6 +149,7 @@ def test_single_v2(dtype: torch.dtype, name: str) -> None:
     positions.detach_()
 
 
+@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)

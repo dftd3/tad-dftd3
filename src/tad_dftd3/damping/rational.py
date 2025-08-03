@@ -25,6 +25,8 @@ damping.
     \dfrac{R^n_{\text{AB}}}{R^n_{\text{AB}} +
     \left( a_1 R_0^{\text{AB}} + a_2 \right)^n}
 """
+from __future__ import annotations
+
 import torch
 from tad_mctc.typing import DD, Tensor
 
