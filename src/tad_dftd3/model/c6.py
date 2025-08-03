@@ -29,7 +29,7 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.math import einsum
 from tad_mctc.tools import memory
-from tad_mctc.typing import Callable, Tensor, TypeAlias, Unpack
+from tad_mctc.typing import Callable, Tensor, Unpack
 
 from ..reference import Reference
 
@@ -288,9 +288,6 @@ class VmapInfo(NamedTuple):
     randomness: str
 
 
-Args: TypeAlias = tuple[Tensor, Tensor, Reference, int | None]
-
-
 class AtomicC6Base(torch.autograd.Function):
     """
     Base class for the version-specific autograd function for atomic C6.
@@ -424,7 +421,7 @@ class AtomicC6_V2(AtomicC6Base):
     @staticmethod
     def setup_context(
         ctx: CTX,
-        inputs: Args,
+        inputs: tuple[Tensor, Tensor, Reference, int | None],
         output: Tensor,
     ) -> None:
         numbers, weights, reference, chunk_size = inputs
@@ -437,9 +434,11 @@ class AtomicC6_V2(AtomicC6Base):
     def vmap(
         info: VmapInfo,
         in_dims: tuple[int | None, ...],
-        *args: Unpack[Args],
+        numbers: Tensor,
+        weights: Tensor,
+        reference: Reference,
+        chunk_size: int | None,
     ) -> tuple[Tensor, int]:
-        numbers, weights, reference, chunk_size = args
         bd_n, bd_w, bd_ref, bd_cs = in_dims
 
         # Only numbers and weights are batched
