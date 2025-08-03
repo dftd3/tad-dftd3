@@ -112,7 +112,7 @@ def test_chunked(dtype: torch.dtype, size: int, chunk_size: int) -> None:
     assert pytest.approx(c6.cpu(), abs=tol, rel=tol) == c6_chunked.cpu()
 
 
-@pytest.mark.skipif(__tversion__ < (2, 1, 0), reason="Requires PyTorch>=2.0.0")
+@pytest.mark.skipif(__tversion__ < (2, 1, 0), reason="Requires PyTorch>=2.1.0")
 def test_fail() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
     size = 10

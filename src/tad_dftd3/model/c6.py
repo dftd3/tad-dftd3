@@ -262,7 +262,7 @@ def _atomic_c6_chunked(
         # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
         contribution = _einsum(rc6_chunk, weights_chunk, weights)
 
-        # Add contributions to the correct slice of the output tensor without
+        # Add contributions to the correct slice of the output tensor with
         # out-of-place aggregation along the "i" axis. In-place aggregation:
         # c6_output[..., start:end, :] += contribution
         idx = torch.arange(start, end, device=numbers.device)
@@ -273,7 +273,7 @@ def _atomic_c6_chunked(
     return c6_output
 
 
-# custom autograd functions
+# typing
 
 
 class CTX(Protocol):
@@ -286,6 +286,9 @@ class CTX(Protocol):
 class VmapInfo(NamedTuple):
     batch_size: int
     randomness: str
+
+
+# custom autograd functions
 
 
 class AtomicC6Base(torch.autograd.Function):
@@ -361,9 +364,8 @@ class AtomicC6Base(torch.autograd.Function):
             g_jb = einsum("...ijab,...ia->...ijb", rc6_chunk, weights_chunk)
             _gj = einsum("...ij,...ijb->...jb", grad_chunk, g_jb)
 
-            # Accumulate gradients for current chunk without using inplace ops!
-
-            # weights_bar[..., start:end, :] += _gi
+            # Accumulate gradients for current chunk with using out-of-place ops
+            # to allow vmap. Old version: weights_bar[..., start:end, :] += _gi
             idx = torch.arange(start, end, device=weights.device)
             gi_accum = torch.index_add(gi_accum, dim=-2, index=idx, source=_gi)
 
@@ -403,8 +405,9 @@ class AtomicC6_V2(AtomicC6Base):
     """
 
     generate_vmap_rule = False
-    # https://pytorch.org/docs/master/notes/extending.func.html#automatically-generate-a-vmap-rule
-    # should work since we only use PyTorch operations
+    # Auto-generation should work since we only use PyTorch operations,
+    # however, it does not: PyTorch throws an internal error when indexing
+    # `reference.c6` with the `numbers` tensor.
 
     @staticmethod
     def forward(

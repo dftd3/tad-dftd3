@@ -77,10 +77,9 @@ def R4R2(
     ]
     # fmt: on
 
+    sqrtz = torch.sqrt(
+        torch.arange(len(_r4_over_r2), device=device, dtype=dtype)
+    )
     return torch.sqrt(
-        0.5
-        * (
-            torch.tensor(_r4_over_r2, device=device, dtype=dtype)
-            * torch.sqrt(torch.arange(len(_r4_over_r2)))
-        )
+        0.5 * (torch.tensor(_r4_over_r2, device=device, dtype=dtype) * sqrtz)
     )

@@ -100,7 +100,6 @@ hess_fn_batch = torch.func.vmap(hess_fn_single, in_dims=(0, 0))
 pos = positions.clone().requires_grad_(True)
 hess = hess_fn_batch(numbers, pos)
 
-
 print(f"Shape of numbers  : {numbers.shape}")
 print(f"Shape of positions: {positions.shape}")
 print(f"Shape of Hessian  : {hess.shape}")
