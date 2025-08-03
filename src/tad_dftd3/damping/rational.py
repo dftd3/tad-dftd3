@@ -25,12 +25,10 @@ damping.
     \dfrac{R^n_{\text{AB}}}{R^n_{\text{AB}} +
     \left( a_1 R_0^{\text{AB}} + a_2 \right)^n}
 """
-from typing import Dict
-
 import torch
+from tad_mctc.typing import DD, Tensor
 
 from .. import defaults
-from ..typing import DD, Tensor
 
 __all__ = ["rational_damping"]
 
@@ -39,7 +37,7 @@ def rational_damping(
     order: int,
     distances: Tensor,
     qq: Tensor,
-    param: Dict[str, Tensor],
+    param: dict[str, Tensor],
 ) -> Tensor:
     """
     Rational damped dispersion interaction between pairs.

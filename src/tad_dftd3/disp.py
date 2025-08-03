@@ -54,17 +54,19 @@ tensor(-0.0003964, dtype=torch.float64)
 """
 from __future__ import annotations
 
+from typing import Any
+
 import torch
 from tad_mctc import storch
+from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
-from tad_mctc.data import pse
+from tad_mctc.data import pse, radii
 
 from . import data, defaults, model, ncoord
 from .damping import dispersion_atm, rational_damping
 from .reference import Reference
 from .typing import (
     DD,
-    Any,
     CountingFunction,
     DampingFunction,
     Tensor,
@@ -125,22 +127,25 @@ def dftd3(
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    if torch.max(numbers) >= defaults.MAX_ELEMENT:
-        raise ValueError(
-            f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
-            f"({pse.Z2S[defaults.MAX_ELEMENT]})."
-        )
+    if not is_functorch_tensor(numbers):
+        if torch.max(numbers) >= defaults.MAX_ELEMENT:
+            raise ValueError(
+                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
+                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
+            )
 
     if cutoff is None:
         cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if ref is None:
         ref = Reference(**dd)
     if rcov is None:
-        rcov = data.COV_D3.to(**dd)[numbers]
+        rcov = radii.COV_D3(**dd)[numbers]
     if rvdw is None:
-        rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+        rvdw = radii.VDW_PAIRWISE(**dd)[
+            numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+        ]
     if r4r2 is None:
-        r4r2 = data.R4R2.to(**dd)[numbers]
+        r4r2 = data.R4R2(**dd)[numbers]
 
     cn = ncoord.cn_d3(
         numbers, positions, counting_function=counting_function, rcov=rcov
@@ -202,7 +207,7 @@ def dispersion(
     if cutoff is None:
         cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
     if r4r2 is None:
-        r4r2 = data.R4R2.to(**dd)[numbers]
+        r4r2 = data.R4R2(**dd)[numbers]
 
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
@@ -212,11 +217,13 @@ def dispersion(
         raise ValueError(
             "Shape of expectation values is not consistent with atomic numbers.",
         )
-    if torch.max(numbers) >= defaults.MAX_ELEMENT:
-        raise ValueError(
-            f"No D3 parameters available for Z > {defaults.MAX_ELEMENT - 1} "
-            f"({pse.Z2S[defaults.MAX_ELEMENT]})."
-        )
+
+    if not is_functorch_tensor(numbers):
+        if torch.max(numbers) >= defaults.MAX_ELEMENT:
+            raise ValueError(
+                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
+                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
+            )
 
     # two-body dispersion
     energy = dispersion2(
@@ -226,7 +233,9 @@ def dispersion(
     # three-body dispersion
     if "s9" in param and param["s9"] != 0.0:
         if rvdw is None:
-            rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+            rvdw = radii.VDW_PAIRWISE(**dd)[
+                numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+            ]
 
         energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
 

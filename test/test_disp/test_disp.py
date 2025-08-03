@@ -20,6 +20,7 @@ from math import sqrt
 import pytest
 import torch
 from tad_mctc.batch import pack
+from tad_mctc.data import radii
 
 from tad_dftd3 import damping, data, disp
 from tad_dftd3.typing import DD
@@ -40,7 +41,9 @@ param = {
 }
 
 # TPSS0-D3BJ parameters
-param_noatm = {k: torch.tensor(0.0) if k == "s9" else v for k, v in param.items()}
+param_noatm = {
+    k: torch.tensor(0.0) if k == "s9" else v for k, v in param.items()
+}
 
 
 def test_fail() -> None:
@@ -73,8 +76,10 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
     c6 = sample["c6"].to(**dd)
-    rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.R4R2.to(**dd)[numbers]
+    rvdw = radii.VDW_PAIRWISE(**dd)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
+    r4r2 = data.R4R2(**dd)[numbers]
     cutoff = torch.tensor(50.0, **dd)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
@@ -147,7 +152,9 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
     c6 = sample["c6"].to(**dd)
     ref = sample["disp3"].to(**dd)
 
-    rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    rvdw = radii.VDW_PAIRWISE(**dd)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -200,7 +207,9 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
-    rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    rvdw = radii.VDW_PAIRWISE(**dd)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
 
     energy = damping.dispersion_atm(
         numbers,

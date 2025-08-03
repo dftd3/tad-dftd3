@@ -4,6 +4,5 @@
 
 .. toctree::
 
-   builtin
    d3
    pytorch

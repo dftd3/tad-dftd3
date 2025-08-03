@@ -96,7 +96,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=6,
         type=int,
         help=(
-            "Number of digits of precision for floating point output " "(default = 4)."
+            "Number of digits of precision for floating point output "
+            "(default = 4)."
         ),
     )
 
@@ -176,4 +177,6 @@ def pytest_runtest_setup(item: pytest.Function) -> None:
 
     for _ in item.iter_markers(name="cuda"):
         if not torch.cuda.is_available():
-            pytest.skip("Torch not compiled with CUDA or no CUDA device available.")
+            pytest.skip(
+                "Torch not compiled with CUDA or no CUDA device available."
+            )

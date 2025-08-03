@@ -33,9 +33,9 @@ Axilrod-Teller-Muto dispersion term.
 import torch
 from tad_mctc import storch
 from tad_mctc.batch import real_pairs, real_triples
+from tad_mctc.typing import DD, Tensor
 
 from .. import defaults
-from ..typing import DD, Tensor
 
 __all__ = ["dispersion_atm"]
 
@@ -143,7 +143,10 @@ def dispersion_atm(
     )
 
     ang = torch.where(
-        mask_triples * (r2ij <= cutoff2) * (r2jk <= cutoff2) * (r2jk <= cutoff2),
+        mask_triples
+        * (r2ij <= cutoff2)
+        * (r2jk <= cutoff2)
+        * (r2jk <= cutoff2),
         0.375 * s / r5 + 1.0 / r3,
         torch.tensor(0.0, **dd),
     )

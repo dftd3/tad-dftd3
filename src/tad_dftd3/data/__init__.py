@@ -16,7 +16,6 @@
 Atomic data
 ===========
 
-Data arrays for atomic constants like covalent radii or van-der-Waals radii.
+Data arrays for atomic constants.
 """
 from .r4r2 import *
-from .radii import *

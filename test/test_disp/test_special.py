@@ -19,6 +19,7 @@ weird handling of exceptional values in the calculation of the weights.
 import pytest
 import torch
 from tad_mctc.batch import pack
+from tad_mctc.data import radii
 
 from tad_dftd3 import damping, data, dftd3, model, reference
 from tad_dftd3.ncoord import exp_count
@@ -38,9 +39,11 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
 
-    rcov = data.COV_D3.to(**dd)[numbers]
-    rvdw = data.VDW_D3.to(**dd)[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = data.R4R2.to(**dd)[numbers]
+    rcov = radii.COV_D3(**dd)[numbers]
+    rvdw = radii.VDW_PAIRWISE(**dd)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
+    r4r2 = data.R4R2(**dd)[numbers]
     cutoff = torch.tensor(50, **dd)
 
     # GFN1-xTB parameters

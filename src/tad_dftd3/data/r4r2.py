@@ -21,13 +21,15 @@ rare gases recalculated by J. Mewes with PBE0/aug-cc-pVQZ in Dirac (2018).
 Also new super heavies Cn, Nh, Fl, Lv, Og and Am-Rg calculated at
 4c-PBE/Dyall-AE4Z (Dirac 2022).
 """
+from functools import lru_cache
+
 import torch
 
 __all__ = ["R4R2"]
 
 
 # fmt: off
-r4_over_r2 = torch.tensor([
+_r4_over_r2 = [
     0.0000,  # None
     8.0589, 3.4698,  # H,He
     29.0974,14.8517,11.8799, 7.8715, 5.5588, 4.7566, 3.8025, 3.1036,  # Li-Ne
@@ -52,9 +54,34 @@ r4_over_r2 = torch.tensor([
     14.8326,12.3771,10.6378, 9.3638, 8.2297,  # Lr-
     7.5667, 6.9456, 6.3946, 5.9159, 5.4929,  # -Cn
     6.7286, 6.5144,10.9169,10.3600, 9.4723, 8.6641,  # Nh-Og
-])  # fmt: on
+]
 """Actually calculated r⁴ over r² expectation values."""
 # fmt: on
 
-R4R2 = torch.sqrt(0.5 * (r4_over_r2 * torch.sqrt(torch.arange(r4_over_r2.shape[0]))))
-"""r⁴ over r² expectation values."""
+
+@lru_cache(maxsize=None)
+def R4R2(
+    dtype: torch.dtype | None = None, device: torch.device | None = None
+) -> torch.Tensor:
+    """
+    Returns the r⁴ over r² expectation values as a tensor.
+
+    Parameters
+    ----------
+    dtype : torch.dtype | None, optional
+        The desired data type of the returned tensor. Defaults to None.
+    device : torch.device | None, optional
+        The desired device of the returned tensor. Defaults to None.
+
+    Returns
+    -------
+    Tensor
+        A tensor containing the r⁴ over r² expectation values.
+    """
+    return torch.sqrt(
+        0.5
+        * (
+            torch.tensor(_r4_over_r2, device=device, dtype=dtype)
+            * torch.sqrt(torch.arange(len(_r4_over_r2)))
+        )
+    )
