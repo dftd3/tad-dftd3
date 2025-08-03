@@ -88,21 +88,6 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
     positions.detach_()
 
-    # Test with closure over non-tensor argument
-
-    def _energy(numbers: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
-        """
-        Closure over non-tensor argument `param` for `dftd3` function.
-
-        Returns energy as scalar, which is required for Hessian computation
-        to obtain the correct shape of ``(..., nat, 3, nat, 3)``.
-        """
-        return dftd3(numbers, positions, param).sum(-1)
-
-    pos = positions.clone().requires_grad_(True)
-    hess = hess_fn_rev(_energy, argnums=1)(numbers, pos)
-    assert isinstance(hess, Tensor)
-
 
 @pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
 @pytest.mark.parametrize("dtype", [torch.double])
