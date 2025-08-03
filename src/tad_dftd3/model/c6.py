@@ -29,7 +29,7 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.math import einsum
 from tad_mctc.tools import memory
-from tad_mctc.typing import Callable, Tensor, Unpack
+from tad_mctc.typing import Callable, Tensor
 
 from ..reference import Reference
 

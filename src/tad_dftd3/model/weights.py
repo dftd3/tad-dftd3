@@ -46,6 +46,7 @@ from typing import Any
 
 import torch
 from tad_mctc import storch
+from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.typing import Tensor
 
 from ..reference import Reference
@@ -146,9 +147,7 @@ def weight_references(
     gw_temp = storch.divide(weights, norm, eps=small).type(cn.dtype)
 
     # If the tensor is not a grad tracking tensor, we can check for NaN's
-    if not torch._C._functorch.is_gradtrackingtensor(
-        gw_temp
-    ) and not torch._C._functorch.is_batchedtensor(gw_temp):
+    if not is_functorch_tensor(gw_temp):
         assert torch.isnan(gw_temp).sum() == 0
 
     # The following section handles cases with large CNs that lead to zeros in

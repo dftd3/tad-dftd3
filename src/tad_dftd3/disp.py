@@ -58,7 +58,7 @@ from typing import Any
 
 import torch
 from tad_mctc import storch
-from tad_mctc._version import __tversion__
+from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
 from tad_mctc.data import pse, radii
 
@@ -72,14 +72,6 @@ from .typing import (
     Tensor,
     WeightingFunction,
 )
-
-if __tversion__ >= (2, 0, 0):
-    from tad_mctc.autograd import is_functorch_tensor
-else:
-    # Dummy function for old PyTorch versions
-    def is_functorch_tensor(x: Tensor) -> bool:
-        return False
-
 
 __all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
 
@@ -134,7 +126,6 @@ def dftd3(
         Atom-resolved DFT-D3 dispersion energy for each geometry.
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
-    print(numbers, is_functorch_tensor(numbers))
 
     if not is_functorch_tensor(numbers):
         if torch.max(numbers) >= defaults.MAX_ELEMENT:
