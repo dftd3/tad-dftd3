@@ -21,10 +21,10 @@ from typing import Protocol
 
 import pytest
 import torch
+from tad_mctc._version import __tversion__
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Callable, Tensor
-from tad_mctc._version import __tversion__
 
 from tad_dftd3 import model, ncoord, reference
 
