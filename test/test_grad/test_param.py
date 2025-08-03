@@ -22,9 +22,9 @@ import torch
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.data.molecules import mols as samples
+from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import dftd3
-from tad_dftd3.typing import DD, Callable, Tensor
 
 from ..conftest import DEVICE, FAST_MODE
 
@@ -136,7 +136,9 @@ def test_gradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)
-def test_gradgradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+def test_gradgradcheck_batch(
+    dtype: torch.dtype, name1: str, name2: str
+) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradgradcheck`.

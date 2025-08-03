@@ -1,4 +1,8 @@
 # SPDX-Identifier: CC0-1.0
+from __future__ import annotations
+
+from typing import Callable
+
 import tad_mctc as mctc
 import torch
 
@@ -59,19 +63,43 @@ positions = mctc.batch.pack(
         sample2["positions"],
     )
 )
-ref = d3.reference.Reference()
-rcov = mctc.data.COV_D3()[numbers]
-rvdw = mctc.data.VDW_PAIRWISE()[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-r4r2 = d3.data.R4R2()[numbers]
+
 param = {
     "a1": torch.tensor(0.49484001),
     "s8": torch.tensor(0.78981345),
     "a2": torch.tensor(5.73083694),
 }
 
-energy = d3.dftd3(numbers, positions, param)
 
-torch.set_printoptions(precision=10)
-print("Expected:", torch.tensor([-0.0014092578, -0.0057840119]))
-print("Actual  :", torch.sum(energy, dim=-1))
-# tensor([-0.0014092578, -0.0057840119])
+def _energy(numbers: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+    """
+    Closure over non-tensor argument `param` for `dftd3` function.
+
+    Returns the energy as a scalar, which is required for Hessian computation
+    to obtain the correct shape of ``(..., nat, 3, nat, 3)``.
+    """
+    return d3.dftd3(numbers, positions, param).sum(-1)
+
+
+def hessian(
+    fn: Callable[..., torch.Tensor], argnums: tuple[int] | int = 0
+) -> Callable:
+    """
+    Compute the Hessian using reverse-mode autodiff twice.
+    (Functorch's `hessian` uses forward and backward mode, but forward is
+    not implemented for the custom autograd functions in DFT-D3.)
+    """
+    return torch.func.jacrev(
+        torch.func.jacrev(fn, argnums=argnums), argnums=argnums
+    )
+
+
+hess_fn_single = hessian(_energy, argnums=1)
+hess_fn_batch = torch.func.vmap(hess_fn_single, in_dims=(0, 0))
+
+pos = positions.clone().requires_grad_(True)
+hess = hess_fn_batch(numbers, pos)
+
+print(f"Shape of numbers  : {numbers.shape}")
+print(f"Shape of positions: {positions.shape}")
+print(f"Shape of Hessian  : {hess.shape}")

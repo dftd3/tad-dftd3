@@ -19,8 +19,7 @@ from typing import Dict
 
 import torch
 from tad_mctc.data.molecules import merge_nested_dicts, mols
-
-from tad_dftd3.typing import Molecule, Tensor, TypedDict
+from tad_mctc.typing import Molecule, Tensor, TypedDict
 
 
 class Refs(TypedDict):

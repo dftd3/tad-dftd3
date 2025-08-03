@@ -17,7 +17,7 @@ Test loading C6 coefficients.
 """
 import torch
 
-from tad_dftd3 import data, defaults, reference
+from tad_dftd3 import defaults, reference
 
 
 def test_ref() -> None:
@@ -25,8 +25,3 @@ def test_ref() -> None:
     assert c6.shape == torch.Size(
         (defaults.MAX_ELEMENT, defaults.MAX_ELEMENT, 7, 7),
     )
-
-
-def test_vdw() -> None:
-    vdw = data.radii._load_vdw_rad_d3(dtype=torch.double)
-    assert vdw.shape == torch.Size((defaults.MAX_ELEMENT, defaults.MAX_ELEMENT))
