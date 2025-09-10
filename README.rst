@@ -236,9 +236,9 @@ The next example shows the calculation of dispersion energies for a batch of str
         )
     )
     ref = d3.reference.Reference()
-    rcov = d3.data.COV_D3[numbers]
-    rvdw = d3.data.VDW_D3[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = d3.data.R4R2[numbers]
+    rcov = mctc.data.COV_D3()[numbers]
+    rvdw = mctc.data.VDW_PAIRWISE()[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+    r4r2 = d3.data.R4R2()[numbers]
     param = {
         "a1": torch.tensor(0.49484001),
         "s8": torch.tensor(0.78981345),
