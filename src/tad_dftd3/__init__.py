@@ -73,6 +73,7 @@ tensor([-0.0124292, -0.0045002])
 >>> print(energy[0] - 2*energy[1])
 tensor(-0.0034288)
 """
+
 import torch
 
 from . import damping, data, defaults, disp, model, ncoord, reference, typing

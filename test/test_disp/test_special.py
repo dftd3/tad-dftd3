@@ -16,6 +16,7 @@
 Test calculation of dispersion energy for a system, which fail without the
 weird handling of exceptional values in the calculation of the weights.
 """
+
 import pytest
 import torch
 from tad_mctc.batch import pack

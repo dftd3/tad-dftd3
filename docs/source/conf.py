@@ -15,6 +15,7 @@
 """
 Config file for docs.
 """
+
 import os.path as op
 import sys
 

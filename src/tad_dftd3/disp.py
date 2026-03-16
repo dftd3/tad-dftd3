@@ -52,6 +52,7 @@ Example
 >>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
 tensor(-0.0003964, dtype=torch.float64)
 """
+
 from __future__ import annotations
 
 from typing import Any

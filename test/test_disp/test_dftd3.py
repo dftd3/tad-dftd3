@@ -15,6 +15,7 @@
 """
 Test calculation of dispersion energy and nuclear gradients.
 """
+
 import pytest
 import torch
 from tad_mctc.batch import pack

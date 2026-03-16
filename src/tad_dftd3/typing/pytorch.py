@@ -18,6 +18,7 @@ Type annotations: PyTorch
 
 PyTorch-related type annotations for this project.
 """
+
 from tad_mctc.typing import (
     DD,
     CountingFunction,

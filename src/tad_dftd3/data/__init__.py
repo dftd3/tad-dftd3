@@ -18,4 +18,5 @@ Atomic data
 
 Data arrays for atomic constants.
 """
+
 from .r4r2 import *
