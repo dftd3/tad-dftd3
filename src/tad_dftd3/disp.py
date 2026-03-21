@@ -148,7 +148,7 @@ def dftd3(
     if r4r2 is None:
         r4r2 = data.R4R2(**dd)[numbers]
 
-    cn = ncoord.cn_d3(
+    cn = ncoord.coordination_number(
         numbers, positions, counting_function=counting_function, rcov=rcov
     )
     weights = model.weight_references(numbers, cn, ref, weighting_function)
@@ -212,11 +212,13 @@ def dispersion(
 
     if numbers.shape != positions.shape[:-1]:
         raise ValueError(
-            "Shape of positions is not consistent with atomic numbers.",
+            f"Shape of positions ({positions.shape[:-1]}) is not consistent "
+            f"with atomic numbers ({numbers.shape})."
         )
     if numbers.shape != r4r2.shape:
         raise ValueError(
-            "Shape of expectation values is not consistent with atomic numbers.",
+            f"Shape of expectation values ({r4r2.shape[:-1]}) is not "
+            f"consistent with atomic numbers ({numbers.shape})."
         )
 
     if not is_functorch_tensor(numbers):
