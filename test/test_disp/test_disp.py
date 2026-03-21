@@ -15,6 +15,7 @@
 """
 Test calculation of two-body and three-body dispersion terms.
 """
+
 from math import sqrt
 
 import pytest

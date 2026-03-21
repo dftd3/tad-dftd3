@@ -15,6 +15,7 @@
 """
 Test model utility.
 """
+
 from unittest.mock import patch
 
 import pytest

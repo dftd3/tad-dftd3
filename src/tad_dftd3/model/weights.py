@@ -40,6 +40,7 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
         [ 5.4368822,  3.0930154,  3.0930154],
         [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
 """
+
 from __future__ import annotations
 
 from typing import Any

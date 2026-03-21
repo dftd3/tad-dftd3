@@ -15,6 +15,7 @@
 """
 Test the weights.
 """
+
 import pytest
 import torch
 from tad_mctc.batch import pack

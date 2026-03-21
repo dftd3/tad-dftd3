@@ -15,6 +15,7 @@
 """
 Test loading C6 coefficients.
 """
+
 import torch
 
 from tad_dftd3 import defaults, reference

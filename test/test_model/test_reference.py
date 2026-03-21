@@ -15,6 +15,7 @@
 """
 Test the reference.
 """
+
 from typing import Any, Optional, TypedDict, Union
 from unittest.mock import patch
 

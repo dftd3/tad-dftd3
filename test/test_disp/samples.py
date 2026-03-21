@@ -15,6 +15,7 @@
 """
 Collection of test samples.
 """
+
 from typing import Dict
 
 import torch

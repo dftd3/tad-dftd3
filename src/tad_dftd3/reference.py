@@ -19,6 +19,7 @@ Reference model
 This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
+
 import os.path as op
 from typing import Any, NoReturn, Optional
 

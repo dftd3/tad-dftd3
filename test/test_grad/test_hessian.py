@@ -15,6 +15,7 @@
 """
 Testing dispersion Hessian (autodiff).
 """
+
 from __future__ import annotations
 
 import pytest

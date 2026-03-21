@@ -21,6 +21,7 @@ Computation of atomic C6 dispersion coefficients.
 Since this part can be the most memory-intensive, we provide a custom backward
 function (i.e., analytical gradient) and options for chunking.
 """
+
 from __future__ import annotations
 
 from typing import NamedTuple, Protocol
