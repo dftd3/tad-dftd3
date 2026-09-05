@@ -14,4 +14,3 @@ The following modules are contained with `tad-dftd3`.
    model
    ncoord/index
    reference
-   typing/index

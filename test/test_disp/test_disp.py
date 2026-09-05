@@ -22,9 +22,9 @@ import pytest
 import torch
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
+from tad_mctc.typing import DD
 
 from tad_dftd3 import damping, data, disp
-from tad_dftd3.typing import DD
 
 from ..conftest import DEVICE
 from .samples import samples

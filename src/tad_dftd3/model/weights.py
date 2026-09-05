@@ -43,7 +43,7 @@ tensor([[10.4130471,  5.4368822,  5.4368822],
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from tad_mctc import storch
@@ -51,9 +51,12 @@ from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.typing import Tensor
 
 from ..reference import Reference
-from ..typing import WeightingFunction
 
-__all__ = ["gaussian_weight", "weight_references"]
+__all__ = ["WeightingFunction", "gaussian_weight", "weight_references"]
+
+
+WeightingFunction = Callable[[Tensor], Tensor]
+"""Function that weights the reference systems by coordination number."""
 
 
 def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:

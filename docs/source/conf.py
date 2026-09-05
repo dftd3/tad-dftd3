@@ -21,8 +21,6 @@ import sys
 
 sys.path.insert(0, op.join(op.dirname(__file__), "../../", "src"))
 
-import tad_dftd3  # pylint: disable=unused-import
-
 project = "Torch autodiff DFT-D3"
 author = "Sebastian Ehlert, Marvin Friede"
 copyright = f"2022 {author}"
@@ -61,6 +59,9 @@ html_css_files = ["custom.css"]
 autosummary_generate = True
 autosummary_imported_members = True
 
+# Documenting the sources requires no working PyTorch install: the compiled
+# dependencies are mocked so the docs build stays lightweight.
+autodoc_mock_imports = ["torch", "tad_mctc"]
 autodoc_typehints = "description"
 autodoc_member_order = "groupwise"
 autoclass_content = "both"

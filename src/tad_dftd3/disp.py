@@ -62,17 +62,12 @@ from tad_mctc import storch
 from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
 from tad_mctc.data import pse, radii
+from tad_mctc.typing import DD, CountingFunction, DampingFunction, Tensor
 
 from . import data, defaults, model, ncoord
 from .damping import dispersion_atm, rational_damping
+from .model.weights import WeightingFunction
 from .reference import Reference
-from .typing import (
-    DD,
-    CountingFunction,
-    DampingFunction,
-    Tensor,
-    WeightingFunction,
-)
 
 __all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
 
