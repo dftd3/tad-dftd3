@@ -16,11 +16,11 @@
 Collection of test samples.
 """
 
-from typing import Dict
+from typing import Dict, TypedDict
 
 import torch
 from tad_mctc.data.molecules import merge_nested_dicts, mols
-from tad_mctc.typing import Molecule, Tensor, TypedDict
+from tad_mctc.typing import Molecule, Tensor
 
 
 class Refs(TypedDict):

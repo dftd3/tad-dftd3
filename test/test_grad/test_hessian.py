@@ -24,9 +24,9 @@ from tad_mctc._version import __tversion__
 from tad_mctc.autograd import hess_fn_rev, hessian
 from tad_mctc.batch import pack
 from tad_mctc.convert import reshape_fortran
+from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import dftd3
-from tad_dftd3.typing import DD, Tensor
 
 from ..conftest import DEVICE
 from .samples import samples

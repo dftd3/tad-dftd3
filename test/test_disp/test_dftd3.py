@@ -20,10 +20,10 @@ import pytest
 import torch
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
+from tad_mctc.typing import DD
 
 from tad_dftd3 import damping, data, dftd3, model, reference
 from tad_dftd3.ncoord import exp_count
-from tad_dftd3.typing import DD
 
 from ..conftest import DEVICE
 from .samples import samples
