@@ -131,8 +131,15 @@ Note that this randomizes the order of tests but skips "large" tests. To modify 
     tox -- test
 
 
-Example
--------
+Examples
+--------
+
+All examples can also be found in the `examples directory <examples>`__.
+
+- `single.py <examples/single.py>`__
+- `batch.py <examples/batch.py>`__
+- `forces.py <examples/forces.py>`__
+- `hessian.py <examples/hessian.py>`__
 
 The following example shows how to calculate the DFT-D3 dispersion energy for a single structure.
 
@@ -265,6 +272,64 @@ The next example shows the calculation of dispersion energies for a batch of str
     torch.set_printoptions(precision=10)
     print(torch.sum(energy, dim=-1))
     # tensor([-0.0014092578, -0.0057840119])
+
+
+Since the dispersion energy is differentiable with respect to the atomic
+positions, the D3 contribution to the gradient (and hence the forces) is
+obtained from a simple backward pass.
+
+.. code:: python
+
+    import torch
+    import tad_dftd3 as d3
+    import tad_mctc as mctc
+
+    numbers = mctc.convert.symbol_to_number(symbols="C C C C N C S H H H H H".split())
+    positions = torch.tensor(
+        [
+            [-2.56745685564671, -0.02509985979910, 0.00000000000000],
+            [-1.39177582455797, +2.27696188880014, 0.00000000000000],
+            [+1.27784995624894, +2.45107479759386, 0.00000000000000],
+            [+2.62801937615793, +0.25927727028120, 0.00000000000000],
+            [+1.41097033661123, -1.99890996077412, 0.00000000000000],
+            [-1.17186102298849, -2.34220576284180, 0.00000000000000],
+            [-2.39505990368378, -5.22635838332362, 0.00000000000000],
+            [+2.41961980455457, -3.62158019253045, 0.00000000000000],
+            [-2.51744374846065, +3.98181713686746, 0.00000000000000],
+            [+2.24269048384775, +4.24389473203647, 0.00000000000000],
+            [+4.66488984573956, +0.17907568006409, 0.00000000000000],
+            [-4.60044244782237, -0.17794734637413, 0.00000000000000],
+        ],
+        requires_grad=True,
+    )
+    param = {
+        "a1": torch.tensor(0.49484001),
+        "s8": torch.tensor(0.78981345),
+        "a2": torch.tensor(5.73083694),
+    }
+
+    energy = d3.dftd3(numbers, positions, param)
+
+    (grad,) = torch.autograd.grad(energy.sum(), positions)
+    forces = -grad
+
+The full example, including a comparison against numerical gradients, is
+available in `forces.py <examples/forces.py>`__.
+Second derivatives, i.e., the D3 contribution to the Hessian, are obtained by
+applying reverse-mode automatic differentiation twice (see
+`hessian.py <examples/hessian.py>`__).
+
+
+Limitations
+-----------
+
+The current implementation only works for molecular structures.
+Periodic boundary conditions are **not** implemented, i.e., no stress tensor or
+lattice gradient is available.
+
+The code is fully vectorized for maximum efficiency.
+Therefore, all quantities are stored as full tensors, which makes calculations rather **memory intensive**.
+Especially, the ATM term can become limiting as it requires a 3D tensor of dimension ``(n_atoms, n_atoms, n_atoms)``.
 
 
 Contributing
