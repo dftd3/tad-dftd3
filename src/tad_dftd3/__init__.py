@@ -37,7 +37,7 @@ Example
 ...     mctc.convert.symbol_to_number("C C N N H H H H H H O O".split()),
 ...     mctc.convert.symbol_to_number("C O N H H H".split()),
 ... ))
->>> positions = mctcd3.batch.pack((
+>>> positions = mctc.batch.pack((
 ...     torch.tensor([  # coordinates in Bohr
 ...         [-3.81469488143921, +0.09993441402912, 0.00000000000000],
 ...         [+3.81469488143921, -0.09993441402912, 0.00000000000000],
