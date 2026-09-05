@@ -92,6 +92,9 @@ The following dependencies are required
 - `torch <https://pytorch.org/>`__
 - `pytest <https://docs.pytest.org/>`__ (tests only)
 
+PyTorch<2.3.0 is compiled against the NumPy 1.x C-API and requires ``numpy<2``.
+Since this cannot be expressed in the package metadata (dependency markers cannot refer to the PyTorch version), pin ``numpy<2`` yourself if you use PyTorch<2.3.0.
+
 
 Development
 -----------
