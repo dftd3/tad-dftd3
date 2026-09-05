@@ -151,9 +151,9 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
+.venv*
 env/
-venv/
+venv*
 ENV/
 env.bak/
 venv.bak/
@@ -185,3 +185,11 @@ cython_debug/
 # Directories
 /build*/
 /_*/
+
+# AI tools
+.benchmarks/
+.claude/
+.codegraph/
+.pi/
+.pi-subagents/
+.scratch/
