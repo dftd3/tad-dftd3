@@ -1,0 +1,14 @@
+# fpm build artifacts
+/build/
+/_fpm-install/
+
+# meson build artifacts, and everything its wrap fetches fresh from GitHub
+# every time -- s-dftd3 itself and, promoted up by Meson, its own
+# subprojects (mctc-lib, toml-f, ...) and their .wrap files. Only the wrap
+# file this directory authors itself, subprojects/s-dftd3.wrap, is tracked.
+/builddir/
+/subprojects/*
+!/subprojects/s-dftd3.wrap
+
+# the compiled tool -- machine-specific, not portable; source stays tracked
+/dump_reference

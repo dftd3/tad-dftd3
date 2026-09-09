@@ -25,6 +25,7 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
+from tad_mctc.data.molecules import mols
 from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import model, ncoord, reference
@@ -46,6 +47,11 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
+
+    # weights and c6 both come from s-dftd3's Fortran library (see
+    # samples.py's module docstring). Feeding in the reference weights
+    # isolates this test to atomic_c6 itself, independent of
+    # weight_references.
     weights = sample["weights"].to(**dd)
     refc6 = sample["c6"].to(**dd)
 
@@ -73,6 +79,10 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
         )
     )
     ref = reference.Reference(**dd)
+
+    # s-dftd3 has no notion of a batch of independent molecules; the
+    # reference for each molecule was computed on its own and is packed
+    # here the same way the inputs above were packed.
     weights = pack(
         (
             sample1["weights"].to(**dd),
@@ -188,9 +198,12 @@ def gradchecker(
 ]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    # Only numbers/positions are needed here (cn and weights are computed
+    # live below); mols is used rather than samples so that "LiH", which
+    # has no s-dftd3 Fortran-library fixture data, is available too.
+    mol = mols[name]
+    numbers = mol["numbers"].to(DEVICE)
+    positions = mol["positions"].to(**dd)
 
     ref = reference.Reference(**dd)
     cn = ncoord.cn_d3(numbers, positions)

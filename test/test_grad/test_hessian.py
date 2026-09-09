@@ -23,13 +23,13 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.autograd import hess_fn_rev, hessian
 from tad_mctc.batch import pack
-from tad_mctc.convert import reshape_fortran
+from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_hessian
 
 sample_list = ["LiH", "SiH4", "PbH4-BiH3", "MB16_43_01"]
 
@@ -76,10 +76,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = reshape_fortran(
-        sample["hessian"].to(**dd),
-        torch.Size(2 * (numbers.shape[-1], 3)),
-    )
+    ref = reference_hessian(numbers, positions, param)
 
     # variable to be differentiated
     positions.requires_grad_(True)
@@ -109,10 +106,7 @@ def test_single_v2(dtype: torch.dtype, name: str) -> None:
         "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = reshape_fortran(
-        sample["hessian"].to(**dd),
-        torch.Size(2 * (numbers.shape[-1], 3)),
-    )
+    ref = reference_hessian(numbers, positions, param)
 
     # variable to be differentiated
     positions.requires_grad_(True)
@@ -168,15 +162,20 @@ def test_batch(
         "a2": torch.tensor(5.00000000, **dd),
     }
 
+    # s-dftd3 has no notion of a batch of independent molecules; compute the
+    # reference for each molecule on its own and pack them the same way the
+    # inputs above were packed.
     ref = pack(
         [
-            reshape_fortran(
-                sample1["hessian"].to(**dd),
-                torch.Size(2 * (sample1["numbers"].shape[-1], 3)),
+            reference_hessian(
+                sample1["numbers"].to(DEVICE),
+                sample1["positions"].to(**dd),
+                param,
             ),
-            reshape_fortran(
-                sample2["hessian"].to(**dd),
-                torch.Size(2 * (sample2["numbers"].shape[-1], 3)),
+            reference_hessian(
+                sample2["numbers"].to(DEVICE),
+                sample2["positions"].to(**dd),
+                param,
             ),
         ]
     )

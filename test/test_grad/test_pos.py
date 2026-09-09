@@ -22,12 +22,13 @@ import pytest
 import torch
 from tad_mctc.autograd import dgradcheck, dgradgradcheck, jacrev
 from tad_mctc.batch import pack
+from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE, FAST_MODE
-from .samples import samples
+from ..reference import reference_gradient_per_atom
 
 sample_list = ["LiH", "AmF3", "SiH4", "MB16_43_01"]
 
@@ -153,14 +154,12 @@ def test_gradgradcheck_batch(
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_autograd(dtype: torch.dtype, name: str) -> None:
-    """Compare with reference values from tblite."""
+    """Compare with the s-dftd3 Fortran reference."""
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-
-    ref = sample["grad"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
@@ -170,6 +169,7 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
         "a1": torch.tensor(0.63000000, **dd),
         "a2": torch.tensor(5.00000000, **dd),
     }
+    ref = reference_gradient_per_atom(numbers, positions, param)
 
     # variable to be differentiated
     pos = positions.clone().requires_grad_(True)
@@ -185,14 +185,12 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_backward(dtype: torch.dtype, name: str) -> None:
-    """Compare with reference values from tblite."""
+    """Compare with the s-dftd3 Fortran reference."""
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-
-    ref = sample["grad"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
@@ -202,6 +200,7 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
         "a1": torch.tensor(0.63000000, **dd),
         "a2": torch.tensor(5.00000000, **dd),
     }
+    ref = reference_gradient_per_atom(numbers, positions, param)
 
     # variable to be differentiated
     positions.requires_grad_(True)
@@ -224,14 +223,12 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
 def test_functorch(dtype: torch.dtype, name: str) -> None:
-    """Compare with reference values from tblite."""
+    """Compare with the s-dftd3 Fortran reference."""
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-
-    ref = sample["grad"].to(**dd)
 
     # GFN1-xTB parameters
     param = {
@@ -241,6 +238,7 @@ def test_functorch(dtype: torch.dtype, name: str) -> None:
         "a1": torch.tensor(0.63000000, **dd),
         "a2": torch.tensor(5.00000000, **dd),
     }
+    ref = reference_gradient_per_atom(numbers, positions, param)
 
     # variable to be differentiated
     pos = positions.clone().requires_grad_(True)

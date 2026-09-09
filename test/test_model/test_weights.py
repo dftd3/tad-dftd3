@@ -38,6 +38,12 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
+
+    # cn and weights both come from s-dftd3's Fortran library (see
+    # samples.py's module docstring), at the cutoff tad_mctc.ncoord.cn_d3
+    # applies -- unlike dftd3()'s own internal CN, which is unbounded (see
+    # test/reference.py). Feeding in the reference CN isolates this test to
+    # weight_references itself, independent of coordination_number.
     cn = sample["cn"].to(**dd)
     refgw = sample["weights"].to(**dd)
 
@@ -65,6 +71,7 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
         )
     )
     ref = reference.Reference(**dd)
+
     cn = pack(
         (
             sample1["cn"].to(**dd),

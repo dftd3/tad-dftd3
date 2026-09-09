@@ -21,13 +21,14 @@ import pytest
 import torch
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
+from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD
 
 from tad_dftd3 import damping, data, dftd3, model, reference
 from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_energy_per_atom
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -38,14 +39,6 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    ref = sample["disp2"].to(**dd)
-
-    rcov = radii.COV_D3(**dd)[numbers]
-    rvdw = radii.VDW_PAIRWISE(**dd)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
-    r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(50, **dd)
 
     # GFN1-xTB parameters
     param = {
@@ -56,6 +49,14 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         "a1": torch.tensor(0.6300, **dd),
         "a2": torch.tensor(5.0000, **dd),
     }
+    ref = reference_energy_per_atom(numbers, positions, param)
+
+    rcov = radii.COV_D3(**dd)[numbers]
+    rvdw = radii.VDW_PAIRWISE(**dd)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
+    r4r2 = data.R4R2(**dd)[numbers]
+    cutoff = torch.tensor(50, **dd)
 
     energy = dftd3(
         numbers,
@@ -92,18 +93,6 @@ def test_batch(dtype: torch.dtype) -> None:
             sample2["positions"].to(**dd),
         )
     )
-    ref = pack(
-        (
-            torch.tensor(
-                [
-                    -4.1054019506089849e-05,
-                    -4.1054019506089849e-05,
-                ],
-                **dd
-            ),
-            sample2["disp2"].to(**dd),
-        )
-    )
 
     # GFN1-xTB parameters
     param = {
@@ -114,6 +103,24 @@ def test_batch(dtype: torch.dtype) -> None:
         "a1": torch.tensor(0.6300, **dd),
         "a2": torch.tensor(5.0000, **dd),
     }
+
+    # s-dftd3 has no notion of a batch of independent molecules; compute the
+    # reference for each molecule on its own and pack them the same way the
+    # inputs above were packed.
+    ref = pack(
+        (
+            reference_energy_per_atom(
+                sample1["numbers"].to(DEVICE),
+                sample1["positions"].to(**dd),
+                param,
+            ),
+            reference_energy_per_atom(
+                sample2["numbers"].to(DEVICE),
+                sample2["positions"].to(**dd),
+                param,
+            ),
+        )
+    )
 
     energy = dftd3(numbers, positions, param)
     assert energy.dtype == dtype

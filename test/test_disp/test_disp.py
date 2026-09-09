@@ -22,12 +22,15 @@ import pytest
 import torch
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
-from tad_mctc.typing import DD
+from tad_mctc.data.molecules import mols as samples
+from tad_mctc.typing import DD, Tensor
 
-from tad_dftd3 import damping, data, disp
+from tad_dftd3 import damping, data, disp, model, ncoord
+from tad_dftd3.ncoord import exp_count
+from tad_dftd3.reference import Reference
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_energy_per_atom
 
 sample_list = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -47,10 +50,46 @@ param_noatm = {
 }
 
 
+def live_c6(numbers: Tensor, positions: Tensor, dd: DD) -> Tensor:
+    """
+    Atomic C6 coefficients, computed the same way ``dftd3()`` computes them
+    internally on its way to an energy: an unbounded (uncut) coordination
+    number, Gaussian reference weighting, then the C6 contraction.
+
+    The tests below used to read this from a value stored in ``samples.py``.
+    That stored value turned out to be, to floating-point noise, exactly
+    what this function returns -- it was a snapshot of tad-dftd3's own
+    output, not an independent number -- so it could not actually validate
+    anything against the s-dftd3 Fortran reference. Computing it live here
+    instead means the same C6 that goes into ``disp.dispersion()`` /
+    ``damping.dispersion_atm()`` below is also, independently, what
+    s-dftd3 computes for the same geometry, which is what makes the
+    comparison against :func:`..reference.reference_energy_per_atom`
+    meaningful. Checked directly: the two ways of getting this C6 agree to
+    about 4e-13 absolute.
+    """
+    reference = Reference(**dd)
+    rcov = radii.COV_D3(**dd)[numbers]
+    cn = ncoord.coordination_number(
+        numbers, positions, counting_function=exp_count, rcov=rcov
+    )
+    weights = model.weight_references(
+        numbers, cn, reference, model.gaussian_weight
+    )
+    return model.atomic_c6(numbers, weights, reference)
+
+
 def test_fail() -> None:
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    c6 = samples["PbH4-BiH3"]["c6"]
+
+    # Only the shape (9, 9) matters below -- disp.dispersion() is expected
+    # to raise before ever using c6's values, since numbers/positions above
+    # don't match it. live_c6() is used rather than a hardcoded tensor
+    # since there is otherwise no reference c6 lying around anymore.
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
+    sample = samples["PbH4-BiH3"]
+    c6 = live_c6(sample["numbers"].to(DEVICE), sample["positions"].to(**dd), dd)
 
     # r4r2 wrong shape
     with pytest.raises(ValueError):
@@ -75,8 +114,8 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    ref = sample["disp2"].to(**dd)
-    c6 = sample["c6"].to(**dd)
+    c6 = live_c6(numbers, positions, dd)
+
     rvdw = radii.VDW_PAIRWISE(**dd)[
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
@@ -84,6 +123,7 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
     cutoff = torch.tensor(50.0, **dd)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
+    ref = reference_energy_per_atom(numbers, positions, par)
 
     energy = disp.dispersion(
         numbers,
@@ -120,20 +160,27 @@ def test_disp2_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
             sample2["positions"].to(**dd),
         ]
     )
-    c6 = pack(
-        [
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        ]
-    )
-    ref = pack(
-        [
-            sample1["disp2"].to(**dd),
-            sample2["disp2"].to(**dd),
-        ]
-    )
+    c6 = live_c6(numbers, positions, dd)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
+
+    # s-dftd3 has no notion of a batch of independent molecules; compute the
+    # reference for each molecule on its own and pack them the same way the
+    # inputs above were packed.
+    ref = pack(
+        [
+            reference_energy_per_atom(
+                sample1["numbers"].to(DEVICE),
+                sample1["positions"].to(**dd),
+                par,
+            ),
+            reference_energy_per_atom(
+                sample2["numbers"].to(DEVICE),
+                sample2["positions"].to(**dd),
+                par,
+            ),
+        ]
+    )
 
     energy = disp.dispersion(numbers, positions, par, c6)
 
@@ -150,14 +197,22 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = sample["c6"].to(**dd)
-    ref = sample["disp3"].to(**dd)
+    c6 = live_c6(numbers, positions, dd)
 
     rvdw = radii.VDW_PAIRWISE(**dd)[
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
 
     par = {k: v.to(**dd) for k, v in param.items()}
+    par_noatm = {k: v.to(**dd) for k, v in param_noatm.items()}
+
+    # damping.dispersion_atm() computes the three-body term alone, and
+    # s-dftd3's Python API has no equivalent standalone call, so the
+    # reference is isolated the same way tad-dftd3's own dftd3() decides
+    # whether to add ATM at all: with and without s9, then subtract.
+    ref = reference_energy_per_atom(
+        numbers, positions, par
+    ) - reference_energy_per_atom(numbers, positions, par_noatm)
 
     energy = damping.dispersion_atm(
         numbers,
@@ -193,20 +248,26 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
             sample2["positions"].to(**dd),
         ]
     )
-    c6 = pack(
-        [
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        ]
-    )
-    ref = pack(
-        [
-            sample1["disp3"].to(**dd),
-            sample2["disp3"].to(**dd),
-        ]
-    )
+    c6 = live_c6(numbers, positions, dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
+    par_noatm = {k: v.to(**dd) for k, v in param_noatm.items()}
+
+    def atm_reference(n: Tensor, p: Tensor) -> Tensor:
+        return reference_energy_per_atom(n, p, par) - reference_energy_per_atom(
+            n, p, par_noatm
+        )
+
+    ref = pack(
+        [
+            atm_reference(
+                sample1["numbers"].to(DEVICE), sample1["positions"].to(**dd)
+            ),
+            atm_reference(
+                sample2["numbers"].to(DEVICE), sample2["positions"].to(**dd)
+            ),
+        ]
+    )
 
     rvdw = radii.VDW_PAIRWISE(**dd)[
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
@@ -235,10 +296,10 @@ def test_full_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = sample["c6"].to(**dd)
-    ref = (sample["disp2"] + sample["disp3"]).to(**dd)
+    c6 = live_c6(numbers, positions, dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
+    ref = reference_energy_per_atom(numbers, positions, par)
 
     energy = disp.dispersion(numbers, positions, par, c6)
 

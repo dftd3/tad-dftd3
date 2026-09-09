@@ -194,3 +194,5 @@ cython_debug/
 .pi/
 .pi-subagents/
 .scratch/
+
+# tools/refs/ has its own .gitignore for its build artifacts.

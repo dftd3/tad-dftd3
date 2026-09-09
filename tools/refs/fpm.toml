@@ -1,0 +1,11 @@
+name = "dump_reference"
+version = "0.1.0"
+license = "Apache-2.0"
+
+[[executable]]
+name = "dump_reference"
+source-dir = "."
+main = "dump_reference.f90"
+
+[dependencies]
+s-dftd3 = { git = "https://github.com/dftd3/simple-dftd3", tag = "v1.6.0" }
