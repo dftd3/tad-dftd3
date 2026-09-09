@@ -49,9 +49,9 @@ def dispersion_atm(
     c6: Tensor,
     rvdw: Tensor,
     cutoff: Tensor,
-    s9: Tensor = torch.tensor(defaults.S9),
+    s9: Tensor | None = None,
     rs9: Tensor | None = None,
-    alp: Tensor = torch.tensor(defaults.ALP),
+    alp: Tensor | None = None,
 ) -> Tensor:
     """
     Axilrod-Teller-Muto dispersion term.
@@ -82,13 +82,21 @@ def dispersion_atm(
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    s9 = s9.type(positions.dtype).to(positions.device)
+    s9 = (
+        torch.tensor(defaults.S9, **dd)
+        if s9 is None
+        else s9.type(positions.dtype).to(positions.device)
+    )
     rs9 = (
         torch.tensor(defaults.RS9, **dd)
         if rs9 is None
         else rs9.type(positions.dtype).to(positions.device)
     )
-    alp = alp.type(positions.dtype).to(positions.device)
+    alp = (
+        torch.tensor(defaults.ALP, **dd)
+        if alp is None
+        else alp.type(positions.dtype).to(positions.device)
+    )
 
     cutoff2 = cutoff * cutoff
     srvdw = rs9 * rvdw
