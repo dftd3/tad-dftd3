@@ -307,7 +307,7 @@ def dispersion3(
     c6: Tensor,
     rvdw: Tensor,
     cutoff: Tensor,
-    rs9: Tensor = torch.tensor(4.0 / 3.0),
+    rs9: Tensor | None = None,
 ) -> Tensor:
     """
     Three-body dispersion term. Currently this is only a wrapper for the
@@ -340,6 +340,10 @@ def dispersion3(
 
     alp = param.get("alp", torch.tensor(14.0, **dd))
     s9 = param.get("s9", torch.tensor(1.0, **dd))
-    rs9 = rs9.type(positions.dtype).to(positions.device)
+    rs9 = (
+        torch.tensor(4.0 / 3.0, **dd)
+        if rs9 is None
+        else rs9.type(positions.dtype).to(positions.device)
+    )
 
     return dispersion_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)

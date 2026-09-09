@@ -30,6 +30,7 @@ Axilrod-Teller-Muto dispersion term.
     f_\text{damp} &=
     \dfrac{1}{1+ 6 \left(\overline{R}_\text{ABC}\right)^{-16}}
 """
+from __future__ import annotations
 
 import torch
 from tad_mctc import storch
@@ -48,7 +49,7 @@ def dispersion_atm(
     rvdw: Tensor,
     cutoff: Tensor,
     s9: Tensor = torch.tensor(defaults.S9),
-    rs9: Tensor = torch.tensor(defaults.RS9),
+    rs9: Tensor | None = None,
     alp: Tensor = torch.tensor(defaults.ALP),
 ) -> Tensor:
     """
@@ -81,7 +82,11 @@ def dispersion_atm(
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     s9 = s9.type(positions.dtype).to(positions.device)
-    rs9 = rs9.type(positions.dtype).to(positions.device)
+    rs9 = (
+        torch.tensor(defaults.RS9, **dd)
+        if rs9 is None
+        else rs9.type(positions.dtype).to(positions.device)
+    )
     alp = alp.type(positions.dtype).to(positions.device)
 
     cutoff2 = cutoff * cutoff
@@ -146,7 +151,7 @@ def dispersion_atm(
     ang = torch.where(
         mask_triples
         * (r2ij <= cutoff2)
-        * (r2jk <= cutoff2)
+        * (r2ik <= cutoff2)
         * (r2jk <= cutoff2),
         0.375 * s / r5 + 1.0 / r3,
         torch.tensor(0.0, **dd),
