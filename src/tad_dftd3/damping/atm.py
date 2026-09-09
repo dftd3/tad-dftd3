@@ -30,6 +30,7 @@ Axilrod-Teller-Muto dispersion term.
     f_\text{damp} &=
     \dfrac{1}{1+ 6 \left(\overline{R}_\text{ABC}\right)^{-16}}
 """
+
 from __future__ import annotations
 
 import torch
