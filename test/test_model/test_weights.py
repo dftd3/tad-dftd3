@@ -19,12 +19,13 @@ Test the weights.
 import pytest
 import torch
 from tad_mctc.batch import pack
+from tad_mctc.data.molecules import mols
 from tad_mctc.typing import DD
 
 from tad_dftd3 import model, reference
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..references import reference_cn, reference_weights
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -35,17 +36,15 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols[name]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
 
-    # cn and weights both come from s-dftd3's Fortran library (see
-    # samples.py's module docstring), at the cutoff tad_mctc.ncoord.cn_d3
-    # applies -- unlike dftd3()'s own internal CN, which is unbounded (see
-    # test/reference.py). Feeding in the reference CN isolates this test to
-    # weight_references itself, independent of coordination_number.
-    cn = sample["cn"].to(**dd)
-    refgw = sample["weights"].to(**dd)
+    # cn and weights both come from s-dftd3's Fortran library, at
+    # dftd3()'s own CN cutoff (see test/references). Feeding in the
+    # reference CN isolates this test to weight_references, independent of
+    # coordination_number.
+    cn = reference_cn(name, dd)
+    refgw = reference_weights(name, dd)
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
@@ -60,30 +59,16 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample1, sample2 = (
-        samples[name1],
-        samples[name2],
-    )
     numbers = pack(
         (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
+            mols[name1]["numbers"].to(DEVICE),
+            mols[name2]["numbers"].to(DEVICE),
         )
     )
     ref = reference.Reference(**dd)
 
-    cn = pack(
-        (
-            sample1["cn"].to(**dd),
-            sample2["cn"].to(**dd),
-        )
-    )
-    refgw = pack(
-        (
-            sample1["weights"].to(**dd),
-            sample2["weights"].to(**dd),
-        )
-    )
+    cn = pack((reference_cn(name1, dd), reference_cn(name2, dd)))
+    refgw = pack((reference_weights(name1, dd), reference_weights(name2, dd)))
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 

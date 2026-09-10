@@ -18,6 +18,16 @@ Coordination Number
 
 Functions for calculating the D3 coordination numbers.
 Only exported for convenience.
+
+.. note::
+
+    :func:`tad_mctc.ncoord.d3.cn_d3` applies tad-mctc's generic cutoff
+    (:data:`tad_mctc.ncoord.defaults.CUTOFF_D3`), not the D3-specific one
+    :func:`tad_dftd3.disp.dftd3` uses
+    (:data:`tad_dftd3.defaults.D3_CN_CUTOFF`, s-dftd3's own). Both are
+    faithful to their respective Fortran source. To reproduce
+    :func:`~tad_dftd3.disp.dftd3`, pass ``cutoff`` to
+    :func:`tad_mctc.ncoord.coordination_number` explicitly.
 """
 
 from tad_mctc.ncoord import coordination_number

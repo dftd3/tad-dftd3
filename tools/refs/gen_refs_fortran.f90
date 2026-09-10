@@ -42,7 +42,7 @@
 !> written out row-major (one JSON array per atom), which is the shape and
 !> order `numpy.array(...)` reconstructs directly with no reshaping needed
 !> on the Python side.
-program dump_reference
+program gen_refs_fortran
    use, intrinsic :: iso_fortran_env, only : output_unit, error_unit, input_unit
    use mctc_env, only : wp
    use mctc_io, only : structure_type, new
@@ -136,4 +136,4 @@ contains
       write(unit, "(a)", advance="no") "]"
    end subroutine write_vector
 
-end program dump_reference
+end program gen_refs_fortran

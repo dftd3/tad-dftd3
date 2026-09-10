@@ -67,7 +67,10 @@ def dispersion_atm(
     rvdw : Tensor
         Van der Waals radii of the atoms in the system.
     cutoff : Tensor
-        Real-space cutoff.
+        Three-body real-space cutoff
+        (:attr:`tad_dftd3.cutoff.Cutoff.disp3`). As in s-dftd3, a triple
+        contributes only if all of ``r_ij``, ``r_ik``, ``r_jk`` are inside
+        it.
     s9 : Tensor, optional
         Scaling for dispersion coefficients. Defaults to `1.0`.
     rs9 : Tensor, optional

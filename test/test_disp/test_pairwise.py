@@ -44,7 +44,7 @@ from tad_dftd3 import damping, data, defaults, disp
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom, reference_pairwise
-from .test_disp import live_c6
+from ..references import reference_c6
 
 sample_list = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -103,9 +103,9 @@ def test_pairwise_matches_dispersion2(name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = live_c6(numbers, positions, dd)
+    c6 = reference_c6(name, dd)
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
+    cutoff = torch.tensor(defaults.D3_DISP2_CUTOFF, **dd)
 
     par = {"s6": torch.tensor(1.0, **dd), "s8": torch.tensor(1.2576, **dd)}
 
@@ -127,9 +127,9 @@ def test_pairwise_two_body_matches_reference(name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = live_c6(numbers, positions, dd)
+    c6 = reference_c6(name, dd)
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
+    cutoff = torch.tensor(defaults.D3_DISP2_CUTOFF, **dd)
 
     par = {"s6": torch.tensor(1.0, **dd), "s8": torch.tensor(1.2576, **dd)}
 

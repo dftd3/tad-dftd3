@@ -65,11 +65,31 @@ from tad_mctc.data import pse, radii
 from tad_mctc.typing import DD, CountingFunction, DampingFunction, Tensor
 
 from . import data, defaults, model, ncoord
+from .cutoff import Cutoff
 from .damping import dispersion_atm, rational_damping
 from .model.weights import WeightingFunction
 from .reference import Reference
 
 __all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
+
+
+def _resolve_cutoff(cutoff: Cutoff | None, dd: DD) -> Cutoff:
+    """Default and cast the caller's cutoffs; reject a single value."""
+    if cutoff is None:
+        return Cutoff(**dd)
+
+    # Up to 0.6.0 one cutoff was shared by the two- and three-body term.
+    # They now differ, as in s-dftd3, so a single value is ambiguous and
+    # must not be reinterpreted silently.
+    if not isinstance(cutoff, Cutoff):
+        raise TypeError(
+            "The 'cutoff' argument must be a 'tad_dftd3.cutoff.Cutoff' "
+            f"instance, not '{type(cutoff).__name__}'. The parts of the D3 "
+            "model use different real-space cutoffs, so a single value is "
+            "ambiguous. Use e.g. 'Cutoff(disp2=60.0, disp3=40.0)'."
+        )
+
+    return cutoff.to(**dd)
 
 
 def dftd3(
@@ -81,7 +101,7 @@ def dftd3(
     rcov: Tensor | None = None,
     rvdw: Tensor | None = None,
     r4r2: Tensor | None = None,
-    cutoff: Tensor | None = None,
+    cutoff: Cutoff | None = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
     damping_function: DampingFunction = rational_damping,
@@ -106,6 +126,9 @@ def dftd3(
         Van der Waals radii of the atoms in the system.
     r4r2 : torch.Tensor, optional
         r⁴ over r² expectation values of the atoms in the system.
+    cutoff : Cutoff, optional
+        Real-space cutoffs, one per part of the model. Defaults to
+        :class:`tad_dftd3.cutoff.Cutoff`.
     damping_function : Callable, optional
         Damping function evaluate distance dependent contributions.
     weighting_function : Callable, optional
@@ -130,8 +153,8 @@ def dftd3(
                 f"({pse.Z2S[defaults.MAX_ELEMENT]})."
             )
 
-    if cutoff is None:
-        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
+    cutoff = _resolve_cutoff(cutoff, dd)
+
     if ref is None:
         ref = Reference(**dd)
     if rcov is None:
@@ -144,7 +167,11 @@ def dftd3(
         r4r2 = data.R4R2(**dd)[numbers]
 
     cn = ncoord.coordination_number(
-        numbers, positions, counting_function=counting_function, rcov=rcov
+        numbers,
+        positions,
+        counting_function=counting_function,
+        rcov=rcov,
+        cutoff=cutoff.cn,
     )
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref, chunk_size=chunk_size)
@@ -169,7 +196,7 @@ def dispersion(
     rvdw: Tensor | None = None,
     r4r2: Tensor | None = None,
     damping_function: DampingFunction = rational_damping,
-    cutoff: Tensor | None = None,
+    cutoff: Cutoff | None = None,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -192,6 +219,9 @@ def dispersion(
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
+    cutoff : Cutoff, optional
+        Real-space cutoffs, one per part of the model. Defaults to
+        :class:`tad_dftd3.cutoff.Cutoff`.
 
     Returns
     -------
@@ -200,8 +230,8 @@ def dispersion(
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    if cutoff is None:
-        cutoff = torch.tensor(defaults.D3_DISP_CUTOFF, **dd)
+    cutoff = _resolve_cutoff(cutoff, dd)
+
     if r4r2 is None:
         r4r2 = data.R4R2(**dd)[numbers]
 
@@ -225,7 +255,14 @@ def dispersion(
 
     # two-body dispersion
     energy = dispersion2(
-        numbers, positions, param, c6, r4r2, damping_function, cutoff, **kwargs
+        numbers,
+        positions,
+        param,
+        c6,
+        r4r2,
+        damping_function,
+        cutoff.disp2,
+        **kwargs,
     )
 
     # three-body dispersion
@@ -235,7 +272,7 @@ def dispersion(
                 numbers.unsqueeze(-1), numbers.unsqueeze(-2)
             ]
 
-        energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff)
+        energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff.disp3)
 
     return energy
 
@@ -268,6 +305,9 @@ def dispersion2(
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
+    cutoff : Tensor
+        Two-body real-space cutoff
+        (:attr:`tad_dftd3.cutoff.Cutoff.disp2`).
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
@@ -327,7 +367,8 @@ def dispersion3(
     rvdw : Tensor
         Van der Waals radii of the atoms in the system.
     cutoff : Tensor
-        Real-space cutoff.
+        Three-body real-space cutoff
+        (:attr:`tad_dftd3.cutoff.Cutoff.disp3`).
     rs9 : Tensor, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
 

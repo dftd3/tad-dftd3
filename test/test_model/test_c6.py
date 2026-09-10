@@ -31,7 +31,7 @@ from tad_mctc.typing import DD, Callable, Tensor
 from tad_dftd3 import model, ncoord, reference
 
 from ..conftest import DEVICE, FAST_MODE
-from .samples import samples
+from ..references import reference_c6, reference_weights
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -44,16 +44,14 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols[name]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
 
     # weights and c6 both come from s-dftd3's Fortran library (see
-    # samples.py's module docstring). Feeding in the reference weights
-    # isolates this test to atomic_c6 itself, independent of
-    # weight_references.
-    weights = sample["weights"].to(**dd)
-    refc6 = sample["c6"].to(**dd)
+    # test/references). Feeding in the reference weights isolates this test
+    # to atomic_c6, independent of weight_references.
+    weights = reference_weights(name, dd)
+    refc6 = reference_c6(name, dd)
 
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -68,14 +66,10 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample1, sample2 = (
-        samples[name1],
-        samples[name2],
-    )
     numbers = pack(
         (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
+            mols[name1]["numbers"].to(DEVICE),
+            mols[name2]["numbers"].to(DEVICE),
         )
     )
     ref = reference.Reference(**dd)
@@ -83,18 +77,8 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     # s-dftd3 has no notion of a batch of independent molecules; the
     # reference for each molecule was computed on its own and is packed
     # here the same way the inputs above were packed.
-    weights = pack(
-        (
-            sample1["weights"].to(**dd),
-            sample2["weights"].to(**dd),
-        )
-    )
-    refc6 = pack(
-        (
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        )
-    )
+    weights = pack((reference_weights(name1, dd), reference_weights(name2, dd)))
+    refc6 = pack((reference_c6(name1, dd), reference_c6(name2, dd)))
 
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -198,9 +182,8 @@ def gradchecker(
 ]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    # Only numbers/positions are needed here (cn and weights are computed
-    # live below); mols is used rather than samples so that "LiH", which
-    # has no s-dftd3 Fortran-library fixture data, is available too.
+    # Only numbers/positions are needed here -- cn and weights are computed
+    # live below, so "LiH" (which has no reference fixture data) works too.
     mol = mols[name]
     numbers = mol["numbers"].to(DEVICE)
     positions = mol["positions"].to(**dd)

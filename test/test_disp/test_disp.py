@@ -25,12 +25,12 @@ from tad_mctc.data import radii
 from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD, Tensor
 
-from tad_dftd3 import damping, data, disp, model, ncoord
-from tad_dftd3.ncoord import exp_count
-from tad_dftd3.reference import Reference
+from tad_dftd3 import damping, data, defaults, disp
+from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
+from ..references import reference_c6
 
 sample_list = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -50,46 +50,15 @@ param_noatm = {
 }
 
 
-def live_c6(numbers: Tensor, positions: Tensor, dd: DD) -> Tensor:
-    """
-    Atomic C6 coefficients, computed the same way ``dftd3()`` computes them
-    internally on its way to an energy: an unbounded (uncut) coordination
-    number, Gaussian reference weighting, then the C6 contraction.
-
-    The tests below used to read this from a value stored in ``samples.py``.
-    That stored value turned out to be, to floating-point noise, exactly
-    what this function returns -- it was a snapshot of tad-dftd3's own
-    output, not an independent number -- so it could not actually validate
-    anything against the s-dftd3 Fortran reference. Computing it live here
-    instead means the same C6 that goes into ``disp.dispersion()`` /
-    ``damping.dispersion_atm()`` below is also, independently, what
-    s-dftd3 computes for the same geometry, which is what makes the
-    comparison against :func:`..reference.reference_energy_per_atom`
-    meaningful. Checked directly: the two ways of getting this C6 agree to
-    about 4e-13 absolute.
-    """
-    reference = Reference(**dd)
-    rcov = radii.COV_D3(**dd)[numbers]
-    cn = ncoord.coordination_number(
-        numbers, positions, counting_function=exp_count, rcov=rcov
-    )
-    weights = model.weight_references(
-        numbers, cn, reference, model.gaussian_weight
-    )
-    return model.atomic_c6(numbers, weights, reference)
-
-
 def test_fail() -> None:
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
 
     # Only the shape (9, 9) matters below -- disp.dispersion() is expected
     # to raise before ever using c6's values, since numbers/positions above
-    # don't match it. live_c6() is used rather than a hardcoded tensor
-    # since there is otherwise no reference c6 lying around anymore.
+    # don't match it.
     dd: DD = {"device": DEVICE, "dtype": torch.double}
-    sample = samples["PbH4-BiH3"]
-    c6 = live_c6(sample["numbers"].to(DEVICE), sample["positions"].to(**dd), dd)
+    c6 = reference_c6("PbH4-BiH3", dd)
 
     # r4r2 wrong shape
     with pytest.raises(ValueError):
@@ -114,16 +83,19 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = live_c6(numbers, positions, dd)
+    c6 = reference_c6(name, dd)
 
     rvdw = radii.VDW_PAIRWISE(**dd)[
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(50.0, **dd)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
+
+    # No cutoff for the reference, so it uses s-dftd3's own; the explicit
+    # `Cutoff()` below has to reproduce those.
     ref = reference_energy_per_atom(numbers, positions, par)
+    cutoff = Cutoff(**dd)
 
     energy = disp.dispersion(
         numbers,
@@ -160,13 +132,14 @@ def test_disp2_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
             sample2["positions"].to(**dd),
         ]
     )
-    c6 = live_c6(numbers, positions, dd)
+
+    # s-dftd3 has no notion of a batch of independent molecules; the
+    # reference for each molecule was computed on its own and is packed
+    # here the same way the inputs above were packed.
+    c6 = pack([reference_c6(name1, dd), reference_c6(name2, dd)])
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
 
-    # s-dftd3 has no notion of a batch of independent molecules; compute the
-    # reference for each molecule on its own and pack them the same way the
-    # inputs above were packed.
     ref = pack(
         [
             reference_energy_per_atom(
@@ -197,7 +170,7 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = live_c6(numbers, positions, dd)
+    c6 = reference_c6(name, dd)
 
     rvdw = radii.VDW_PAIRWISE(**dd)[
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
@@ -219,7 +192,7 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
         positions,
         c6,
         rvdw,
-        cutoff=torch.tensor(50.0, **dd),
+        cutoff=torch.tensor(defaults.D3_DISP3_CUTOFF, **dd),
         s9=par["s9"],
         alp=par["alp"],
     )
@@ -248,7 +221,11 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
             sample2["positions"].to(**dd),
         ]
     )
-    c6 = live_c6(numbers, positions, dd)
+
+    # s-dftd3 has no notion of a batch of independent molecules; the
+    # reference for each molecule was computed on its own and is packed
+    # here the same way the inputs above were packed.
+    c6 = pack([reference_c6(name1, dd), reference_c6(name2, dd)])
 
     par = {k: v.to(**dd) for k, v in param.items()}
     par_noatm = {k: v.to(**dd) for k, v in param_noatm.items()}
@@ -278,7 +255,7 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
         positions,
         c6,
         rvdw,
-        cutoff=torch.tensor(50.0, **dd),
+        cutoff=torch.tensor(defaults.D3_DISP3_CUTOFF, **dd),
         s9=par["s9"],
         alp=par["alp"],
     )
@@ -296,7 +273,7 @@ def test_full_single(dtype: torch.dtype, name: str) -> None:
     sample = samples[name]
     numbers = sample["numbers"].to(DEVICE)
     positions = sample["positions"].to(**dd)
-    c6 = live_c6(numbers, positions, dd)
+    c6 = reference_c6(name, dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
     ref = reference_energy_per_atom(numbers, positions, par)

@@ -24,6 +24,7 @@ from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD
 
 from tad_dftd3 import damping, data, dftd3, model, reference
+from tad_dftd3.cutoff import Cutoff
 from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
@@ -70,6 +71,8 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         "a1": torch.tensor(0.3768, **dd),
         "a2": torch.tensor(4.5865, **dd),
     }
+    # No cutoff for the reference, so it uses s-dftd3's own; the explicit
+    # `Cutoff()` below has to reproduce those.
     ref = reference_energy_per_atom(numbers, positions, param)
 
     rcov = radii.COV_D3(**dd)[numbers]
@@ -77,7 +80,6 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(50, **dd)
 
     energy = dftd3(
         numbers,
@@ -87,7 +89,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         rcov=rcov,
         rvdw=rvdw,
         r4r2=r4r2,
-        cutoff=cutoff,
+        cutoff=Cutoff(**dd),
         counting_function=exp_count,
         weighting_function=model.gaussian_weight,
         damping_function=damping.rational_damping,

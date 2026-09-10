@@ -28,12 +28,11 @@ test module -- it is not a general-purpose framework, and each function in
 it should stay exactly as small as its callers need. Add a function here
 only once a test actually calls it.
 
-Coordination-number cutoff: s-dftd3's API takes one explicitly
-(``DispersionModel.set_realspace_cutoff(..., cn=...)``). tad-dftd3's own
-``dftd3()`` applies none at all -- it calls ``coordination_number`` without
-a ``cutoff`` argument -- so this module pins s-dftd3's CN cutoff to a value
-large enough to be effectively unbounded for any test geometry, rather than
-to the unused ``defaults.D3_CN_CUTOFF``.
+Real-space cutoffs: ``cutoff=None`` (the default) leaves s-dftd3 at its own
+compiled-in cutoffs, so a comparison against tad-dftd3's defaults checks
+*which values* those are, not merely how they are applied. Passing a
+:class:`tad_dftd3.cutoff.Cutoff` pins s-dftd3 to it instead, via
+``DispersionModel.set_realspace_cutoff``.
 """
 
 from __future__ import annotations
@@ -44,6 +43,7 @@ import torch
 from tad_mctc.typing import Tensor
 
 from tad_dftd3 import defaults
+from tad_dftd3.cutoff import Cutoff
 
 __all__ = [
     "reference_energy_per_atom",
@@ -53,26 +53,25 @@ __all__ = [
 ]
 
 
-# tad-dftd3's `dftd3()` never applies a coordination-number cutoff (see the
-# module docstring); this is chosen to be effectively unbounded for any
-# molecular geometry this test suite builds.
-_EFFECTIVELY_UNBOUNDED_CN_CUTOFF = 10000.0
-
-
 def _build_model(
-    numbers: Tensor, positions: Tensor, disp_cutoff: float
+    numbers: Tensor, positions: Tensor, cutoff: Cutoff | None
 ) -> dftd3_interface.DispersionModel:
-    """Build a ``DispersionModel`` with s-dftd3's cutoffs pinned to match
-    ``dftd3()``'s own behaviour, shared by every function in this module."""
+    """
+    Build a ``DispersionModel``, shared by every function here.
+    ``cutoff=None`` leaves s-dftd3 at its own cutoffs (see module docstring).
+    """
     numbers_numpy = numbers.detach().cpu().numpy().astype(np.int32)
     positions_numpy = positions.detach().cpu().numpy().astype(np.float64)
 
     model = dftd3_interface.DispersionModel(numbers_numpy, positions_numpy)
-    model.set_realspace_cutoff(
-        disp2=disp_cutoff,
-        disp3=disp_cutoff,
-        cn=_EFFECTIVELY_UNBOUNDED_CN_CUTOFF,
-    )
+
+    if cutoff is not None:
+        model.set_realspace_cutoff(
+            cn=float(cutoff.cn),
+            disp2=float(cutoff.disp2),
+            disp3=float(cutoff.disp3),
+        )
+
     return model
 
 
@@ -107,7 +106,7 @@ def reference_energy_per_atom(
     positions: Tensor,
     param: dict[str, Tensor],
     *,
-    disp_cutoff: float = defaults.D3_DISP_CUTOFF,
+    cutoff: Cutoff | None = None,
 ) -> Tensor:
     """
     Atom-resolved dispersion energy from the s-dftd3 Fortran reference.
@@ -132,10 +131,9 @@ def reference_energy_per_atom(
     param : dict[str, Tensor]
         Damping parameters in tad-dftd3's own convention (``s6``, ``s8``,
         ``a1``, ``a2``, and optionally ``s9``, ``alp``).
-    disp_cutoff : float, optional
-        Real-space cutoff, in Bohr, applied to both the two-body and the
-        three-body term -- ``dftd3()`` shares a single cutoff between them.
-        Defaults to ``tad_dftd3.defaults.D3_DISP_CUTOFF``.
+    cutoff : Cutoff | None, optional
+        Real-space cutoffs to pin s-dftd3 to. Defaults to ``None``, i.e.
+        s-dftd3's own.
 
     Returns
     -------
@@ -144,7 +142,7 @@ def reference_energy_per_atom(
         ``positions``'s dtype and moved to its device.
     """
     two_body, three_body = reference_pairwise(
-        numbers, positions, param, disp_cutoff=disp_cutoff
+        numbers, positions, param, cutoff=cutoff
     )
 
     # Each matrix holds half of every pair's energy at both [i, j] and
@@ -158,7 +156,7 @@ def reference_gradient_per_atom(
     positions: Tensor,
     param: dict[str, Tensor],
     *,
-    disp_cutoff: float = defaults.D3_DISP_CUTOFF,
+    cutoff: Cutoff | None = None,
 ) -> Tensor:
     """
     Nuclear gradient of the dispersion energy from the s-dftd3 Fortran
@@ -172,8 +170,8 @@ def reference_gradient_per_atom(
         Cartesian coordinates in Bohr, shape ``(nat, 3)``.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
-    disp_cutoff : float, optional
-        Real-space cutoff, in Bohr, as in :func:`reference_energy_per_atom`.
+    cutoff : Cutoff | None, optional
+        Real-space cutoffs, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
@@ -181,7 +179,7 @@ def reference_gradient_per_atom(
         The gradient with respect to ``positions``, shape ``(nat, 3)``, in
         Hartree per Bohr, cast to ``positions``'s dtype and device.
     """
-    model = _build_model(numbers, positions, disp_cutoff)
+    model = _build_model(numbers, positions, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_dispersion(damping_param, grad=True)
@@ -197,7 +195,7 @@ def reference_hessian(
     positions: Tensor,
     param: dict[str, Tensor],
     *,
-    disp_cutoff: float = defaults.D3_DISP_CUTOFF,
+    cutoff: Cutoff | None = None,
 ) -> Tensor:
     """
     Cartesian Hessian of the dispersion energy from the s-dftd3 Fortran
@@ -211,8 +209,8 @@ def reference_hessian(
         Cartesian coordinates in Bohr, shape ``(nat, 3)``.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
-    disp_cutoff : float, optional
-        Real-space cutoff, in Bohr, as in :func:`reference_energy_per_atom`.
+    cutoff : Cutoff | None, optional
+        Real-space cutoffs, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
@@ -224,7 +222,7 @@ def reference_hessian(
         Fortran-order reshape is needed here. In Hartree per Bohr squared,
         cast to ``positions``'s dtype and device.
     """
-    model = _build_model(numbers, positions, disp_cutoff)
+    model = _build_model(numbers, positions, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_hessian(damping_param)
@@ -241,7 +239,7 @@ def reference_pairwise(
     positions: Tensor,
     param: dict[str, Tensor],
     *,
-    disp_cutoff: float = defaults.D3_DISP_CUTOFF,
+    cutoff: Cutoff | None = None,
 ) -> tuple[Tensor, Tensor]:
     """
     Pair-resolved two-body and three-body energies from the s-dftd3 Fortran
@@ -269,8 +267,8 @@ def reference_pairwise(
         Cartesian coordinates in Bohr, shape ``(nat, 3)``.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
-    disp_cutoff : float, optional
-        Real-space cutoff, in Bohr, as in :func:`reference_energy_per_atom`.
+    cutoff : Cutoff | None, optional
+        Real-space cutoffs, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
@@ -283,7 +281,7 @@ def reference_pairwise(
         pairs, and there is more than one reasonable way to fold a
         triple's energy back onto a pairwise matrix.
     """
-    model = _build_model(numbers, positions, disp_cutoff)
+    model = _build_model(numbers, positions, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_pairwise_dispersion(damping_param)
