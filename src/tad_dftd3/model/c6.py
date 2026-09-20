@@ -82,7 +82,6 @@ import torch
 from tad_mctc._version import __tversion__
 from tad_mctc.autograd import is_batched
 from tad_mctc.math import einsum
-from tad_mctc.tools import is_compiling
 from tad_mctc.typing import Callable, Tensor
 
 from ..reference import Reference
@@ -242,3 +241,63 @@ def _resolve_is_batched_anywhere() -> Callable[[Tensor], bool]:
 
 
 _is_batched_anywhere = _resolve_is_batched_anywhere()
+
+
+# `is_compiling`, ported from `tad_mctc.tools.compile` -- not yet in a
+# released tad-mctc (tad-dftd3 pins `tad-mctc==0.8.0`, which predates it).
+# Remove this copy and import from `tad_mctc.tools` once a tad-mctc release
+# with `is_compiling` is pinned.
+
+
+def _always_false() -> bool:  # pragma: no cover
+    """``torch.compile`` does not exist, or exposes no way to ask."""
+    return False
+
+
+def _resolve_is_compiling() -> Callable[[], bool]:
+    """
+    Resolve, once, which underlying "is compiling" query this PyTorch
+    offers.
+
+    This capability probe -- ``getattr``/``hasattr`` chains, an explicit
+    ``import torch._dynamo`` -- has to run here, outside of
+    :func:`is_compiling`'s own body: ``is_compiling()`` is called from
+    `atomic_c6`, which may itself get traced under
+    ``torch.compile(fullgraph=True)``, and Dynamo cannot trace
+    ``hasattr``/``getattr`` introspection on a module object
+    (``Unsupported: hasattr: PythonModuleVariable()``); it can trace a
+    plain call to a resolved function just fine.
+
+    Neither the public ``torch.compiler.is_compiling`` nor its older,
+    private predecessor ``torch._dynamo.is_compiling`` reliably exists (or
+    resolves without raising) purely as a function of ``__tversion__``:
+    ``torch.compiler`` can exist without yet having ``is_compiling`` on it
+    (added later than the module itself), and ``torch._dynamo`` -- even on
+    a version that ships it -- is only exposed as a ``torch`` attribute
+    once something has imported it, which nothing upstream of this call is
+    guaranteed to have done.
+    """
+    try:
+        import torch._dynamo as _torch_dynamo  # noqa: F401  # pylint: disable=unused-import, protected-access
+    except ImportError:  # pragma: no cover
+        # Only unavailable on PyTorch < 2.0, not exercised by any single
+        # CI job's torch version; the other probes below fall through.
+        pass
+
+    compiler = getattr(torch, "compiler", None)
+    if compiler is not None and hasattr(compiler, "is_compiling"):
+        return compiler.is_compiling
+
+    dynamo = getattr(torch, "_dynamo", None)
+    if dynamo is not None and hasattr(dynamo, "is_compiling"):
+        return dynamo.is_compiling
+
+    return _always_false  # pragma: no cover
+
+
+_is_compiling_impl = _resolve_is_compiling()
+
+
+def is_compiling() -> bool:
+    """Whether we are currently being traced by ``torch.compile``."""
+    return bool(_is_compiling_impl())
