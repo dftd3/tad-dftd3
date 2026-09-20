@@ -18,8 +18,6 @@ Test C6 coefficients.
 
 from __future__ import annotations
 
-from typing import Protocol
-
 import pytest
 import torch
 from tad_mctc._version import __tversion__
@@ -53,6 +51,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
     assert c6.dtype == dtype
     assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()
+    assert pytest.approx(c6.cpu(), abs=tol, rel=tol) == c6.mT.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -92,96 +91,83 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()
 
 
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("size", [100, 200, 500])
-@pytest.mark.parametrize("chunk_size", [10, 100])
-def test_chunked(dtype: torch.dtype, size: int, chunk_size: int) -> None:
-    dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = torch.finfo(dtype).eps ** 0.5
+@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
+def test_vmap() -> None:
+    """
+    `numbers` is genuinely batched here (different molecules), so
+    `atomic_c6` must fall back to its dense evaluation internally instead
+    of calling the illegal-under-`vmap` `numbers.unique()`.
+    """
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
 
+    sample1, sample2 = samples["SiH4"], samples["PbH4-BiH3"]
+    numbers = pack(
+        (sample1["numbers"].to(DEVICE), sample2["numbers"].to(DEVICE))
+    )
+    weights = pack((sample1["weights"].to(**dd), sample2["weights"].to(**dd)))
     ref = reference.Reference(**dd)
-    numbers = torch.randint(1, 86, (size,), device=DEVICE)
-    positions = torch.rand((size, 3), **dd) * 10
 
-    cn = ncoord.cn_d3(numbers, positions)
-    weights = model.weight_references(numbers, cn, ref)
+    def f(nums: Tensor, ws: Tensor) -> Tensor:
+        return model.atomic_c6(nums, ws, ref)
 
-    c6 = model.atomic_c6(numbers, weights, ref)
-    c6_chunked = model.atomic_c6(numbers, weights, ref, chunk_size=chunk_size)
+    batched = torch.func.vmap(f, in_dims=(0, 0))(numbers, weights)
 
-    assert c6.dtype == c6_chunked.dtype == dtype
-    assert pytest.approx(c6.cpu(), abs=tol, rel=tol) == c6_chunked.cpu()
+    for i, sample in enumerate((sample1, sample2)):
+        refc6 = sample["c6"].to(**dd)
+        nat = refc6.shape[-1]
+        assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == (
+            batched[i, :nat, :nat].cpu()
+        )
+
+
+@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
+def test_jacrev() -> None:
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
+
+    sample = samples["SiH4"]
+    numbers = sample["numbers"].to(DEVICE)
+    ref = reference.Reference(**dd)
+    weights = sample["weights"].to(**dd)
+
+    def f(ws: Tensor) -> Tensor:
+        return model.atomic_c6(numbers, ws, ref)
+
+    jac = torch.func.jacrev(f)(weights)
+    nat, nref = weights.shape
+    assert jac.shape == (nat, nat, nat, nref)
 
 
 @pytest.mark.skipif(__tversion__ < (2, 1, 0), reason="Requires PyTorch>=2.1.0")
-def test_fail() -> None:
-    dd: DD = {"device": DEVICE, "dtype": torch.float64}
-    size = 10
-    nbatch = 2
+@pytest.mark.skip(
+    reason=(
+        "tad-mctc==0.8.0 (currently pinned) has an `is_compiling` check in "
+        "`tad_mctc.math.einsum` that under-reports on newer PyTorch, so "
+        "`_atomic_c6_safe` falls through to `opt_einsum.contract`, which "
+        "Dynamo cannot trace (`threading.get_ident()`). Re-enable once "
+        "tad-mctc is updated/pinned to a release with the fixed check."
+    )
+)
+def test_compile() -> None:
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
 
+    sample = samples["SiH4"]
+    numbers = sample["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
-    numbers = torch.randint(1, 86, (nbatch, size), device=DEVICE)
-    positions = torch.rand((nbatch, size, 3), **dd) * 10
+    weights = sample["weights"].to(**dd)
+    refc6 = sample["c6"].to(**dd)
 
-    cn = ncoord.cn_d3(numbers, positions)
-    weights = model.weight_references(numbers, cn, ref)
+    compiled = torch.compile(model.atomic_c6, fullgraph=True)
+    c6 = compiled(numbers, weights, ref)
 
-    def _c6(nums: Tensor, ws: Tensor) -> Tensor:
-        return model.atomic_c6(nums, ws, ref)
-
-    jac = torch.func.jacrev(_c6, argnums=1)
-
-    # Correct batch dimensions
-    with pytest.raises(ValueError) as excinfo:
-        vjac = torch.func.vmap(jac, in_dims=(0, None))
-        _ = vjac(numbers, weights.moveaxis(1, 0))
-
-    assert "Batch size mismatch" in str(excinfo.value)
-    assert "weights" in str(excinfo.value)
-
-    # Correct batch dimensions
-    with pytest.raises(ValueError) as excinfo:
-        vjac = torch.func.vmap(jac, in_dims=(None, 0))
-        _ = vjac(numbers.moveaxis(1, 0), weights)
-
-    assert "Batch size mismatch" in str(excinfo.value)
-    assert "numbers" in str(excinfo.value)
-
-    # Internal vmap errors
-
-    # Batch dimensions is always 0 for numbers and weights
-    with pytest.raises(ValueError) as excinfo:
-        vjac = torch.func.vmap(jac, in_dims=(1, 0))
-        _ = vjac(numbers, weights)
-
-    # Batch dimensions is always 0 for numbers and weights
-    with pytest.raises(ValueError):
-        vjac = torch.func.vmap(jac, in_dims=(0, 1))
-        _ = vjac(numbers, weights)
+    assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()
 
 
 ###############################################################################
 
 
-class C6Func(Protocol):
-    """
-    Type annotation for a function that calculates C6 coefficients.
-    """
-
-    def __call__(
-        self,
-        numbers: Tensor,
-        weights: Tensor,
-        ref: reference.Reference,
-        chunk_size: int | None = None,
-    ) -> Tensor: ...
-
-
 def gradchecker(
     dtype: torch.dtype,
     name: str,
-    f: C6Func,
-    chunk_size: int | None = None,
 ) -> tuple[
     Callable[[Tensor], Tensor],  # autograd function
     Tensor,  # differentiable variables
@@ -200,9 +186,7 @@ def gradchecker(
     w = w.detach().clone().requires_grad_(True)
 
     def func(weights: Tensor) -> Tensor:
-        if chunk_size is None:
-            return f(numbers, weights, ref)
-        return f(numbers, weights, ref, chunk_size)
+        return model.atomic_c6(numbers, weights, ref)
 
     return func, w
 
@@ -210,48 +194,22 @@ def gradchecker(
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", ["LiH"] + sample_list)
-@pytest.mark.parametrize(
-    "f, chunk_size",
-    [
-        (model.c6._atomic_c6_full, None),
-        (model.c6._atomic_c6_chunked, 2),
-        (model.atomic_c6, None),
-        (model.atomic_c6, 2),
-        (model.c6.AtomicC6_V1.apply, None),
-        (model.c6.AtomicC6_V1.apply, 2),
-    ],
-)
-def test_gradcheck(
-    dtype: torch.dtype, name: str, f: C6Func, chunk_size: int | None
-) -> None:
+def test_gradcheck(dtype: torch.dtype, name: str) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradcheck`.
     """
-    func, diffvars = gradchecker(dtype, name, f, chunk_size)
+    func, diffvars = gradchecker(dtype, name)
     assert dgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)
 
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name", sample_list)
-@pytest.mark.parametrize(
-    "f, chunk_size",
-    [
-        (model.c6._atomic_c6_full, None),
-        (model.c6._atomic_c6_chunked, 2),
-        (model.atomic_c6, None),
-        (model.atomic_c6, 2),
-        (model.c6.AtomicC6_V1.apply, None),
-        (model.c6.AtomicC6_V1.apply, 2),
-    ],
-)
-def test_gradgradcheck(
-    dtype: torch.dtype, name: str, f: C6Func, chunk_size: int | None
-) -> None:
+def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradgradcheck`.
     """
-    func, diffvars = gradchecker(dtype, name, f, chunk_size=chunk_size)
+    func, diffvars = gradchecker(dtype, name)
     assert dgradgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)

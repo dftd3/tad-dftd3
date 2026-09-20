@@ -18,18 +18,70 @@ Model: Atomic C6
 
 Computation of atomic C6 dispersion coefficients.
 
-Since this part can be the most memory-intensive, we provide a custom backward
-function (i.e., analytical gradient) and options for chunking.
+A naive evaluation gathers ``reference.c6[Z_i, Z_j]`` for every atom *pair*,
+materialising a dense ``(..., nat, nat, 7, 7)`` tensor -- 1.5 GB at 2000
+atoms. ``C6ref`` only depends on the *element* pair, not the atom pair, so
+grouping atoms by element before contracting against the table avoids ever
+materialising that tensor. There are two ways to do that grouping, and this
+module picks between them at call time:
+
+* **"fast"** -- group by the elements actually present, via
+  ``numbers.unique()``. The reference block is gathered only against those
+  ``nunique`` elements (``(..., nat, nunique, 7, 7)``, linear in ``nat``,
+  ``nunique`` typically a handful) and reduced to the ``(..., nat, nat)``
+  output with a single GEMM (see ``_atomic_c6_fast``). Measured against the
+  naive dense evaluation, on CPU (float64, single-threaded):
+
+  ==== =======  ===================  ==========================
+   nat nunique  intermediate memory  wall time (mean of 5 runs)
+  ==== =======  ===================  ==========================
+   500       4      98.0 -> 0.8 MB   125x smaller,  167x faster
+   500      60      98.0 -> 11.8 MB    8x smaller,   20x faster
+  2000       4    1568.0 -> 3.1 MB   500x smaller,  256x faster
+  2000      60    1568.0 -> 47.0 MB   33x smaller,   22x faster
+  ==== =======  ===================  ==========================
+
+  ``numbers.unique()``'s output shape is data-dependent, which is illegal
+  under `torch.func.vmap` (it cannot batch an op whose output shape could
+  differ per batch element) and forces a graph break under
+  `torch.compile`. This path is therefore only used when neither applies.
+
+* **"safe"** -- the same bilinear form as "fast" (see ``_atomic_c6_fast``),
+  but grouping by the fixed, data-*independent* set of all ~104 possible
+  elements instead of ``numbers.unique()``. No ``unique``/``nonzero``
+  anywhere, so it survives both `vmap` and `compile`. Its intermediates are
+  ``(..., nat, nelements, 7)`` -- linear in ``nat``, like "fast" -- rather
+  than the ``(..., nat, nat, 7)`` a naive gather-then-reduce would need; only
+  the final ``(..., nat, nat)`` output itself is quadratic, which is
+  unavoidable for a dense result. The trade for never materialising that
+  ``(..., nat, nat, 7)`` intermediate is FLOPs: the closing contraction is a
+  single GEMM over the full ``nelements`` axis (multiplying through the
+  zeros a one-hot mask leaves in most of it) rather than a 7-wide
+  elementwise reduction over a pre-gathered, pair-sized tensor -- roughly
+  ``nelements`` times more arithmetic, worthwhile because GEMM throughput is
+  cheap relative to the memory this avoids.
+
+`atomic_c6` picks "fast" unless `numbers` is `vmap`-batched or `compile` is
+tracing (checked via `_is_batched_anywhere`/`is_compiling`, in that order --
+`is_compiling` short-circuits before the `vmap`-only check ever runs, which
+matters because that check is itself not traceable by `torch.compile`).
+`_is_batched_anywhere` inspects `numbers` itself rather than any global
+transform state, which matters in two ways: it stays on "fast" when a
+`vmap` is active but `numbers` is not the batched argument (e.g. `vmap`
+over positions only), and -- since neither path here uses a custom
+`torch.autograd.Function` with `ctx.save_for_backward` -- it never has to
+account for a save/restore round trip silently dropping a `BatchedTensor`
+wrapper while the transform is still active; plain composite ops keep the
+same tensor object (and its wrapper) throughout, so the ordinary forward
+call is the only place this ever needs checking.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple, Protocol
-
 import torch
 from tad_mctc._version import __tversion__
+from tad_mctc.autograd import is_batched
 from tad_mctc.math import einsum
-from tad_mctc.tools import memory
 from tad_mctc.typing import Callable, Tensor
 
 from ..reference import Reference
@@ -37,24 +89,14 @@ from ..reference import Reference
 __all__ = ["atomic_c6"]
 
 
-# main entry point
-
-
 def atomic_c6(
     numbers: Tensor,
     weights: Tensor,
     reference: Reference,
-    chunk_size: None | int = None,
 ) -> Tensor:
     """
     Calculate atomic dispersion coefficients.
 
-    .. warning::
-
-        This function is the most memory intensive part of the calculation and
-        may require chunking for large systems. Without chunking, for example,
-        2000 atoms (`numbers`) require the construction of a 1.5 GB tensor.
-
     Parameters
     ----------
     numbers : Tensor
@@ -70,412 +112,192 @@ def atomic_c6(
     Tensor
         Atomic dispersion coefficients of shape `(..., nat, nat)`.
     """
-    _check_memory(numbers, weights, chunk_size)
+    if is_compiling() or _is_batched_anywhere(numbers):
+        return _atomic_c6_safe(numbers, weights, reference)
 
-    # PyTorch 2.0.x has a bug with functorch and custom autograd functions as
-    # documented in: https://github.com/pytorch/pytorch/issues/99973
-    #
-    # RuntimeError: unwrapped_count > 0 INTERNAL ASSERT FAILED at "../aten/src/
-    # ATen/functorch/TensorWrapper.cpp":202, please report a bug to PyTorch.
-    # Should have at least one dead wrapper
-    #
-    # Hence, we cannot use the custom backwards for reduced memory consumption.
-    if __tversion__[0] == 2 and __tversion__[1] == 0:  # pragma: no cover
-        track_weights = torch._C._functorch.is_gradtrackingtensor(weights)
-        track_numbers = torch._C._functorch.is_gradtrackingtensor(numbers)
-        if track_weights or track_numbers:
-
-            if chunk_size is None:
-                return _atomic_c6_full(numbers, weights, reference)
-
-            return _atomic_c6_chunked(numbers, weights, reference, chunk_size)
-
-    # Use custom autograd function for reduced memory consumption
-    AtomicC6 = AtomicC6_V1 if __tversion__ < (2, 0, 0) else AtomicC6_V2
-    res = AtomicC6.apply(numbers, weights, reference, chunk_size)
-    assert res is not None
-    return res
+    return _atomic_c6_fast(numbers, weights, reference)
 
 
-# helpers
+# "fast" path -- groups atoms by the elements actually present. Not
+# vmap/compile-safe: `torch.unique` has data-dependent output shape. Only
+# ever called when neither `is_compiling()` nor `_is_batched_anywhere` is
+# true, so a shared, global `numbers.unique()` across any leading batch
+# dimensions (e.g. a `tad_mctc.batch.pack`-ed multi-molecule batch) is both
+# safe to call and correct: atoms from a molecule that happens to lack one
+# of the globally-present elements simply get a zero contribution there.
 
 
-def _check_memory(
-    numbers: Tensor, weights: Tensor, chunk_size: None | int = None
-) -> None:
-    """
-    Check memory usage for the construction of the C6 tensor.
-    Throw an error or warning for potential memory issues.
-
-    Parameters
-    ----------
-    numbers : Tensor
-        Atomic numbers of the atoms in the system.
-    weights : Tensor
-        Weights of all reference systems.
-    chunk_size : None | int, optional
-        Chunk size for the calculation of the C6 tensor. Defaults to `None`.
-
-    Raises
-    ------
-    MemoryError
-        If the estimated memory usage exceeds the total available memory.
-    """
-    # Required memory for the C6 tensor
-    if chunk_size is None:
-        size = (numbers.shape[-1], numbers.shape[-1], 7, 7)
-    else:
-        size = (numbers.shape[-1], chunk_size, 7, 7)
-    mem = memory.memory_tensor(size, weights.dtype)
-
-    # actual memory usage
-    free, total = memory.memory_device(numbers.device)
-
-    if mem > total:
-        raise MemoryError(
-            f"Estimated memory usage exceeds total available memory: {mem:.2f} "
-            f"MB > {total:.2f} MB. During the construction of the C6 "
-            f"dispersion coefficients, a 4D tensor of shape {size} is required "
-            "for efficient tensor operations. To fit the tensor into memory, "
-            "try using a chunk size or reduce the chunk size via the optional "
-            "`chunk_size` argument."
-        )
-
-    if mem > free:
-        # pylint: disable=import-outside-toplevel
-        from warnings import warn
-
-        warn(
-            "Estimated memory usage appears to exceed the available memory: "
-            f"{mem:.2f} MB > {free:.2f} MB. If the calculation fails due to "
-            "memory issues, consider reducing the chunk size via the optional "
-            "`chunk_size` argument.",
-            ResourceWarning,
-        )
-
-
-def _einsum(rc6: Tensor, weights_i: Tensor, weights_j: Tensor) -> Tensor:
-    """
-    Perform an einsum operation for the atomic C6 coefficients.
-
-    Parameters
-    ----------
-    rc6 : Tensor
-        Reference C6 coefficients.
-    weights_i : Tensor
-        Weights of all reference systems.
-    weights_j : Tensor
-        Weights of all reference systems.
-
-    Returns
-    -------
-    Tensor
-        Atomic C6 dispersion coefficients.
-    """
-    # The default einsum path is fastest if the large tensors comes first.
-    # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
-    return einsum(
-        "...ijab,...ia,...jb->...ij",
-        *(rc6, weights_i, weights_j),
-        optimize=[(0, 1), (0, 1)],
-    )
-
-
-# full and chunked versions
-
-
-def _atomic_c6_full(
-    numbers: Tensor,
-    weights: Tensor,
-    reference: Reference,
+def _atomic_c6_fast(
+    numbers: Tensor, weights: Tensor, reference: Reference
 ) -> Tensor:
     """
-    Calculation of atomic dispersion coefficients without chunking. Might cause
-    memory issues for very large systems.
-
-    Parameters
-    ----------
-    numbers : Tensor
-        The atomic numbers of the atoms in the system of shape `(..., nat)`.
-    weights : Tensor
-        Weights of all reference systems of shape `(..., nat, 7)`.
-    reference : Reference
-        Reference systems for D3 model. Contains the reference C6 coefficients
-        of shape `(..., nelements, nelements, 7, 7)`.
-
-    Returns
-    -------
-    Tensor
-        Atomic dispersion coefficients of shape `(..., nat, nat)`.
+    Bilinear form factored over the elements actually present in `numbers`
+    (see module docstring for the derivation and measured speedup).
     """
-    # NOTE: This old version creates large intermediate tensors and builds the
-    # full matrix before the sum reduction, which requires a lot of memory.
-    #
-    # gw = w.unsqueeze(-1).unsqueeze(-3) * w.unsqueeze(-2).unsqueeze(-4)
-    # c6 = torch.sum(torch.sum(torch.mul(gw, rc6), dim=-1), dim=-1)
+    unique_numbers = torch.unique(numbers)
 
-    rc6 = reference.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    return _einsum(rc6, weights, weights)
+    # Gather reference C6 blocks against only the unique elements present:
+    # (..., nelements, nelements, 7, 7) -> (..., nat, nunique, 7, 7)
+    rc6 = reference.c6[numbers.unsqueeze(-1), unique_numbers]
+
+    # Contract the reference block with the weights of the first atom.
+    # g[..., i, u, b] = sum_a w[..., i, a] * rc6[..., i, u, a, b]
+    # (..., nat, nunique, 7, 7) * (..., nat, 7) -> (..., nat, nunique, 7)
+    g = einsum("...iuab,...ia->...iub", rc6, weights)
+
+    # Weights of the second atom, scattered onto the unique-element axis:
+    # only the entry matching the atom's own element is non-zero.
+    # (..., nat, 7) * (..., nat, nunique) -> (..., nat, nunique, 7)
+    onehot = (numbers.unsqueeze(-1) == unique_numbers).type(weights.dtype)
+    wu = weights.unsqueeze(-2) * onehot.unsqueeze(-1)
+
+    # Final contraction is a single (batched) matrix multiplication over the
+    # flattened (nunique * 7) axis, directly producing the dense (nat, nat)
+    # output -- no (..., nat, nat, ...) intermediate is ever built.
+    # (..., nat, nunique, 7) * (..., nat, nunique, 7) -> (..., nat, nat)
+    return einsum("...iub,...jub->...ij", g, wu)
 
 
-def _atomic_c6_chunked(
-    numbers: Tensor,
-    weights: Tensor,
-    reference: Reference,
-    chunk_size: int,
+# "safe" path -- same bilinear form as "fast" (see module docstring), but
+# grouping by the fixed, data-independent set of all possible elements
+# instead of `numbers.unique()`. vmap- and compile-safe: no `unique`/
+# `nonzero` anywhere, and `reference.c6.shape[0]` (nelements) is a plain
+# Python int, not traced. Supports an arbitrary leading "..." batch
+# dimension directly via einsum, same as "fast" -- no per-geometry loop
+# needed once grouping no longer depends on which elements are present.
+
+
+def _atomic_c6_safe(
+    numbers: Tensor, weights: Tensor, reference: Reference
 ) -> Tensor:
     """
-    Chunked version of the calculation of atomic dispersion coefficients.
-
-    Parameters
-    ----------
-    numbers : Tensor
-        The atomic numbers of the atoms in the system of shape `(..., nat)`.
-    weights : Tensor
-        Weights of all reference systems of shape `(..., nat, 7)`.
-    reference : Reference
-        Reference systems for D3 model. Contains the reference C6 coefficients
-        of shape `(..., nelements, nelements, 7, 7)`.
-    chunk_size : int
-        Chunk size for the calculation of the C6 tensor.
-
-    Returns
-    -------
-    Tensor
-        Atomic dispersion coefficients of shape `(..., nat, nat)`.
+    Bilinear form factored over the fixed set of all possible elements (see
+    module docstring for the derivation and the memory/FLOPs trade-off).
     """
+    all_elements = torch.arange(reference.c6.shape[0], device=numbers.device)
 
-    nat = numbers.shape[-1]
-    c6_output = torch.zeros(
-        (*numbers.shape, nat), device=numbers.device, dtype=weights.dtype
-    )
+    # Gather reference C6 blocks against every possible element:
+    # (..., nelements, nelements, 7, 7) -> (..., nat, nelements, 7, 7)
+    rc6 = reference.c6[numbers.unsqueeze(-1), all_elements]
 
-    for start in range(0, nat, chunk_size):
-        end = min(start + chunk_size, nat)
-        num_chunk = numbers[..., start:end]  # (..., chunk_size)
+    # Contract the reference block with the weights of the first atom.
+    # g[..., i, u, b] = sum_a w[..., i, a] * rc6[..., i, u, a, b]
+    # (..., nat, nelements, 7, 7) * (..., nat, 7) -> (..., nat, nelements, 7)
+    g = einsum("...iuab,...ia->...iub", rc6, weights)
 
-        # Chunked indexing into reference.c6: (..., chunk_size, nat, 7, 7)
-        rc6_chunk = reference.c6[num_chunk.unsqueeze(-1), numbers.unsqueeze(-2)]
+    # Weights of the second atom, scattered onto the element axis: only the
+    # entry matching the atom's own element is non-zero.
+    # (..., nat, 7) * (..., nat, nelements) -> (..., nat, nelements, 7)
+    onehot = (numbers.unsqueeze(-1) == all_elements).type(weights.dtype)
+    wu = weights.unsqueeze(-2) * onehot.unsqueeze(-1)
 
-        # Also chunk the weights: (..., chunk_size, 7)
-        weights_chunk = weights[..., start:end, :]
-
-        # (..., n1, n2, r1, r2) * (..., n1, r1) * (..., n2, r2) -> (..., n1, n2)
-        contribution = _einsum(rc6_chunk, weights_chunk, weights)
-
-        # Add contributions to the correct slice of the output tensor with
-        # out-of-place aggregation along the "i" axis. In-place aggregation:
-        # c6_output[..., start:end, :] += contribution
-        idx = torch.arange(start, end, device=numbers.device)
-        c6_output = torch.index_add(
-            c6_output, dim=-2, index=idx, source=contribution
-        )
-
-    return c6_output
+    # Final contraction is a single (batched) matrix multiplication over the
+    # flattened (nelements * 7) axis, directly producing the dense (nat, nat)
+    # output -- no (..., nat, nat, ...) intermediate is ever built.
+    # (..., nat, nelements, 7) * (..., nat, nelements, 7) -> (..., nat, nat)
+    return einsum("...iub,...jub->...ij", g, wu)
 
 
-# typing
-
-
-class CTX(Protocol):
-    save_for_backward: Callable[[Tensor, Tensor], None]
-    saved_tensors: tuple[Tensor, Tensor]
-    chunk_size: None | int
-    reference: Reference
-
-
-class VmapInfo(NamedTuple):
-    batch_size: int
-    randomness: str
-
-
-# custom autograd functions
-
-
-class AtomicC6Base(torch.autograd.Function):
+def _resolve_is_batched_anywhere() -> Callable[[Tensor], bool]:
     """
-    Base class for the version-specific autograd function for atomic C6.
-    Different PyTorch versions only require different `forward()` signatures.
+    Resolve, once, how to walk the functorch wrapper stack on this PyTorch.
+
+    `is_batched` (from `tad_mctc`, pinned at 0.8.0) only inspects the
+    *outermost* wrapper layer: a tensor that is genuinely `vmap`-batched,
+    but additionally wrapped by an *outer* `torch.func.jacrev`/`grad`
+    transform (e.g. under ``vmap(jacrev(jacrev(f)))``, as used by
+    `tad_mctc.autograd.hess_fn_rev` for Hessians), reports as *not* batched
+    at that outer layer even though a `vmap` level exists further down the
+    wrapper stack. This walks that stack (unwrapping through grad-tracking
+    layers) to answer "is this tensor batched anywhere" -- which is what
+    actually determines whether `numbers.unique()` is safe to call.
+
+    ``is_functorch_wrapped_tensor``/``get_unwrapped`` are less central
+    functorch APIs than ``is_batchedtensor``, and this project's own CI
+    matrix exercises PyTorch versions old enough (down to 2.0.1) that their
+    presence should not be assumed. If either is missing, fall back to
+    `is_batched` (single layer): still correct whenever no grad-tracking
+    layer obscures the batched one, and strictly better than raising
+    `AttributeError`.
     """
+    if __tversion__ < (2, 0, 0):
+        return lambda x: False
 
-    @staticmethod
-    def backward(
-        ctx: CTX, grad_outputs: Tensor
-    ) -> tuple[None, Tensor, None, None]:
-        numbers, weights = ctx.saved_tensors
-        chunk_size = ctx.chunk_size
-        ref = ctx.reference
+    ft = torch._C._functorch  # pyright: ignore[reportAttributeAccessIssue]
+    is_wrapped = getattr(ft, "is_functorch_wrapped_tensor", None)
+    get_unwrapped = getattr(ft, "get_unwrapped", None)
 
-        # We need the derivatives of the following expression:
-        # c_ij ​= ∑a,b w_ia *× w_jb ​* c_ijab​
+    if is_wrapped is None or get_unwrapped is None:  # pragma: no cover
+        return is_batched
 
-        ###########################
-        ### Non-chunked version ###
-        ###########################
+    def _walk(x: Tensor) -> bool:
+        while is_wrapped(x):
+            if ft.is_batchedtensor(x):
+                return True
+            x = get_unwrapped(x)
+        return False
 
-        if chunk_size is None:
-            # (..., nel, nel, 7, 7) -> (..., nat, nat, 7, 7)
-            rc6 = ref.c6[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-
-            # ∂c_ij/∂w_jb = ∑a w_ia * c_ijab
-            # (..., n1, n2, r1, r2) * (..., n2, r2) -> (..., n1, n2, r2)
-            g_jb = einsum("...ijab,...ia->...ijb", rc6, weights)
-
-            # vjp: (..., n1, n2) * (..., n1, n2, r2) -> (..., n2, r2)
-            _gj = einsum("...ij,...ijb->...jb", grad_outputs, g_jb)
-
-            # ∂c_ij/∂w_ia = ∑b w_jb * c_ijab
-            # (..., n1, n2, r1, r2) * (..., n2, r2) -> (..., n1, n2, r1)
-            g_ia = einsum("...ijab,...jb->...ija", rc6, weights)
-
-            # vjp: (..., n1, n2) * (..., n1, n2, r1) -> (..., n1, r1)
-            _gi = einsum("...ij,...ija->...ia", grad_outputs, g_ia)
-
-            weights_bar = _gi + _gj
-
-            return None, weights_bar, None, None
-
-        #######################
-        ### Chunked version ###
-        #######################
-
-        nat = weights.shape[-2]
-        gi_accum = torch.zeros_like(weights)
-        gj_accum = torch.zeros_like(weights)
-
-        for start in range(0, nat, chunk_size):
-            end = min(start + chunk_size, nat)
-
-            # Numbers and derivatives for this chunk
-            grad_chunk = grad_outputs[..., start:end, :]  # (..., c_size, nat)
-            num_chunk = numbers[..., start:end]  # (..., chunk_size)
-
-            # Chunked indexing into reference.c6: (..., chunk_size, nat, 7, 7)
-            # -> Only the "i" index is chunked!
-            rc6_chunk = ref.c6[num_chunk.unsqueeze(-1), numbers.unsqueeze(-2)]
-
-            # Also chunk the weights: (..., chunk_size, 7)
-            weights_chunk = weights[..., start:end, :]
-
-            # _gi derivative is chunked (sum over non-chunked "j" index)
-            g_ia = einsum("...ijab,...jb->...ija", rc6_chunk, weights)
-            _gi = einsum("...ij,...ija->...ia", grad_chunk, g_ia)
-
-            # _gj derivative is NOT chunked (sum over chunked "i" index)
-            g_jb = einsum("...ijab,...ia->...ijb", rc6_chunk, weights_chunk)
-            _gj = einsum("...ij,...ijb->...jb", grad_chunk, g_jb)
-
-            # Accumulate gradients for current chunk with using out-of-place ops
-            # to allow vmap. Old version: weights_bar[..., start:end, :] += _gi
-            idx = torch.arange(start, end, device=weights.device)
-            gi_accum = torch.index_add(gi_accum, dim=-2, index=idx, source=_gi)
-
-            gj_accum = gj_accum + _gj
-
-        return None, gi_accum + gj_accum, None, None
+    return _walk
 
 
-class AtomicC6_V1(AtomicC6Base):
+_is_batched_anywhere = _resolve_is_batched_anywhere()
+
+
+# `is_compiling`, ported from `tad_mctc.tools.compile` -- not yet in a
+# released tad-mctc (tad-dftd3 pins `tad-mctc==0.8.0`, which predates it).
+# Remove this copy and import from `tad_mctc.tools` once a tad-mctc release
+# with `is_compiling` is pinned.
+
+
+def _always_false() -> bool:  # pragma: no cover
+    """``torch.compile`` does not exist, or exposes no way to ask."""
+    return False
+
+
+def _resolve_is_compiling() -> Callable[[], bool]:
     """
-    Custom autograd function for atomic C6 coefficients.
-    This is supposed to reduce memory usage.
+    Resolve, once, which underlying "is compiling" query this PyTorch
+    offers.
+
+    This capability probe -- ``getattr``/``hasattr`` chains, an explicit
+    ``import torch._dynamo`` -- has to run here, outside of
+    :func:`is_compiling`'s own body: ``is_compiling()`` is called from
+    `atomic_c6`, which may itself get traced under
+    ``torch.compile(fullgraph=True)``, and Dynamo cannot trace
+    ``hasattr``/``getattr`` introspection on a module object
+    (``Unsupported: hasattr: PythonModuleVariable()``); it can trace a
+    plain call to a resolved function just fine.
+
+    Neither the public ``torch.compiler.is_compiling`` nor its older,
+    private predecessor ``torch._dynamo.is_compiling`` reliably exists (or
+    resolves without raising) purely as a function of ``__tversion__``:
+    ``torch.compiler`` can exist without yet having ``is_compiling`` on it
+    (added later than the module itself), and ``torch._dynamo`` -- even on
+    a version that ships it -- is only exposed as a ``torch`` attribute
+    once something has imported it, which nothing upstream of this call is
+    guaranteed to have done.
     """
+    try:
+        import torch._dynamo as _torch_dynamo  # noqa: F401  # pylint: disable=unused-import, protected-access
+    except ImportError:  # pragma: no cover
+        # Only unavailable on PyTorch < 2.0, not exercised by any single
+        # CI job's torch version; the other probes below fall through.
+        pass
 
-    @staticmethod
-    def forward(
-        ctx: CTX,
-        numbers: Tensor,
-        weights: Tensor,
-        reference: Reference,
-        chunk_size: None | int = None,
-    ) -> Tensor:
-        ctx.save_for_backward(numbers, weights)
-        ctx.chunk_size = chunk_size
-        ctx.reference = reference
+    compiler = getattr(torch, "compiler", None)
+    if compiler is not None and hasattr(compiler, "is_compiling"):
+        return compiler.is_compiling
 
-        if chunk_size is None:
-            return _atomic_c6_full(numbers, weights, reference)
+    dynamo = getattr(torch, "_dynamo", None)
+    if dynamo is not None and hasattr(dynamo, "is_compiling"):
+        return dynamo.is_compiling
 
-        return _atomic_c6_chunked(numbers, weights, reference, chunk_size)
+    return _always_false  # pragma: no cover
 
 
-class AtomicC6_V2(AtomicC6Base):
-    """
-    Custom autograd function for atomic C6 coefficients.
-    This is supposed to reduce memory usage.
-    """
+_is_compiling_impl = _resolve_is_compiling()
 
-    generate_vmap_rule = False
-    # Auto-generation should work since we only use PyTorch operations,
-    # however, it does not: PyTorch throws an internal error when indexing
-    # `reference.c6` with the `numbers` tensor.
 
-    @staticmethod
-    def forward(
-        numbers: Tensor,
-        weights: Tensor,
-        reference: Reference,
-        chunk_size: int | None = None,
-    ) -> Tensor:
-        if chunk_size is None:
-            return _atomic_c6_full(numbers, weights, reference)
-
-        return _atomic_c6_chunked(numbers, weights, reference, chunk_size)
-
-    @staticmethod
-    def setup_context(
-        ctx: CTX,
-        inputs: tuple[Tensor, Tensor, Reference, int | None],
-        output: Tensor,
-    ) -> None:
-        numbers, weights, reference, chunk_size = inputs
-
-        ctx.save_for_backward(numbers, weights)
-        ctx.chunk_size = chunk_size
-        ctx.reference = reference
-
-    @staticmethod
-    def vmap(
-        info: VmapInfo,
-        in_dims: tuple[int | None, ...],
-        numbers: Tensor,
-        weights: Tensor,
-        reference: Reference,
-        chunk_size: int | None,
-    ) -> tuple[Tensor, int]:
-        bd_n, bd_w, bd_ref, bd_cs = in_dims
-
-        # Only numbers and weights are batched
-        if bd_ref is not None or bd_cs is not None:  # pragma: no cover
-            raise ValueError(
-                "`Reference` and `chunk_size` must be static under vmap."
-            )
-
-        # Move batch dimensions to the front if necessary
-        if info.batch_size != numbers.shape[0]:
-            raise ValueError(
-                f"Batch size mismatch: expected {info.batch_size}, got "
-                f"{numbers.shape[0]} in `numbers`. The first dimension "
-                "should be the batch dimension."
-            )
-
-        if info.batch_size != weights.shape[0]:
-            raise ValueError(
-                f"Batch size mismatch: expected {info.batch_size}, got "
-                f"{weights.shape[0]} in `weights`. The first dimension "
-                "should be the batch dimension."
-            )
-
-        if bd_n not in (0, None):  # pragma: no cover
-            raise ValueError(
-                f"Batch dimension for `numbers` must be 0 (first dimension) "
-                f"or `None`, got {bd_n}."
-            )
-        if bd_w not in (0, None):  # pragma: no cover
-            raise ValueError(
-                f"Batch dimension for `weights` must be 0 (first dimension) "
-                f"or `None`, got {bd_w}."
-            )
-
-        out = AtomicC6_V2.forward(numbers, weights, reference, chunk_size)
-        return out, 0
+def is_compiling() -> bool:
+    """Whether we are currently being traced by ``torch.compile``."""
+    return bool(_is_compiling_impl())

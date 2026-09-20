@@ -105,7 +105,6 @@ def dftd3(
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
     damping_function: DampingFunction = rational_damping,
-    chunk_size: int | None = None,
 ) -> Tensor:
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
@@ -135,9 +134,6 @@ def dftd3(
         Function to calculate weight of individual reference systems.
     counting_function : Callable, optional
         Calculates counting value in range 0 to 1 for each atom pair.
-    chunk_size : int, optional
-        Chunk size for chunked computation of huge tensors that otherwise
-        create memory bottlenecks.
 
     Returns
     -------
@@ -173,7 +169,7 @@ def dftd3(
         cutoff=cutoff.cn,
     )
     weights = model.weight_references(numbers, cn, ref, weighting_function)
-    c6 = model.atomic_c6(numbers, weights, ref, chunk_size=chunk_size)
+    c6 = model.atomic_c6(numbers, weights, ref)
 
     return dispersion(
         numbers,
