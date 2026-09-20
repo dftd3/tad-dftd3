@@ -76,12 +76,25 @@ tensor(-0.0034288)
 
 import torch
 
-from . import damping, data, defaults, disp, model, ncoord, param, reference
+from . import (
+    cutoff,
+    damping,
+    data,
+    defaults,
+    disp,
+    model,
+    ncoord,
+    param,
+    reference,
+)
 from .__version__ import __version__
+from .cutoff import Cutoff
 from .disp import dftd3
 
 __alll__ = [
     "dftd3",
+    "cutoff",
+    "Cutoff",
     "damping",
     "data",
     "defaults",

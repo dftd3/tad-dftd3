@@ -21,7 +21,8 @@ This module defines the default values for all parameters within DFT-D3.
 
 __all__ = [
     "D3_CN_CUTOFF",
-    "D3_DISP_CUTOFF",
+    "D3_DISP2_CUTOFF",
+    "D3_DISP3_CUTOFF",
     "D3_KCN",
     "A1",
     "A2",
@@ -35,11 +36,17 @@ __all__ = [
 
 # DFT-D3
 
-D3_CN_CUTOFF = 25.0
-"""Coordination number cutoff (25.0)."""
+# These mirror `realspace_cutoff` in s-dftd3's `dftd3_cutoff`; they differ
+# because the terms they truncate decay differently, see `tad_dftd3.cutoff`.
 
-D3_DISP_CUTOFF = 50.0
-"""Two/three-body interaction cutoff (50.0)."""
+D3_CN_CUTOFF = 40.0
+"""Coordination number cutoff (40.0)."""
+
+D3_DISP2_CUTOFF = 60.0
+"""Two-body interaction cutoff (60.0)."""
+
+D3_DISP3_CUTOFF = 40.0
+"""Three-body interaction cutoff (40.0)."""
 
 D3_KCN = 16.0
 """Steepness of counting function (16.0)."""
