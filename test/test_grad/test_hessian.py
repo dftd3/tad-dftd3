@@ -26,7 +26,7 @@ from tad_mctc.batch import pack
 from tad_mctc.convert import reshape_fortran
 from tad_mctc.typing import DD, Tensor
 
-from tad_dftd3 import dftd3
+from tad_dftd3.disp import dftd3
 
 from ..conftest import DEVICE
 from .samples import samples
@@ -139,10 +139,7 @@ def test_single_v2(dtype: torch.dtype, name: str) -> None:
 @pytest.mark.parametrize("dtype", [torch.double])
 @pytest.mark.parametrize("name1", ["LiH"])
 @pytest.mark.parametrize("name2", sample_list)
-@pytest.mark.parametrize("chunk_size", [None, 2])
-def test_batch(
-    dtype: torch.dtype, name1: str, name2: str, chunk_size: int | None
-) -> None:
+def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     sample1, sample2 = samples[name1], samples[name2]
@@ -191,7 +188,7 @@ def test_batch(
         Returns energy as scalar, which is required for Hessian computation
         to obtain the correct shape of ``(..., nat, 3, nat, 3)``.
         """
-        return dftd3(numbers, positions, param, chunk_size=chunk_size).sum(-1)
+        return dftd3(numbers, positions, param).sum(-1)
 
     hess_fn = hess_fn_rev(_energy, argnums=1)
     hess_fn_batch = torch.func.vmap(hess_fn, in_dims=(0, 0))
