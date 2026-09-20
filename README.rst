@@ -131,6 +131,17 @@ Note that this randomizes the order of tests but skips "large" tests. To modify 
     tox -- test
 
 
+Testing against the s-dftd3 reference
+--------------------------------------
+
+Some tests compare tad-dftd3's output against reference values computed at
+test time by calling the `s-dftd3 <https://github.com/dftd3/s-dftd3>`__
+Fortran implementation through its Python bindings, rather than against
+numbers stored in this repository. The ``dftd3`` package is therefore a
+required test dependency, not an optional one -- it is pulled in by the
+``[dev]`` extra, and there is no offline fallback if it is missing.
+
+
 Examples
 --------
 

@@ -22,7 +22,7 @@ from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.typing import DD
 
-from tad_dftd3 import damping, data, dftd3, model, reference
+from tad_dftd3 import Cutoff, damping, data, dftd3, model, reference
 from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
@@ -66,7 +66,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(50, **dd)
+    cutoff = Cutoff(disp2=50.0, disp3=50.0, **dd)
 
     param = {
         "s6": torch.tensor(1.0000, **dd),

@@ -24,7 +24,7 @@ from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.typing import DD
 
-from tad_dftd3 import damping, data, disp
+from tad_dftd3 import Cutoff, damping, data, disp
 
 from ..conftest import DEVICE
 from .samples import samples
@@ -81,7 +81,7 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
         numbers.unsqueeze(-1), numbers.unsqueeze(-2)
     ]
     r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = torch.tensor(50.0, **dd)
+    cutoff = Cutoff(disp2=50.0, **dd)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
 
