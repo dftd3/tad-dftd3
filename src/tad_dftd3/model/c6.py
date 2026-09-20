@@ -183,7 +183,7 @@ def _atomic_c6_safe(
     # Contract the reference block with the weights of the first atom.
     # g[..., i, u, b] = sum_a w[..., i, a] * rc6[..., i, u, a, b]
     # (..., nat, nelements, 7, 7) * (..., nat, 7) -> (..., nat, nelements, 7)
-    g = _einsum_compile_safe("...iuab,...ia->...iub", rc6, weights)
+    g = einsum("...iuab,...ia->...iub", rc6, weights)
 
     # Weights of the second atom, scattered onto the element axis: only the
     # entry matching the atom's own element is non-zero.
@@ -195,7 +195,7 @@ def _atomic_c6_safe(
     # flattened (nelements * 7) axis, directly producing the dense (nat, nat)
     # output -- no (..., nat, nat, ...) intermediate is ever built.
     # (..., nat, nelements, 7) * (..., nat, nelements, 7) -> (..., nat, nat)
-    return _einsum_compile_safe("...iub,...jub->...ij", g, wu)
+    return einsum("...iub,...jub->...ij", g, wu)
 
 
 def _resolve_is_batched_anywhere() -> Callable[[Tensor], bool]:
@@ -301,29 +301,3 @@ _is_compiling_impl = _resolve_is_compiling()
 def is_compiling() -> bool:
     """Whether we are currently being traced by ``torch.compile``."""
     return bool(_is_compiling_impl())
-
-
-def _einsum_compile_safe(equation: str, *operands: Tensor) -> Tensor:
-    """
-    ``einsum``, bypassing ``tad_mctc.math.einsum``'s ``opt_einsum`` backend
-    while tracing.
-
-    ``tad_mctc.math.einsum`` already means to skip ``opt_einsum.contract``
-    under ``torch.compile`` -- Dynamo cannot trace its Python-side
-    contraction-path bookkeeping -- gated on its own, internal
-    ``tad_mctc.tools.is_compiling`` check. The tad-mctc release currently
-    pinned by tad-dftd3 (``tad-mctc==0.8.0``) predates a fix to that check,
-    so on newer PyTorch it can under-report, silently defeating the guard it
-    exists to provide (``opt_einsum``'s ``threading.get_ident()`` call is
-    unsupported by Dynamo and raises). `_atomic_c6_safe` is called
-    specifically because it must survive `torch.compile`, so it routes
-    around `tad_mctc.math.einsum`'s gate entirely and uses this module's own
-    `is_compiling` (verified correct against the exact PyTorch version this
-    was hit on) instead: plain `torch.einsum` while tracing --
-    `opt_einsum`'s contraction-order optimisation buys nothing once Inductor
-    does its own fusion anyway -- and `tad_mctc.math.einsum` otherwise, to
-    keep the optimisation eager execution still benefits from.
-    """
-    if is_compiling():
-        return torch.einsum(equation, *operands)
-    return einsum(equation, *operands)
