@@ -92,8 +92,94 @@ The following dependencies are required
 - `torch <https://pytorch.org/>`__
 - `pytest <https://docs.pytest.org/>`__ (tests only)
 
-PyTorch<2.3.0 is compiled against the NumPy 1.x C-API and requires ``numpy<2``.
-Since this cannot be expressed in the package metadata (dependency markers cannot refer to the PyTorch version), pin ``numpy<2`` yourself if you use PyTorch<2.3.0.
+Compatibility
+~~~~~~~~~~~~~
+
+Python 3.10 or newer and PyTorch 2.4 or newer are required.
+Older releases are not supported.
+
+.. list-table::
+   :header-rows: 1
+   :stub-columns: 1
+
+   * - PyTorch / Python
+     - 3.10
+     - 3.11
+     - 3.12
+     - 3.13
+     - 3.14
+   * - 2.4.1
+     - ✔️
+     - ✔️
+     - ✅
+     - ❌
+     - ❌
+   * - 2.5.1
+     - ✔️
+     - ✔️
+     - ✅
+     - ❌
+     - ❌
+   * - 2.6.0
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+     - ❌
+   * - 2.7.1
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+     - ❌
+   * - 2.8.0
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+     - ❌
+   * - 2.9.1
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+   * - 2.10.0
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+   * - 2.11.0
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+   * - 2.12.1
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+   * - 2.13.0
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✔️
+     - ✅
+   * - 2.14.0
+     - ✅
+     - ✅
+     - ✅
+     - ✅
+     - ✅
+
+Legend: ✅ tested in CI; ✔️ supported, but not tested in CI (should still work); ❌ not supported.
+Only the latest bug fix version is listed, but all preceding bug fix versions of the same minor release are supported.
+For example, while 2.4.1 appears in the table, 2.4.0 is supported as well.
+
+``torch.compile`` supports Python 3.14 only from PyTorch 2.10 on; with older PyTorch releases, use Python 3.13 or older for compilation.
 
 
 Development
@@ -140,6 +226,93 @@ Fortran implementation through its Python bindings, rather than against
 numbers stored in this repository. The ``dftd3`` package is therefore a
 required test dependency, not an optional one -- it is pulled in by the
 ``[dev]`` extra, and there is no offline fallback if it is missing.
+
+
+Element parameters
+------------------
+
+The covalent radii, the van der Waals radii and the r⁴/r² expectation
+values are element constants. Wherever they can be passed (``dftd3``,
+``dispersion``, ``dispersion2``, ``dispersion3`` and
+``damping.dispersion_atm``), they are **per-element tables** indexed by
+atomic number, with entry 0 as the dummy. Each table must have the shape
+of its default:
+
+- ``rcov_table``: ``(119,)``, default ``tad_mctc.data.radii.COV_D3``
+- ``r4r2_table``: ``(119,)``, default ``tad_dftd3.data.R4R2``
+- ``rvdw_table``: ``(104, 104)``, default ``tad_mctc.data.radii.VDW_PAIRWISE``
+
+A table can be given as a tensor or as a function of ``device`` and
+``dtype`` that builds it. Gradients with respect to a table come out per
+element, summed over all atoms and systems, which is what parameter fitting
+needs. A tensor of any other shape, e.g. one value per atom, is rejected
+with a ``ValueError``.
+
+
+Three-body term
+---------------
+
+The Axilrod-Teller-Muto term is skipped if ``param`` has no ``"s9"`` or it is
+zero. For a tensor ``s9``, "zero" is only checked in plain eager mode: a
+traced (``torch.compile``), batched (``vmap``) or differentiated ``s9`` needs
+the term even at zero, since its derivative with respect to ``s9`` is the
+three-body energy. Its cost grows with the cube of the number of atoms, so
+to skip it under ``torch.compile`` (also with ``fullgraph=True``), give
+``s9`` as a Python number or leave it out:
+
+.. code:: python
+
+    param = {"a1": a1, "a2": a2, "s8": s8, "s9": 0.0}  # no three-body term
+    energy = torch.compile(d3.dftd3)(numbers, positions, param)
+
+The parameter loader in ``tad_dftd3.param`` returns tensors, so overwrite
+``param["s9"]`` with a Python number (or delete it) to get the same effect.
+
+
+Migrating from 0.7.0
+--------------------
+
+- **Element parameters.** Up to 0.7.0, ``rcov``, ``rvdw`` and ``r4r2`` took
+  per-atom (or per-pair) values, i.e. ``table[numbers]``. They are now
+  per-element tables, passed as ``rcov_table``, ``rvdw_table`` and
+  ``r4r2_table``. The old names raise a ``TypeError``, so that old calls
+  fail instead of silently indexing per-atom values a second time.
+
+  .. code:: python
+
+      # 0.7.0
+      d3.dftd3(numbers, positions, param, r4r2=d3.data.R4R2()[numbers])
+      # now
+      d3.dftd3(numbers, positions, param, r4r2_table=d3.data.R4R2())
+
+- **Keyword-only arguments.** All arguments of ``dispersion``,
+  ``dispersion2`` and ``dispersion3`` after ``c6``, and of
+  ``damping.dispersion_atm`` after ``c6``, are keyword-only. The cutoffs of
+  ``dispersion2``, ``dispersion3`` and ``dispersion_atm`` are plain floats
+  with the defaults of ``Cutoff``.
+
+- **Cutoffs.** The fields of ``Cutoff`` are plain floats, not tensors.
+  Any real number is accepted, including NumPy scalars; tensors are
+  rejected. ``Cutoff`` no longer takes ``device`` or ``dtype`` and has no
+  ``to`` method.
+
+- **Coordination number.** ``tad_dftd3.ncoord.coordination_number`` is gone,
+  since tad-mctc 0.9.0 dropped it. Use the ``cn_d3`` model instead, which
+  takes the covalent radii as a table and a ``Structure``. Note that its
+  default cutoff is 25 Bohr, while ``dftd3`` uses ``Cutoff.cn``
+  (``d3.defaults.D3_CN_CUTOFF``, 40 Bohr):
+
+  .. code:: python
+
+      # 0.7.0
+      cn = d3.ncoord.coordination_number(
+          numbers, positions, counting_function=d3.ncoord.exp_count, rcov=rcov[numbers]
+      )
+      # now
+      cn_model = d3.ncoord.cn_d3.replace(
+          count=d3.ncoord.exp_count, rcov=rcov, cutoff=d3.defaults.D3_CN_CUTOFF
+      )
+      cn = cn_model(mctc.Structure(numbers=numbers, positions=positions))
 
 
 Examples
@@ -256,18 +429,19 @@ The next example shows the calculation of dispersion energies for a batch of str
         )
     )
     ref = d3.reference.Reference()
-    rcov = mctc.data.COV_D3()[numbers]
-    rvdw = mctc.data.VDW_PAIRWISE()[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-    r4r2 = d3.data.R4R2()[numbers]
+    # per-element tables, indexed by atomic number (not per atom)
+    rvdw = mctc.data.VDW_PAIRWISE()
+    r4r2 = d3.data.R4R2()
     param = {
         "a1": torch.tensor(0.49484001),
         "s8": torch.tensor(0.78981345),
         "a2": torch.tensor(5.73083694),
     }
 
-    cn = mctc.ncoord.cn_d3(
-        numbers, positions, counting_function=mctc.ncoord.exp_count, rcov=rcov
-    )
+    structure = mctc.Structure(numbers=numbers, positions=positions)
+    # the coordination number cutoff of `dftd3` (tad-mctc defaults to 25 Bohr)
+    cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
+    cn = cn_model(structure)
     weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
     c6 = d3.model.atomic_c6(numbers, weights, ref)
     energy = d3.disp.dispersion(
@@ -275,14 +449,14 @@ The next example shows the calculation of dispersion energies for a batch of str
         positions,
         param,
         c6,
-        rvdw,
-        r4r2,
-        d3.disp.rational_damping,
+        rvdw_table=rvdw,
+        r4r2_table=r4r2,
+        damping_function=d3.disp.rational_damping,
     )
 
     torch.set_printoptions(precision=10)
     print(torch.sum(energy, dim=-1))
-    # tensor([-0.0014092578, -0.0057840119])
+    # tensor([-0.0014092580, -0.0057840119])
 
 
 Since the dispersion energy is differentiable with respect to the atomic

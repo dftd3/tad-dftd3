@@ -52,11 +52,6 @@ def test_fail() -> None:
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     c6 = samples["PbH4-BiH3"]["c6"]
 
-    # r4r2 wrong shape
-    with pytest.raises(ValueError):
-        r4r2 = torch.tensor([1.0])
-        disp.dispersion(numbers, positions, param, c6, r4r2=r4r2)
-
     # wrong numbers
     with pytest.raises(ValueError):
         disp.dispersion(torch.tensor([1]), positions, param, c6)
@@ -64,6 +59,93 @@ def test_fail() -> None:
     # unsupported element
     with pytest.raises(ValueError):
         disp.dispersion(torch.tensor([1, 105]), positions, param, c6)
+
+
+@pytest.mark.parametrize("name", ["rvdw_table", "r4r2_table"])
+def test_fail_table(name: str) -> None:
+    """Per-atom (or per-pair) values and truncated tables are rejected."""
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    c6 = torch.ones((2, 2))
+
+    table = {"rvdw_table": radii.VDW_PAIRWISE, "r4r2_table": data.R4R2}[name](
+        dtype=torch.float
+    )
+    wrong = {
+        "per atom": (
+            table[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
+            if name == "rvdw_table"
+            else table[numbers]
+        ),
+        "truncated": table[..., :-1],
+        "batched": table.expand(2, *table.shape),
+    }
+    for t in wrong.values():
+        with pytest.raises(ValueError, match=name):
+            disp.dispersion(numbers, positions, param, c6, **{name: t})
+
+
+def test_fail_renamed_and_positional() -> None:
+    """
+    The per-atom arguments of 0.7.0 fail loudly in every function, whether
+    passed by their old name or by position.
+    """
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    c6 = torch.ones((2, 2))
+    r4r2 = data.R4R2(dtype=torch.float)[numbers]
+    rvdw = radii.VDW_PAIRWISE(dtype=torch.float)[
+        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
+    ]
+
+    for func in (disp.dispersion, disp.dispersion2):
+        with pytest.raises(TypeError, match="r4r2_table"):
+            func(numbers, positions, param, c6, r4r2=r4r2)
+    for func in (disp.dispersion, disp.dispersion3):
+        with pytest.raises(TypeError, match="rvdw_table"):
+            func(numbers, positions, param, c6, rvdw=rvdw)
+    with pytest.raises(TypeError, match="rvdw_table"):
+        damping.dispersion_atm(numbers, positions, c6, rvdw=rvdw)
+
+    # positional calls of 0.7.0
+    with pytest.raises(TypeError, match="positional"):
+        disp.dispersion(numbers, positions, param, c6, rvdw, None)
+    with pytest.raises(TypeError, match="positional"):
+        disp.dispersion2(
+            numbers, positions, param, c6, r4r2, disp.rational_damping, 50.0
+        )
+    with pytest.raises(TypeError, match="positional"):
+        disp.dispersion3(numbers, positions, param, c6, rvdw, 50.0)
+    with pytest.raises(TypeError, match="positional"):
+        damping.dispersion_atm(numbers, positions, c6, rvdw, 50.0)
+
+
+def test_float_s9() -> None:
+    """`s9`, `rs9` and `alp` may be Python numbers."""
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
+    sample = samples["SiH4"]
+    numbers = sample["numbers"].to(DEVICE)
+    positions = sample["positions"].to(**dd)
+    c6 = sample["c6"].to(**dd)
+
+    par = {k: v.to(**dd) for k, v in param.items()}
+    ref = disp.dispersion(numbers, positions, par, c6)
+
+    par_float = {**par, "s9": 1.0, "alp": 14.0}
+    energy = disp.dispersion(numbers, positions, par_float, c6)
+    assert pytest.approx(ref.cpu(), abs=1e-14) == energy.cpu()
+
+    atm = damping.dispersion_atm(
+        numbers, positions, c6, s9=1.0, rs9=4.0 / 3.0, alp=14.0
+    )
+    atm_ref = damping.dispersion_atm(
+        numbers, positions, c6, s9=par["s9"], alp=par["alp"]
+    )
+    assert pytest.approx(atm_ref.cpu(), abs=1e-14) == atm.cpu()
+
+    # `s9 = 0.0` skips the three-body term
+    no_atm = disp.dispersion(numbers, positions, {**par, "s9": 0.0}, c6)
+    assert pytest.approx(ref.cpu() - atm_ref.cpu(), abs=1e-14) == no_atm.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -77,11 +159,9 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
     c6 = sample["c6"].to(**dd)
-    rvdw = radii.VDW_PAIRWISE(**dd)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
-    r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = Cutoff(disp2=50.0, **dd)
+    rvdw = radii.VDW_PAIRWISE(**dd)
+    r4r2 = data.R4R2(**dd)
+    cutoff = Cutoff(disp2=50.0)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
 
@@ -90,9 +170,9 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
         positions,
         par,
         c6,
-        rvdw,
-        r4r2,
-        disp.rational_damping,
+        rvdw_table=rvdw,
+        r4r2_table=r4r2,
+        damping_function=disp.rational_damping,
         cutoff=cutoff,
     )
 
@@ -153,9 +233,7 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
     c6 = sample["c6"].to(**dd)
     ref = sample["disp3"].to(**dd)
 
-    rvdw = radii.VDW_PAIRWISE(**dd)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
+    rvdw = radii.VDW_PAIRWISE(**dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -163,8 +241,8 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
         numbers,
         positions,
         c6,
-        rvdw,
-        cutoff=torch.tensor(50.0, **dd),
+        rvdw_table=rvdw,
+        cutoff=50.0,
         s9=par["s9"],
         alp=par["alp"],
     )
@@ -208,16 +286,14 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
-    rvdw = radii.VDW_PAIRWISE(**dd)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
+    rvdw = radii.VDW_PAIRWISE(**dd)
 
     energy = damping.dispersion_atm(
         numbers,
         positions,
         c6,
-        rvdw,
-        cutoff=torch.tensor(50.0, **dd),
+        rvdw_table=rvdw,
+        cutoff=50.0,
         s9=par["s9"],
         alp=par["alp"],
     )

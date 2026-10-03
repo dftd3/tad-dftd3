@@ -5,3 +5,4 @@
 .. toctree::
 
    r4r2
+   table

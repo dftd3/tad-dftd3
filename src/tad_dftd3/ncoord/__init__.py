@@ -20,8 +20,7 @@ Functions for calculating the D3 coordination numbers.
 Only exported for convenience.
 """
 
-from tad_mctc.ncoord import coordination_number
 from tad_mctc.ncoord.count import exp_count
 from tad_mctc.ncoord.d3 import cn_d3
 
-__all__ = ["cn_d3", "coordination_number", "exp_count"]
+__all__ = ["cn_d3", "exp_count"]

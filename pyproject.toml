@@ -39,6 +39,30 @@ exclude = '''(?x)(
 )'''
 
 
+[tool.pyright]
+extraPaths = ["src"]
+include = ["src", "test"]
+exclude = [
+  "**/__pycache__",
+  "**/node_modules",
+  "**/.venv*",
+  "**/.*",
+  "test/conftest.py",
+  "examples",
+  "build",
+  "dist",
+  "setup.py",
+]
+reportPrivateImportUsage = false  # torch.func is not re-exported in stubs
+
+[[tool.pyright.executionEnvironments]]
+root = "test"
+extraPaths = ["src"]
+reportArgumentType = false
+reportReturnType = false
+reportAttributeAccessIssue = false
+
+
 [tool.coverage.run]
 plugins = ["covdefaults"]
 source = ["./src"]

@@ -24,9 +24,11 @@ from __future__ import annotations
 import pytest
 import torch
 from tad_mctc.batch import pack
+from tad_mctc.data import radii
 from tad_mctc.typing import DD, Callable, Tensor
 
-from tad_dftd3 import dftd3
+from tad_dftd3 import data, dftd3
+from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE
 from .samples import samples
@@ -160,3 +162,89 @@ def test_vmap_hessian(
 
     assert out.shape == ref.shape
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+
+@pytest.mark.parametrize("names", names)
+@pytest.mark.parametrize("s9", [0.0, 1.0])
+# Forward mode over the (Z, Z) `rvdw` table pushes ~10⁴ tangents.
+@pytest.mark.parametrize(
+    "jac, name",
+    [
+        ("jacrev", "rcov"),
+        ("jacrev", "rvdw"),
+        ("jacrev", "r4r2"),
+        ("jacfwd", "rcov"),
+        ("jacfwd", "r4r2"),
+    ],
+)
+def test_vmap_jac_table(
+    names: tuple[str, str], s9: float, jac: str, name: str
+) -> None:
+    """
+    Per-element gradients of a padded batch, with the table shared by all
+    systems. The padding atoms must neither turn the gradients non-finite
+    nor send a gradient to the dummy entry 0 of the table.
+    """
+    numbers, positions, nums, pos, param = setup(torch.double, names, s9)
+    dd: DD = {"device": DEVICE, "dtype": torch.double}
+
+    table = {
+        "rcov": radii.COV_D3,
+        "rvdw": radii.VDW_PAIRWISE,
+        "r4r2": data.R4R2,
+    }[name](**dd)
+
+    def energy(n: Tensor, p: Tensor, t: Tensor) -> Tensor:
+        return dftd3(n, p, param, **{f"{name}_table": t}).sum(-1)
+
+    # `jacrev` of the unbatched energy is the reference
+    rev = torch.func.jacrev(energy, argnums=(1, 2))
+    ref_pos = per_sample(lambda n, p: rev(n, p, table)[0], nums, pos)
+    ref_table = torch.stack([rev(n, p, table)[1] for n, p in zip(nums, pos)])
+
+    grad = getattr(torch.func, jac)(energy, argnums=(1, 2))
+
+    out_pos, out_table = torch.func.vmap(grad, in_dims=(0, 0, None))(
+        numbers, positions, table
+    )
+
+    assert torch.isfinite(out_pos).all()
+    assert torch.isfinite(out_table).all()
+
+    assert out_table.shape == (numbers.shape[0], *table.shape)
+    assert pytest.approx(ref_table.cpu(), abs=tol) == out_table.cpu()
+    assert pytest.approx(ref_pos.cpu(), abs=tol) == out_pos.cpu()
+
+    # nothing reaches the dummy entry or the padding atoms
+    assert (out_table[:, 0] == 0).all()
+    if name == "rvdw":
+        assert (out_table[:, :, 0] == 0).all()
+    assert (out_pos[numbers == 0] == 0).all()
+
+
+@pytest.mark.parametrize("names", names)
+@pytest.mark.parametrize("s9", [0.0, 1.0])
+def test_vmap_jacrev_changed_cutoff(names: tuple[str, str], s9: float) -> None:
+    """
+    `vmap(jacrev)` with cutoffs short enough to cut pairs and triples of
+    these molecules, so the cutoffs reach the coordination number and both
+    dispersion terms in the traced graph.
+    """
+    numbers, positions, nums, pos, param = setup(torch.double, names, s9)
+    cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
+
+    def energy(n: Tensor, p: Tensor, c: Cutoff | None) -> Tensor:
+        return dftd3(n, p, param, cutoff=c).sum(-1)
+
+    def grad(c: Cutoff | None) -> Callable[[Tensor, Tensor], Tensor]:
+        return torch.func.jacrev(lambda n, p: energy(n, p, c), argnums=1)
+
+    ref = per_sample(grad(cutoff), nums, pos)
+    out = torch.func.vmap(grad(cutoff), in_dims=(0, 0))(numbers, positions)
+
+    assert out.shape == ref.shape
+    assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+    # only meaningful if the cutoffs change the result
+    default = torch.func.vmap(grad(None), in_dims=(0, 0))(numbers, positions)
+    assert not torch.allclose(out, default, atol=1e-10, rtol=0)

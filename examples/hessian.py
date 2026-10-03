@@ -1,7 +1,7 @@
 # SPDX-Identifier: CC0-1.0
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import tad_mctc as mctc
 import torch

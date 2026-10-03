@@ -40,12 +40,10 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     positions = sample["positions"].to(**dd)
     ref = sample["disp2"].to(**dd)
 
-    rcov = radii.COV_D3(**dd)[numbers]
-    rvdw = radii.VDW_PAIRWISE(**dd)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
-    r4r2 = data.R4R2(**dd)[numbers]
-    cutoff = Cutoff(disp2=50.0, disp3=50.0, **dd)
+    rcov = radii.COV_D3(**dd)
+    rvdw = radii.VDW_PAIRWISE(**dd)
+    r4r2 = data.R4R2(**dd)
+    cutoff = Cutoff(disp2=50.0, disp3=50.0)
 
     # GFN1-xTB parameters
     param = {
@@ -62,9 +60,9 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         positions,
         param,
         ref=reference.Reference(**dd),
-        rcov=rcov,
-        rvdw=rvdw,
-        r4r2=r4r2,
+        rcov_table=rcov,
+        rvdw_table=rvdw,
+        r4r2_table=r4r2,
         cutoff=cutoff,
         counting_function=exp_count,
         weighting_function=model.gaussian_weight,

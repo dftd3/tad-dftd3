@@ -67,11 +67,10 @@ Example
 ...     a2=torch.tensor(3.1280),
 ... )
 >>> energy = torch.sum(d3.dftd3(numbers, positions, param), -1)
->>> torch.set_printoptions(precision=7)
->>> print(energy)  # Energies in Hartree
-tensor([-0.0124292, -0.0045002])
->>> print(energy[0] - 2*energy[1])
-tensor(-0.0034288)
+>>> print([f"{e:.7f}" for e in energy.tolist()])  # Energies in Hartree
+['-0.0124292', '-0.0045002']
+>>> print(f"{energy[0] - 2*energy[1]:.7f}")
+-0.0034288
 """
 
 import torch

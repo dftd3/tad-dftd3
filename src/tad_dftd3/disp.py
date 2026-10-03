@@ -22,6 +22,7 @@ Example
 -------
 >>> import torch
 >>> import tad_dftd3 as d3
+>>> import tad_mctc as mctc
 >>> numbers = torch.tensor([  # define fragments by setting atomic numbers to zero
 ...     [8, 1, 1, 8, 1, 6, 1, 1, 1],
 ...     [0, 0, 0, 8, 1, 6, 1, 1, 1],
@@ -37,20 +38,21 @@ Example
 ...     [+1.210773578, +0.791908575, -2.550591723],
 ...     [+4.077073644, -0.342495506, -1.267841745],
 ...     [+1.404422261, -2.365753991, -1.503620411],
-... ]).repeat(numbers.shape[0], 1, 1)
->>> ref = d3.reference.Reference()
+... ], dtype=torch.double).repeat(numbers.shape[0], 1, 1)
+>>> ref = d3.reference.Reference(dtype=torch.double)
 >>> param = dict( # r²SCAN-D3(BJ)
-...     a1=torch.tensor(0.49484001),
-...     s8=torch.tensor(0.78981345),
-...     a2=torch.tensor(5.73083694),
+...     a1=torch.tensor(0.49484001, dtype=torch.double),
+...     s8=torch.tensor(0.78981345, dtype=torch.double),
+...     a2=torch.tensor(5.73083694, dtype=torch.double),
 ... )
->>> cn = d3.ncoord.coordination_number(numbers, positions)
+>>> structure = mctc.Structure(numbers=numbers, positions=positions)
+>>> cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
+>>> cn = cn_model(structure)
 >>> weights = d3.model.weight_references(numbers, cn, ref)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
 >>> energy = d3.disp.dispersion(numbers, positions, param, c6)
->>> torch.set_printoptions(precision=7)
->>> print(torch.sum(energy[0] - energy[1] - energy[2]))  # energy in Hartree
-tensor(-0.0003964, dtype=torch.float64)
+>>> print(f"{torch.sum(energy[0] - energy[1] - energy[2]):.7f}")  # Hartree
+-0.0003964
 """
 
 from __future__ import annotations
@@ -58,25 +60,32 @@ from __future__ import annotations
 from typing import Any
 
 import torch
-from tad_mctc import storch
+from tad_mctc import Structure, storch
 from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
-from tad_mctc.data import pse, radii
-from tad_mctc.typing import DD, CountingFunction, DampingFunction, Tensor
+from tad_mctc.data import pse
+from tad_mctc.typing import (
+    DD,
+    CountingFunction,
+    DampingFunction,
+    TableFunction,
+    Tensor,
+)
 
-from . import data, defaults, model, ncoord
+from . import defaults, model, ncoord
 from .cutoff import Cutoff
 from .damping import dispersion_atm, rational_damping
+from .data.table import element_table, reject_renamed_tables
 from .model.weights import WeightingFunction
-from .reference import Reference
+from .reference import Reference, _default_reference
 
 __all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
 
 
-def _resolve_cutoff(cutoff: Cutoff | None, dd: DD) -> Cutoff:
-    """Default and cast the caller's cutoffs; reject a single value."""
+def _resolve_cutoff(cutoff: Cutoff | None) -> Cutoff:
+    """Default the caller's cutoffs; reject a single value."""
     if cutoff is None:
-        return Cutoff(**dd)
+        return Cutoff()
 
     # Up to 0.6.0 one cutoff was shared by the two- and three-body term.
     # They now differ, as in s-dftd3, so a single value is ambiguous and
@@ -89,18 +98,35 @@ def _resolve_cutoff(cutoff: Cutoff | None, dd: DD) -> Cutoff:
             "ambiguous. Use e.g. 'Cutoff(disp2=60.0, disp3=40.0)'."
         )
 
-    return cutoff.to(**dd)
+    return cutoff
 
 
+def _check_inputs(numbers: Tensor, positions: Tensor) -> None:
+    """Reject inconsistent shapes and elements without D3 parameters."""
+    if numbers.shape != positions.shape[:-1]:
+        raise ValueError(
+            f"Shape of positions ({positions.shape[:-1]}) is not consistent "
+            f"with atomic numbers ({numbers.shape})."
+        )
+
+    if not is_functorch_tensor(numbers):
+        if torch.max(numbers) >= defaults.MAX_ELEMENT:
+            raise ValueError(
+                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
+                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
+            )
+
+
+@reject_renamed_tables
 def dftd3(
     numbers: Tensor,
     positions: Tensor,
-    param: dict[str, Tensor],
+    param: dict[str, Tensor | float],
     *,
     ref: Reference | None = None,
-    rcov: Tensor | None = None,
-    rvdw: Tensor | None = None,
-    r4r2: Tensor | None = None,
+    rcov_table: Tensor | TableFunction | None = None,
+    rvdw_table: Tensor | TableFunction | None = None,
+    r4r2_table: Tensor | TableFunction | None = None,
     cutoff: Cutoff | None = None,
     counting_function: CountingFunction = ncoord.exp_count,
     weighting_function: WeightingFunction = model.gaussian_weight,
@@ -109,22 +135,37 @@ def dftd3(
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
 
+    The element parameters `rcov_table`, `rvdw_table` and `r4r2_table` are
+    tables indexed by atomic number (entry 0 is the dummy), not per-atom
+    values, and must have the shape of their default table. Gradients with
+    respect to them come out per element, summed over all atoms and systems.
+    Up to 0.7.0 they were called `rcov`, `rvdw` and `r4r2` and took per-atom
+    values; the old names are rejected with a :class:`TypeError`.
+
     Parameters
     ----------
     numbers : torch.Tensor
-        Atomic numbers of the atoms in the system.
+        Atomic numbers of the atoms in the system, of shape ``(nat,)`` for a
+        single system or ``(nbatch, nat)`` for a batch (padded with zeros,
+        e.g. by :func:`tad_mctc.batch.pack`).
     positions : torch.Tensor
-        Cartesian coordinates of the atoms in the system.
-    param : dict[str, Tensor]
-        DFT-D3 damping parameters.
+        Cartesian coordinates of the atoms in the system, of shape
+        ``(nat, 3)`` or ``(nbatch, nat, 3)``, matching `numbers`.
+    param : dict[str, Tensor | float]
+        DFT-D3 damping parameters. The three-body term is skipped if `s9` is
+        missing or zero; see :func:`dispersion` for when that is decided.
     ref : reference.Reference, optional
         Reference C6 coefficients.
-    rcov : torch.Tensor, optional
-        Covalent radii of the atoms in the system.
-    rvdw : torch.Tensor, optional
-        Van der Waals radii of the atoms in the system.
-    r4r2 : torch.Tensor, optional
-        r⁴ over r² expectation values of the atoms in the system.
+    rcov_table : Tensor | TableFunction, optional
+        Covalent radii per element, of shape ``(119,)``. Defaults to
+        :func:`tad_mctc.data.radii.COV_D3`. Passed to the coordination
+        number model, :data:`tad_mctc.ncoord.cn_d3`.
+    rvdw_table : Tensor | TableFunction, optional
+        Van der Waals radii per element pair, of shape ``(104, 104)``.
+        Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    r4r2_table : Tensor | TableFunction, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``.
+        Defaults to :func:`tad_dftd3.data.R4R2`.
     cutoff : Cutoff, optional
         Real-space cutoffs, one per part of the model. Defaults to
         :class:`tad_dftd3.cutoff.Cutoff`.
@@ -138,36 +179,31 @@ def dftd3(
     Returns
     -------
     Tensor
-        Atom-resolved DFT-D3 dispersion energy for each geometry.
+        Atom-resolved DFT-D3 dispersion energy for each geometry, of the
+        shape of `numbers`.
+
+    Raises
+    ------
+    ValueError
+        If the shapes of `numbers` and `positions` are not consistent, an
+        element without D3 parameters is present, or `rcov_table`,
+        `rvdw_table` or `r4r2_table` is not shaped like a table.
+    TypeError
+        If one of the names of 0.7.0, `rcov`, `rvdw` or `r4r2`, is passed.
     """
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
+    _check_inputs(numbers, positions)
 
-    if not is_functorch_tensor(numbers):
-        if torch.max(numbers) >= defaults.MAX_ELEMENT:
-            raise ValueError(
-                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
-                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
-            )
-
-    cutoff = _resolve_cutoff(cutoff, dd)
+    cutoff = _resolve_cutoff(cutoff)
     if ref is None:
-        ref = Reference(**dd)
-    if rcov is None:
-        rcov = radii.COV_D3(**dd)[numbers]
-    if rvdw is None:
-        rvdw = radii.VDW_PAIRWISE(**dd)[
-            numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-        ]
-    if r4r2 is None:
-        r4r2 = data.R4R2(**dd)[numbers]
+        # `dftd3` only reads the reference, so it need not be copied.
+        ref = _default_reference(positions)
 
-    cn = ncoord.coordination_number(
-        numbers,
-        positions,
-        counting_function=counting_function,
-        rcov=rcov,
+    cn_model = ncoord.cn_d3.replace(
+        count=counting_function,
         cutoff=cutoff.cn,
+        rcov=element_table(rcov_table, "rcov_table", positions),
     )
+    cn = cn_model(Structure(numbers=numbers, positions=positions))
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -176,20 +212,22 @@ def dftd3(
         positions,
         param,
         c6,
-        rvdw,
-        r4r2,
-        damping_function,
+        rvdw_table=rvdw_table,
+        r4r2_table=r4r2_table,
+        damping_function=damping_function,
         cutoff=cutoff,
     )
 
 
+@reject_renamed_tables
 def dispersion(
     numbers: Tensor,
     positions: Tensor,
-    param: dict[str, Tensor],
+    param: dict[str, Tensor | float],
     c6: Tensor,
-    rvdw: Tensor | None = None,
-    r4r2: Tensor | None = None,
+    *,
+    rvdw_table: Tensor | TableFunction | None = None,
+    r4r2_table: Tensor | TableFunction | None = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: Cutoff | None = None,
     **kwargs: Any,
@@ -197,20 +235,29 @@ def dispersion(
     """
     Calculate dispersion energy between pairs of atoms.
 
+    As in :func:`dftd3`, the element parameters `rvdw_table` and
+    `r4r2_table` are tables indexed by atomic number, not per-atom values.
+
+    The three-body term is skipped if `param` has no ``"s9"`` or it is zero
+    (see :func:`_has_three_body`). To skip it under ``torch.compile``, give
+    `s9` as a Python number (``0.0``) or leave it out.
+
     Parameters
     ----------
     numbers : Tensor
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, Tensor]
-        DFT-D3 damping parameters.
+    param : dict[str, Tensor | float]
+        DFT-D3 damping parameters. `s9` may be a Python number.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
-    rvdw : Tensor
-        Van der Waals radii of the atoms in the system.
-    r4r2 : Tensor
-        r⁴ over r² expectation values of the atoms in the system.
+    rvdw_table : Tensor | TableFunction, optional
+        Van der Waals radii per element pair, of shape ``(104, 104)``.
+        Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    r4r2_table : Tensor | TableFunction, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``.
+        Defaults to :func:`tad_dftd3.data.R4R2`.
     damping_function : Callable
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
@@ -222,30 +269,24 @@ def dispersion(
     -------
     Tensor
         Atom-resolved DFT-D3 dispersion energy for each geometry.
+
+    Raises
+    ------
+    ValueError
+        If the shapes of `numbers` and `positions` are not consistent, an
+        element without D3 parameters is present, or `rvdw_table` or
+        `r4r2_table` does not have the shape of its default table.
+    TypeError
+        If one of the names of 0.7.0, `rvdw` or `r4r2`, is passed.
     """
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
+    cutoff = _resolve_cutoff(cutoff)
 
-    cutoff = _resolve_cutoff(cutoff, dd)
-    if r4r2 is None:
-        r4r2 = data.R4R2(**dd)[numbers]
+    _check_inputs(numbers, positions)
 
-    if numbers.shape != positions.shape[:-1]:
-        raise ValueError(
-            f"Shape of positions ({positions.shape[:-1]}) is not consistent "
-            f"with atomic numbers ({numbers.shape})."
-        )
-    if numbers.shape != r4r2.shape:
-        raise ValueError(
-            f"Shape of expectation values ({r4r2.shape[:-1]}) is not "
-            f"consistent with atomic numbers ({numbers.shape})."
-        )
-
-    if not is_functorch_tensor(numbers):
-        if torch.max(numbers) >= defaults.MAX_ELEMENT:
-            raise ValueError(
-                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
-                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
-            )
+    # Resolved once here and passed on as tensors. Also rejects a wrong
+    # `rvdw_table` if the three-body term, its only user, is not evaluated.
+    rvdw = element_table(rvdw_table, "rvdw_table", positions)
+    r4r2 = element_table(r4r2_table, "r4r2_table", positions)
 
     # two-body dispersion
     energy = dispersion2(
@@ -253,32 +294,60 @@ def dispersion(
         positions,
         param,
         c6,
-        r4r2,
-        damping_function,
-        cutoff.disp2,
+        r4r2_table=r4r2,
+        damping_function=damping_function,
+        cutoff=cutoff.disp2,
         **kwargs,
     )
 
     # three-body dispersion
-    if "s9" in param and param["s9"] != 0.0:
-        if rvdw is None:
-            rvdw = radii.VDW_PAIRWISE(**dd)[
-                numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-            ]
-
-        energy += dispersion3(numbers, positions, param, c6, rvdw, cutoff.disp3)
+    #
+    # Not added in place: under `vmap` over `s9`, only the three-body term is
+    # batched, and the two-body energy cannot take its batch dimension.
+    if "s9" in param and _has_three_body(param["s9"]):
+        e3 = dispersion3(
+            numbers,
+            positions,
+            param,
+            c6,
+            rvdw_table=rvdw,
+            cutoff=cutoff.disp3,
+        )
+        energy = energy + e3
 
     return energy
 
 
+def _has_three_body(s9: Tensor | float | int) -> bool:
+    """
+    Whether the three-body term must be evaluated for the scaling `s9`.
+
+    A Python number is a constant, also to ``torch.compile``, and the term
+    is skipped for zero. A tensor is skipped only for ``s9 == 0`` in plain
+    eager mode. A tensor that is traced (``torch.compile``, which cannot
+    branch on it), batched (``vmap``) or differentiated (autograd or
+    ``torch.func``) needs the term even at zero: the energy is linear in
+    `s9`, so its derivative with respect to `s9` is the three-body energy
+    itself.
+    """
+    if not isinstance(s9, Tensor):
+        return s9 != 0.0
+
+    # `is_functorch_tensor` is also `True` while `torch.compile` traces, but
+    # does not cover plain autograd, hence `requires_grad`.
+    return is_functorch_tensor(s9) or s9.requires_grad or bool(s9 != 0.0)
+
+
+@reject_renamed_tables
 def dispersion2(
     numbers: Tensor,
     positions: Tensor,
-    param: dict[str, Tensor],
+    param: dict[str, Tensor | float],
     c6: Tensor,
-    r4r2: Tensor,
-    damping_function: DampingFunction,
-    cutoff: Tensor,
+    *,
+    r4r2_table: Tensor | TableFunction | None = None,
+    damping_function: DampingFunction = rational_damping,
+    cutoff: float = defaults.D3_DISP2_CUTOFF,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -290,15 +359,19 @@ def dispersion2(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, Tensor]
+    param : dict[str, Tensor | float]
         DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
-    r4r2 : Tensor
-        r⁴ over r² expectation values of the atoms in the system.
-    damping_function : Callable
+    r4r2_table : Tensor | TableFunction | None, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``, or
+        ``None`` for :func:`tad_dftd3.data.R4R2`.
+    damping_function : Callable, optional
         Damping function evaluate distance dependent contributions.
         Additional arguments are passed through to the function.
+    cutoff : float, optional
+        Real-space cutoff of the pairs, in Bohr. Defaults to
+        :data:`tad_dftd3.defaults.D3_DISP2_CUTOFF`.
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
@@ -309,18 +382,24 @@ def dispersion2(
         torch.tensor(torch.finfo(positions.dtype).eps, **dd),
     )
 
-    qq = 3 * r4r2.unsqueeze(-1) * r4r2.unsqueeze(-2)
+    r4r2 = element_table(r4r2_table, "r4r2_table", positions)
+    r4r2_atom = r4r2[numbers]
+
+    # Padding atoms look up the dummy entry 0 of the table, `r4r2 == 0`, and
+    # the gradient of `sqrt(qq)` in the damping function would then be
+    # infinite. Masking only the output does not help (0 * inf = NaN), so the
+    # input is replaced too, as is done for the distances above.
+    r4r2_atom = torch.where(numbers != 0, r4r2_atom, torch.ones_like(r4r2_atom))
+    qq = 3 * r4r2_atom.unsqueeze(-1) * r4r2_atom.unsqueeze(-2)
     c8 = c6 * qq
 
+    keep = mask * (distances <= cutoff)
+    zero = torch.tensor(0.0, **dd)
     t6 = torch.where(
-        mask * (distances <= cutoff),
-        damping_function(6, distances, qq, param, **kwargs),
-        torch.tensor(0.0, **dd),
+        keep, damping_function(6, distances, qq, param, **kwargs), zero
     )
     t8 = torch.where(
-        mask * (distances <= cutoff),
-        damping_function(8, distances, qq, param, **kwargs),
-        torch.tensor(0.0, **dd),
+        keep, damping_function(8, distances, qq, param, **kwargs), zero
     )
 
     e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
@@ -331,14 +410,16 @@ def dispersion2(
     return s6 * e6 + s8 * e8
 
 
+@reject_renamed_tables
 def dispersion3(
     numbers: Tensor,
     positions: Tensor,
-    param: dict[str, Tensor],
+    param: dict[str, Tensor | float],
     c6: Tensor,
-    rvdw: Tensor,
-    cutoff: Tensor,
-    rs9: Tensor | None = None,
+    *,
+    rvdw_table: Tensor | TableFunction | None = None,
+    cutoff: float = defaults.D3_DISP3_CUTOFF,
+    rs9: Tensor | float | None = None,
 ) -> Tensor:
     """
     Three-body dispersion term. Currently this is only a wrapper for the
@@ -350,16 +431,18 @@ def dispersion3(
         Atomic numbers of the atoms in the system.
     positions : Tensor
         Cartesian coordinates of the atoms in the system.
-    param : dict[str, Tensor]
+    param : dict[str, Tensor | float]
         Dictionary of dispersion parameters. Default values are used for
         missing keys.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
-    rvdw : Tensor
-        Van der Waals radii of the atoms in the system.
-    cutoff : Tensor
-        Real-space cutoff.
-    rs9 : Tensor, optional
+    rvdw_table : Tensor | TableFunction | None, optional
+        Van der Waals radii per element pair, of shape ``(104, 104)``, or
+        ``None`` for :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    cutoff : float, optional
+        Real-space cutoff, in Bohr. Defaults to
+        :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
+    rs9 : Tensor | float, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
 
     Returns
@@ -367,14 +450,13 @@ def dispersion3(
     Tensor
         Atom-resolved three-body dispersion energy.
     """
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
-
-    alp = param.get("alp", torch.tensor(14.0, **dd))
-    s9 = param.get("s9", torch.tensor(1.0, **dd))
-    rs9 = (
-        torch.tensor(4.0 / 3.0, **dd)
-        if rs9 is None
-        else rs9.type(positions.dtype).to(positions.device)
+    return dispersion_atm(
+        numbers,
+        positions,
+        c6,
+        rvdw_table=rvdw_table,
+        cutoff=cutoff,
+        s9=param.get("s9"),
+        rs9=rs9,
+        alp=param.get("alp"),
     )
-
-    return dispersion_atm(numbers, positions, c6, rvdw, cutoff, s9, rs9, alp)

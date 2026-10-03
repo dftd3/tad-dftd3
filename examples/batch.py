@@ -60,18 +60,27 @@ positions = mctc.batch.pack(
     )
 )
 ref = d3.reference.Reference()
-rcov = mctc.data.COV_D3()[numbers]
-rvdw = mctc.data.VDW_PAIRWISE()[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-r4r2 = d3.data.R4R2()[numbers]
+# per-element tables, indexed by atomic number (not per atom)
+rcov = mctc.data.COV_D3()
+rvdw = mctc.data.VDW_PAIRWISE()
+r4r2 = d3.data.R4R2()
 param = {
     "a1": torch.tensor(0.49484001),
     "s8": torch.tensor(0.78981345),
     "a2": torch.tensor(5.73083694),
 }
 
-energy = d3.dftd3(numbers, positions, param)
+energy = d3.dftd3(
+    numbers,
+    positions,
+    param,
+    ref=ref,
+    rcov_table=rcov,
+    rvdw_table=rvdw,
+    r4r2_table=r4r2,
+)
 
 torch.set_printoptions(precision=10)
-print("Expected:", torch.tensor([-0.0014092578, -0.0057840119]))
+print("Expected:", torch.tensor([-0.0014092580, -0.0057840119]))
 print("Actual  :", torch.sum(energy, dim=-1))
-# tensor([-0.0014092578, -0.0057840119])
+# tensor([-0.0014092580, -0.0057840119])

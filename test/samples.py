@@ -15,25 +15,65 @@
 """
 Sample geometries for this test suite.
 
-Pulled from `tad_mctc.data.molecules.mols`, keyed by the same names, and
-kept to only what `test/test_disp/test_cutoff.py` looks up here -- see
-`test/reference.py`'s module docstring for why this suite keeps such
-modules exactly as small as their callers need.
+Taken from :func:`tad_mctc.data.structures.get_structure`, under the names
+the reference values in the ``samples.py`` modules of the test subpackages
+are keyed by. Every geometry is identical to the one the references were
+computed for, except ``H2O``, which is only compared against s-dftd3
+computed on the fly (``test/test_disp/test_cutoff.py``).
 """
 
 from __future__ import annotations
 
-from tad_mctc.data.molecules import mols
-from tad_mctc.typing import Tensor
+from typing import Any
 
-__all__ = ["samples"]
+from tad_mctc.data.structures import get_structure
+from tad_mctc.typing import Molecule
 
-_NAMES = ["H2O", "SiH4"]
+__all__ = ["merge_nested_dicts", "mols"]
 
-samples: dict[str, dict[str, Tensor]] = {
-    name: {
-        "numbers": mols[name]["numbers"],
-        "positions": mols[name]["positions"],
-    }
-    for name in _NAMES
+_SOURCES: dict[str, tuple[str, str]] = {
+    "AmF3": ("other", "AmF3"),
+    "C6H5I-CH3SH": ("other", "C6H5I-CH3SH"),
+    "H2O": ("heavy28", "h2o"),
+    "La3N@C80": ("other", "La3N@C80"),
+    "LiH": ("mb16_43", "LiH"),
+    "MB16_43_01": ("mb16_43", "01"),
+    "PbH4-BiH3": ("heavy28", "pbh4_bih3"),
+    "SiH4": ("mb16_43", "SiH4"),
 }
+"""Name used in this test suite -> ``(collection, record)``."""
+
+
+def _molecule(collection: str, record: str) -> Molecule:
+    structure = get_structure(collection, record)
+    return {"numbers": structure.numbers, "positions": structure.positions}
+
+
+mols: dict[str, Molecule] = {
+    name: _molecule(*source) for name, source in _SOURCES.items()
+}
+
+
+def merge_nested_dicts(
+    a: dict[str, Molecule], b: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Add the geometry from `a` to the reference values in `b` (changed in
+    place) for every name in both.
+
+    Parameters
+    ----------
+    a : dict[str, Molecule]
+        Geometries (not changed).
+    b : dict[str, Any]
+        Reference values (changed).
+
+    Returns
+    -------
+    dict[str, Any]
+        Merged dictionary `b`.
+    """
+    for key in b:
+        if key in a:
+            b[key].update(a[key])
+    return b

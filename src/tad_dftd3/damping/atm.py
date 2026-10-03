@@ -36,22 +36,26 @@ from __future__ import annotations
 import torch
 from tad_mctc import storch
 from tad_mctc.batch import real_pairs, real_triples
-from tad_mctc.typing import DD, Tensor
+from tad_mctc.convert import any_to_tensor
+from tad_mctc.typing import DD, TableFunction, Tensor
 
 from .. import defaults
+from ..data.table import element_table, reject_renamed_tables
 
 __all__ = ["dispersion_atm"]
 
 
+@reject_renamed_tables
 def dispersion_atm(
     numbers: Tensor,
     positions: Tensor,
     c6: Tensor,
-    rvdw: Tensor,
-    cutoff: Tensor,
-    s9: Tensor | None = None,
-    rs9: Tensor | None = None,
-    alp: Tensor | None = None,
+    *,
+    rvdw_table: Tensor | TableFunction | None = None,
+    cutoff: float = defaults.D3_DISP3_CUTOFF,
+    s9: Tensor | float | None = None,
+    rs9: Tensor | float | None = None,
+    alp: Tensor | float | None = None,
 ) -> Tensor:
     """
     Axilrod-Teller-Muto dispersion term.
@@ -64,15 +68,18 @@ def dispersion_atm(
         Cartesian coordinates of the atoms in the system.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
-    rvdw : Tensor
-        Van der Waals radii of the atoms in the system.
-    cutoff : Tensor
-        Real-space cutoff.
-    s9 : Tensor, optional
+    rvdw_table : Tensor | TableFunction | None, optional
+        Van der Waals radii per element pair, indexed by atomic numbers, of
+        shape ``(104, 104)``, or ``None`` for
+        :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    cutoff : float, optional
+        Real-space cutoff, in Bohr. Defaults to
+        :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
+    s9 : Tensor | float, optional
         Scaling for dispersion coefficients. Defaults to `1.0`.
-    rs9 : Tensor, optional
+    rs9 : Tensor | float, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
-    alp : Tensor, optional
+    alp : Tensor | float, optional
         Exponent of zero damping function. Defaults to `14.0`.
 
     Returns
@@ -82,24 +89,13 @@ def dispersion_atm(
     """
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    s9 = (
-        torch.tensor(defaults.S9, **dd)
-        if s9 is None
-        else s9.type(positions.dtype).to(positions.device)
-    )
-    rs9 = (
-        torch.tensor(defaults.RS9, **dd)
-        if rs9 is None
-        else rs9.type(positions.dtype).to(positions.device)
-    )
-    alp = (
-        torch.tensor(defaults.ALP, **dd)
-        if alp is None
-        else alp.type(positions.dtype).to(positions.device)
-    )
+    s9 = any_to_tensor(defaults.S9 if s9 is None else s9, **dd)
+    rs9 = any_to_tensor(defaults.RS9 if rs9 is None else rs9, **dd)
+    alp = any_to_tensor(defaults.ALP if alp is None else alp, **dd)
 
     cutoff2 = cutoff * cutoff
-    srvdw = rs9 * rvdw
+    table = element_table(rvdw_table, "rvdw_table", positions)
+    srvdw = rs9 * table[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
 
     mask_pairs = real_pairs(numbers, mask_diagonal=True)
     mask_triples = real_triples(numbers, mask_self=True)
@@ -109,7 +105,7 @@ def dispersion_atm(
     one = torch.tensor(1.0, **dd)
 
     # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)
-    c9 = s9 * storch.sqrt(
+    c9 = s9 * storch.safe_sqrt(
         torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3))
     )
 

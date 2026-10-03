@@ -25,21 +25,22 @@ Examples
 >>> import tad_dftd3 as d3
 >>> import tad_mctc as mctc
 >>> numbers = mctc.convert.symbol_to_number(["O", "H", "H"])
->>> positions = torch.Tensor([
+>>> positions = torch.tensor([
 ...     [+0.00000000000000, +0.00000000000000, -0.73578586109551],
 ...     [+1.44183152868459, +0.00000000000000, +0.36789293054775],
 ...     [-1.44183152868459, +0.00000000000000, +0.36789293054775],
-... ])
->>> ref = d3.reference.Reference()
->>> rcov = d3.data.covalent_rad_d3[numbers]
->>> cn = mctc.ncoord.cn_d3(numbers, positions, rcov=rcov, counting_function=d3.ncoord.exp_count)
+... ], dtype=torch.double)
+>>> ref = d3.reference.Reference(dtype=torch.double)
+>>> structure = mctc.Structure(numbers=numbers, positions=positions)
+>>> cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
+>>> cn = cn_model(structure)
 >>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
->>> torch.set_printoptions(precision=7)
->>> print(c6)
-tensor([[10.4130471,  5.4368822,  5.4368822],
-        [ 5.4368822,  3.0930154,  3.0930154],
-        [ 5.4368822,  3.0930154,  3.0930154]], dtype=torch.float64)
+>>> for row in c6.tolist():
+...     print(" ".join(f"{v:10.7f}" for v in row))
+10.4130470  5.4368823  5.4368823
+ 5.4368823  3.0930153  3.0930153
+ 5.4368823  3.0930153  3.0930153
 """
 
 from .c6 import *

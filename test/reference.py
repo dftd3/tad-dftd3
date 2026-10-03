@@ -66,9 +66,9 @@ def _build_model(
 
     if cutoff is not None:
         model.set_realspace_cutoff(
-            cn=float(cutoff.cn),
-            disp2=float(cutoff.disp2),
-            disp3=float(cutoff.disp3),
+            cn=cutoff.cn,
+            disp2=cutoff.disp2,
+            disp3=cutoff.disp3,
         )
 
     return model

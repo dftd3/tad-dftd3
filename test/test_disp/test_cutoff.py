@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 from tad_mctc.io.read import read
@@ -42,7 +43,7 @@ from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
-from ..samples import samples as mols
+from ..samples import mols
 
 # TPSS0-D3BJ-ATM parameters, so that both the two- and the three-body term
 # contribute.
@@ -119,9 +120,9 @@ def test_defaults_match_sdftd3() -> None:
     assert defaults.D3_DISP3_CUTOFF == 40.0
 
     cutoff = Cutoff()
-    assert float(cutoff.cn) == defaults.D3_CN_CUTOFF
-    assert float(cutoff.disp2) == defaults.D3_DISP2_CUTOFF
-    assert float(cutoff.disp3) == defaults.D3_DISP3_CUTOFF
+    assert cutoff.cn == defaults.D3_CN_CUTOFF
+    assert cutoff.disp2 == defaults.D3_DISP2_CUTOFF
+    assert cutoff.disp3 == defaults.D3_DISP3_CUTOFF
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -162,7 +163,7 @@ def test_changed_cutoff_matches_reference(
     numbers, positions = fragment_chain(name, dd)
     par = {k: v.to(**dd) for k, v in param.items()}
 
-    changed = Cutoff(**{field: value}, **dd)
+    changed = Cutoff(**{field: value})
 
     # Measured agreement is up to 1.4e-13 absolute (see
     # test_chain_matches_reference), well below the shift this test
@@ -177,30 +178,6 @@ def test_changed_cutoff_matches_reference(
     energy_default = dftd3(numbers, positions, par)
     shift = float(torch.sum(energy - energy_default).abs())
     assert shift > 1e-11
-
-
-def test_cutoff_rejects_non_scalar() -> None:
-    """A cutoff has to be a single radius, not one per atom."""
-    with pytest.raises(ValueError):
-        Cutoff(disp2=torch.tensor([50.0, 60.0]))
-
-
-def test_cutoff_is_cast_to_the_calculation() -> None:
-    """A cutoff given in another dtype is cast, not rejected."""
-    dd: DD = {"device": DEVICE, "dtype": torch.float64}
-
-    numbers, positions = fragment_chain("H2O", dd)
-    par = {k: v.to(**dd) for k, v in param.items()}
-
-    single = Cutoff(dtype=torch.float32)
-    double = Cutoff(**dd)
-
-    assert single.dtype == torch.float32
-    energy = dftd3(numbers, positions, par, cutoff=single)
-    expected = dftd3(numbers, positions, par, cutoff=double)
-
-    assert energy.dtype == torch.float64
-    assert pytest.approx(expected.cpu()) == energy.cpu()
 
 
 def test_dftd3_rejects_a_single_cutoff() -> None:
@@ -224,7 +201,8 @@ def test_large_molecule_matches_reference() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
 
     path = Path(__file__).parents[1] / "molecules" / "c83h168.xyz"
-    numbers, positions = read(path, **dd)
+    structure = read(path, **dd)
+    numbers, positions = structure.numbers, structure.positions
     numbers = numbers.to(DEVICE)
 
     par = {k: v.to(**dd) for k, v in param.items()}
@@ -238,3 +216,32 @@ def test_large_molecule_matches_reference() -> None:
     energy = dftd3(numbers, positions, par)
 
     assert pytest.approx(ref.cpu(), abs=1e-9) == energy.cpu()
+
+
+@pytest.mark.parametrize(
+    "value", [torch.tensor(50.0), torch.tensor([50.0]), "50", None, True]
+)
+def test_cutoff_rejects_non_numbers(value: object) -> None:
+    """A cutoff is a real number, not a tensor or anything else."""
+    with pytest.raises(TypeError):
+        Cutoff(disp2=value)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "value", [50, np.float32(50.0), np.float64(50.0), np.int64(50)]
+)
+def test_cutoff_converts_real_numbers(value: object) -> None:
+    """Any real number, including NumPy scalars, becomes a float."""
+    cutoff = Cutoff(disp2=value)  # type: ignore[arg-type]
+    assert type(cutoff.disp2) is float
+    assert cutoff.disp2 == 50.0
+
+
+def test_cutoff_has_no_tensor_api() -> None:
+    """The tensor API of 0.7.0 (`device`, `dtype`, `to`) is gone."""
+    with pytest.raises(TypeError):
+        Cutoff(disp2=50.0, device=torch.device("cpu"))  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        Cutoff(disp2=50.0, dtype=torch.float64)  # type: ignore[call-arg]
+    assert not hasattr(Cutoff(), "to")
+    assert not hasattr(Cutoff(), "dtype")
