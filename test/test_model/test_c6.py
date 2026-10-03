@@ -27,7 +27,7 @@ from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import model, ncoord, reference
 
-from ..conftest import DEVICE, FAST_MODE, requires_compile
+from ..conftest import DEVICE, FAST_MODE, compile_test, requires_compile
 from .samples import samples
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
@@ -145,7 +145,7 @@ def test_compile() -> None:
     weights = sample["weights"].to(**dd)
     refc6 = sample["c6"].to(**dd)
 
-    compiled = torch.compile(model.atomic_c6, fullgraph=True)
+    compiled = compile_test(model.atomic_c6, fullgraph=True)
     c6 = compiled(numbers, weights, ref)
 
     assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()

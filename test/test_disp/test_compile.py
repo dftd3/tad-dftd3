@@ -29,7 +29,7 @@ from tad_mctc.typing import DD, Tensor
 from tad_dftd3 import data, dftd3, disp
 from tad_dftd3.cutoff import Cutoff
 
-from ..conftest import DEVICE, requires_compile
+from ..conftest import DEVICE, compile_test, requires_compile
 from .samples import samples
 
 
@@ -91,7 +91,7 @@ def test_graph_breaks(name: str, s9: float) -> None:
     numbers, positions, param = _setup(name, s9)
 
     ref = dftd3(numbers, positions, param)
-    out = torch.compile(lambda n, p: dftd3(n, p, param))(numbers, positions)
+    out = compile_test(lambda n, p: dftd3(n, p, param))(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
 
@@ -109,7 +109,7 @@ def test_fullgraph(name: str, s9: float) -> None:
     numbers, positions, param = _setup(name, s9)
 
     ref = dftd3(numbers, positions, param)
-    compiled = torch.compile(lambda n, p: dftd3(n, p, param), fullgraph=True)
+    compiled = compile_test(lambda n, p: dftd3(n, p, param), fullgraph=True)
     out = compiled(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
@@ -143,7 +143,7 @@ def test_fullgraph_vmap_jacrev(s9: float) -> None:
         torch.func.jacrev(energy, argnums=(1, 2)), in_dims=(0, 0, None)
     )
     ref = grad(numbers, positions, r4r2)
-    out = torch.compile(grad, fullgraph=True)(numbers, positions, r4r2)
+    out = compile_test(grad, fullgraph=True)(numbers, positions, r4r2)
 
     for r, o in zip(ref, out):
         assert pytest.approx(r.cpu(), abs=tol) == o.cpu()
@@ -163,7 +163,7 @@ def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
     ref = dftd3(numbers, positions, param, cutoff=cutoff)
-    compiled = torch.compile(
+    compiled = compile_test(
         lambda n, p: dftd3(n, p, param, cutoff=cutoff), fullgraph=True
     )
     out = compiled(numbers, positions)
@@ -188,7 +188,7 @@ def test_fullgraph_skips_atm_for_float_s9(
     ref = dftd3(numbers, positions, param)
 
     param_float = {**param, "s9": 0.0}
-    compiled = torch.compile(
+    compiled = compile_test(
         lambda n, p: dftd3(n, p, param_float), fullgraph=True
     )
     out = compiled(numbers, positions)
@@ -198,7 +198,7 @@ def test_fullgraph_skips_atm_for_float_s9(
 
     # a tensor `s9` of zero is traced, so the term is evaluated
     torch._dynamo.reset()  # pylint: disable=protected-access
-    compiled = torch.compile(lambda n, p: dftd3(n, p, param), fullgraph=True)
+    compiled = compile_test(lambda n, p: dftd3(n, p, param), fullgraph=True)
     out = compiled(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
@@ -218,7 +218,7 @@ def test_fullgraph_float_s9(name: str) -> None:
         == dftd3(numbers, positions, param_float).cpu()
     )
 
-    compiled = torch.compile(
+    compiled = compile_test(
         lambda n, p: dftd3(n, p, param_float), fullgraph=True
     )
     out = compiled(numbers, positions)
@@ -239,7 +239,7 @@ def test_float_s9_as_argument(
     numbers, positions, param = _setup(name, 0.0)
     ref = dftd3(numbers, positions, param)
 
-    compiled = torch.compile(dftd3, fullgraph=fullgraph)
+    compiled = compile_test(dftd3, fullgraph=fullgraph)
     out = compiled(numbers, positions, {**param, "s9": 0.0})
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()

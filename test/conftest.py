@@ -18,6 +18,10 @@ Setup for pytest.
 
 from __future__ import annotations
 
+import shutil
+import sys
+from typing import Any, Callable
+
 import numpy as np
 import pytest
 import torch
@@ -41,6 +45,30 @@ requires_compile = pytest.mark.skipif(
     reason="`torch.compile` is not supported by this Python and PyTorch.",
 )
 """Skip marker for tests using `torch.compile`."""
+
+
+def _has_cxx_compiler() -> bool:
+    """
+    Whether the C++ compiler that TorchInductor calls is on `PATH`. On Windows
+    that is MSVC's `cl`, which a plain CI runner does not expose
+    (`InvalidCxxCompiler: Compiler: cl is not found`).
+    """
+    names = ["cl"] if sys.platform == "win32" else ["c++", "g++", "clang++"]
+    return any(shutil.which(name) is not None for name in names)
+
+
+COMPILE_BACKEND = "inductor" if _has_cxx_compiler() else "aot_eager"
+"""
+The `torch.compile` backend for tests. The tests check that the energy traces
+as one graph, which Dynamo decides before any backend runs. Without a C++
+compiler, `aot_eager` still traces and runs AOTAutograd, just without
+generating C++ code.
+"""
+
+
+def compile_test(fn: Callable[..., Any], **kwargs: Any) -> Callable[..., Any]:
+    """`torch.compile` on `COMPILE_BACKEND`."""
+    return torch.compile(fn, backend=COMPILE_BACKEND, **kwargs)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
