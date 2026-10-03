@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import shutil
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
