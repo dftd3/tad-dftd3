@@ -269,6 +269,87 @@ The parameter loader in ``tad_dftd3.param`` returns tensors, so overwrite
 ``param["s9"]`` with a Python number (or delete it) to get the same effect.
 
 
+Periodic systems
+----------------
+
+Pass the lattice vectors (as rows, in Bohr) to treat the system as a periodic
+cell. The coordination number and the two-body energy then sum over all
+periodic images within their cutoffs, as in s-dftd3. ``periodic`` (default: all
+three axes) selects the periodic axes of a slab or chain, and atoms need not
+lie inside the cell. Forces and the stress follow from one backward pass:
+
+.. code:: python
+
+    import torch
+    import tad_dftd3 as d3
+    import tad_mctc as mctc
+
+    # diamond, conventional cubic cell
+    numbers = mctc.convert.symbol_to_number(symbols=8 * ["C"])
+    fractional = torch.tensor(
+        [
+            [0.00, 0.00, 0.00],
+            [0.00, 0.50, 0.50],
+            [0.50, 0.00, 0.50],
+            [0.50, 0.50, 0.00],
+            [0.25, 0.25, 0.25],
+            [0.25, 0.75, 0.75],
+            [0.75, 0.25, 0.75],
+            [0.75, 0.75, 0.25],
+        ],
+        dtype=torch.double,
+    )
+    lattice = 6.7406 * torch.eye(3, dtype=torch.double)
+    positions = (fractional @ lattice).requires_grad_(True)
+    lattice.requires_grad_(True)
+    param = {  # PBE-D3(BJ)
+        "a1": torch.tensor(0.4289, dtype=torch.double),
+        "s8": torch.tensor(0.7875, dtype=torch.double),
+        "a2": torch.tensor(4.4407, dtype=torch.double),
+    }
+
+    energy = d3.dftd3(numbers, positions, param, lattice=lattice)
+    print(f"{energy.sum():.10f}")
+    # -0.0562022045
+
+    grad_pos, grad_lat = torch.autograd.grad(energy.sum(), (positions, lattice))
+    virial = positions.mT @ grad_pos + lattice.mT @ grad_lat
+    stress = virial / torch.linalg.det(lattice)
+
+Which images lie within a cutoff depends on the values of the lattice, so by
+default the image shifts are built anew on each call. Under ``torch.compile``
+(``fullgraph=True``), ``vmap`` over cells, or ``jacrev``/``jacfwd`` with
+respect to the lattice, build them once beforehand, at the larger of the
+coordination-number and two-body cutoffs, and pass them as ``shifts``:
+
+.. code:: python
+
+    from tad_mctc.neighbor.images import build_periodic_shifts
+
+    cutoff = d3.Cutoff()
+    periodic = torch.tensor([True, True, True])
+    shifts = build_periodic_shifts(
+        lattice.detach(), periodic, max(cutoff.cn, cutoff.disp2)
+    )
+
+    def total(pos, lat):
+        return d3.dftd3(numbers, pos, param, lattice=lat, shifts=shifts).sum()
+
+    compiled = torch.compile(total, fullgraph=True)
+
+For a batch of cells, build one table from the stacked lattices; it covers
+every cell of the batch. Whether a table covers the lattice is only checked in
+eager mode, not under ``torch.compile``, ``vmap`` or ``jacrev``, where a table
+built for a larger cell silently misses images. If the cell shrinks (cell
+relaxation, NPT), rebuild the table, or call
+``shifts.check_compatible(structure, cutoff)`` once eagerly beforehand.
+
+The evaluation is dense: every atom is paired with every image of every atom,
+which takes memory proportional to ``n_atoms**2 * n_images``. The three-body
+term has no periodic evaluation, so for a cell ``s9`` must be left out or set to
+the Python number ``0.0``.
+
+
 Migrating from 0.7.0
 --------------------
 
@@ -508,9 +589,8 @@ applying reverse-mode automatic differentiation twice (see
 Limitations
 -----------
 
-The current implementation only works for molecular structures.
-Periodic boundary conditions are **not** implemented, i.e., no stress tensor or
-lattice gradient is available.
+The three-body (ATM) term is only implemented for molecules (see
+`Periodic systems`_).
 
 The code is fully vectorized for maximum efficiency.
 Therefore, all quantities are stored as full tensors, which makes calculations rather **memory intensive**.
