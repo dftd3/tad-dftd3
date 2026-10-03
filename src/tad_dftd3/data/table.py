@@ -23,7 +23,8 @@ element parameters `rcov_table`, `rvdw_table` and `r4r2_table` are given as.
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from tad_mctc.data import radii, resolve_table
 from tad_mctc.typing import TableFunction, Tensor

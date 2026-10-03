@@ -57,6 +57,7 @@ def _reset_dynamo():
     yield
     torch._dynamo.reset()  # pylint: disable=protected-access
 
+
 tol = 1e-8
 
 names = ["SiH4"]
@@ -212,9 +213,10 @@ def test_fullgraph_float_s9(name: str) -> None:
     ref = dftd3(numbers, positions, param)
 
     param_float = {**param, "s9": 1.0}
-    assert pytest.approx(ref.cpu(), abs=tol) == dftd3(
-        numbers, positions, param_float
-    ).cpu()
+    assert (
+        pytest.approx(ref.cpu(), abs=tol)
+        == dftd3(numbers, positions, param_float).cpu()
+    )
 
     compiled = torch.compile(
         lambda n, p: dftd3(n, p, param_float), fullgraph=True
