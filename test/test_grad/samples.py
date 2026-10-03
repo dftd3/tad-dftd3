@@ -16,11 +16,12 @@
 Collection of test samples.
 """
 
-from typing import Dict, TypedDict
+from typing import TypedDict
 
 import torch
-from tad_mctc.data.molecules import merge_nested_dicts, mols
 from tad_mctc.typing import Molecule, Tensor
+
+from ..samples import merge_nested_dicts, mols
 
 
 class Refs(TypedDict):
@@ -40,7 +41,7 @@ class Record(Molecule, Refs):
     """Store for molecular information and reference values."""
 
 
-refs: Dict[str, Refs] = {
+refs: dict[str, Refs] = {
     "LiH": Refs(
         {
             "grad": torch.tensor(
@@ -3586,4 +3587,4 @@ refs: Dict[str, Refs] = {
     ),
 }
 
-samples: Dict[str, Record] = merge_nested_dicts(mols, refs)
+samples: dict[str, Record] = merge_nested_dicts(mols, refs)

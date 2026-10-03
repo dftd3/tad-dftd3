@@ -24,8 +24,8 @@ Example
 -------
 >>> import tad_dftd3 as d3
 >>> param = d3.param.get_functional_params("b3lyp5", damping="bj")
->>> param["a1"]
-tensor(0.3981)
+>>> print(f"{param['a1']:.4f}")
+0.3981
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ import torch
 from tad_mctc.typing import DD, Tensor, get_default_device, get_default_dtype
 
 try:
-    import tomllib  # pyright: ignore[reportMissingImports]
+    import tomllib  # type: ignore[import-not-found,unused-ignore]  # pyright: ignore[reportMissingImports]
 except ModuleNotFoundError:  # pragma: no cover
-    import tomli as tomllib  # type: ignore[no-redef]
+    import tomli as tomllib  # type: ignore[no-redef,unused-ignore]
 
 __all__ = ["get_functional_params"]
 

@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import pytest
 import torch
-from tad_mctc.autograd import dgradcheck, dgradgradcheck, jacrev
+from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Callable, Tensor
+from torch.func import jacrev
 
 from tad_dftd3 import dftd3
 

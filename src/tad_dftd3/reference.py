@@ -21,17 +21,17 @@ C6 dispersion coefficients.
 """
 
 import os.path as op
-from typing import Any, NoReturn, Optional
+from typing import Any, NoReturn
 
 import torch
-from tad_mctc._version import __tversion__
+from tad_mctc.data import resolve_table
 from tad_mctc.typing import Tensor, get_default_device, get_default_dtype
 
 __all__ = ["Reference"]
 
 
 def _load_cn(
-    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: torch.device | None = None
 ) -> Tensor:
     """
     Load reference coordination numbers.
@@ -40,7 +40,7 @@ def _load_cn(
     ----------
     dtype : torch.dtype, optional
         Floating point precision for tensor. Defaults to `torch.double`.
-    device : Optional[torch.device], optional
+    device : torch.device | None, optional
         Device of tensor. Defaults to None.
 
     Returns
@@ -162,30 +162,65 @@ def _load_cn(
     # fmt: on
 
 
+# Loaded once at import: `torch.load` cannot be traced by `torch.compile`, so
+# constructing a `Reference` inside a compiled function must not read the file.
+_C6: Tensor = torch.load(
+    op.join(op.dirname(__file__), "reference-c6.pt"),
+    map_location="cpu",
+    weights_only=True,
+)
+
+
 def _load_c6(
-    dtype: torch.dtype = torch.double, device: Optional[torch.device] = None
+    dtype: torch.dtype = torch.double, device: torch.device | None = None
 ) -> Tensor:
     """
-    Load reference C6 coefficients from file.
+    Get reference C6 coefficients.
 
     Parameters
     ----------
     dtype : torch.dtype, optional
         Floating point precision for tensor. Defaults to `torch.double`.
-    device : Optional[torch.device], optional
+    device : torch.device | None, optional
         Device of tensor. Defaults to None.
 
     Returns
     -------
     Tensor
-        Reference C6 coefficients.
+        Reference C6 coefficients. Always a copy, so that in-place changes
+        cannot leak into other `Reference` objects.
     """
-    kwargs: dict[str, Any] = {"map_location": device}
-    if __tversion__ > (1, 12, 1):  # pragma: no cover
-        kwargs["weights_only"] = True
+    return _C6.to(device=device, dtype=dtype, copy=True)
 
-    path = op.join(op.dirname(__file__), "reference-c6.pt")
-    return torch.load(path, **kwargs).type(dtype=dtype)
+
+def _c6_table(
+    device: torch.device | None = None, dtype: torch.dtype = torch.double
+) -> Tensor:
+    """Reference C6 coefficients, without a copy where `.to` needs none."""
+    return _C6.to(device=device, dtype=dtype)
+
+
+def _default_reference(like: Tensor) -> "Reference":
+    """
+    The default reference on the device and dtype of `like`, read-only.
+
+    Unlike :class:`Reference`, the tensors are not built anew: they are
+    cached per device and dtype by :func:`tad_mctc.data.resolve_table` and
+    shared by all calls, so they must not be changed in place.
+
+    Parameters
+    ----------
+    like : Tensor
+        Tensor whose device and dtype the reference is resolved to.
+
+    Returns
+    -------
+    Reference
+        The default reference systems.
+    """
+    return Reference(
+        cn=resolve_table(_load_cn, like), c6=resolve_table(_c6_table, like)
+    )
 
 
 class Reference:
@@ -208,10 +243,10 @@ class Reference:
 
     def __init__(
         self,
-        cn: Optional[Tensor] = None,
-        c6: Optional[Tensor] = None,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        cn: Tensor | None = None,
+        c6: Tensor | None = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ):
         if cn is None:
             cn = _load_cn(
@@ -229,10 +264,10 @@ class Reference:
         self.__dtype = self.c6.dtype
         self.__device = self.c6.device
 
-        if any(tensor.device != self.device for tensor in (self.cn, self.c6)):
+        if self.cn.device != self.c6.device:
             raise RuntimeError("All tensors must be on the same device!")
 
-        if any(tensor.dtype != self.dtype for tensor in (self.cn, self.c6)):
+        if self.cn.dtype != self.c6.dtype:
             raise RuntimeError("All tensors must have the same dtype!")
 
         if any(
@@ -264,8 +299,8 @@ class Reference:
 
     def to(
         self,
-        device: Optional[torch.device] = None,
-        dtype: Optional[torch.dtype] = None,
+        device: torch.device | None = None,
+        dtype: torch.dtype | None = None,
     ) -> "Reference":
         """
         Returns a copy of the `Reference` instance on the specified device.

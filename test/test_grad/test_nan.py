@@ -21,12 +21,12 @@ from __future__ import annotations
 import pytest
 import torch
 from tad_mctc.batch import pack
-from tad_mctc.data.molecules import mols as samples
 from tad_mctc.typing import DD
 
 from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE
+from ..samples import mols as samples
 
 tol = 1e-8
 

@@ -34,92 +34,48 @@ Example
 >>> print(cutoff)
 Cutoff(cn=40.0, disp2=60.0, disp3=40.0)
 >>> cutoff = Cutoff(disp3=25.0)
->>> print(float(cutoff.disp3))
+>>> print(cutoff.disp3)
 25.0
 """
 
 from __future__ import annotations
 
-import torch
-from tad_mctc.typing import DD, Tensor, TensorLike
+from dataclasses import dataclass, fields
+from numbers import Real
 
 from . import defaults
 
 __all__ = ["Cutoff"]
 
 
-class Cutoff(TensorLike):
+@dataclass(frozen=True)
+class Cutoff:
     """
     Real-space cutoffs for the individual parts of the D3 model, in Bohr.
+
+    Plain floats, like the ``cutoff`` of the ``tad-mctc`` coordination number
+    models: they only mask distances, so they are constants to
+    :func:`torch.compile`, :func:`torch.vmap` and :func:`torch.func.jacrev`
+    and need no device or dtype. Any real number, including NumPy scalars,
+    is converted to :class:`float`; tensors are rejected.
     """
 
-    cn: Tensor
+    cn: float = defaults.D3_CN_CUTOFF
     """Coordination number cutoff."""
 
-    disp2: Tensor
+    disp2: float = defaults.D3_DISP2_CUTOFF
     """Two-body dispersion interaction cutoff."""
 
-    disp3: Tensor
+    disp3: float = defaults.D3_DISP3_CUTOFF
     """Three-body dispersion interaction cutoff."""
 
-    __slots__ = ["cn", "disp2", "disp3"]
-
-    def __init__(
-        self,
-        cn: int | float | Tensor = defaults.D3_CN_CUTOFF,
-        disp2: int | float | Tensor = defaults.D3_DISP2_CUTOFF,
-        disp3: int | float | Tensor = defaults.D3_DISP3_CUTOFF,
-        device: torch.device | None = None,
-        dtype: torch.dtype | None = None,
-    ) -> None:
-        """
-        Instantiate the collection of real-space cutoffs.
-
-        Parameters
-        ----------
-        cn : int | float | Tensor, optional
-            Coordination number cutoff. Defaults to
-            :data:`tad_dftd3.defaults.D3_CN_CUTOFF`.
-        disp2 : int | float | Tensor, optional
-            Two-body dispersion interaction cutoff. Defaults to
-            :data:`tad_dftd3.defaults.D3_DISP2_CUTOFF`.
-        disp3 : int | float | Tensor, optional
-            Three-body dispersion interaction cutoff. Defaults to
-            :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
-        device : :class:`torch.device` | None, optional
-            Device to store the tensors on. Defaults to ``None``.
-        dtype : :class:`torch.dtype` | None, optional
-            Floating point dtype of the tensors. Defaults to ``None``.
-        """
-        super().__init__(device, dtype)
-        dd: DD = {"device": self.device, "dtype": self.dtype}
-
-        self.cn = self._as_tensor(cn, "cn", dd)
-        self.disp2 = self._as_tensor(disp2, "disp2", dd)
-        self.disp3 = self._as_tensor(disp3, "disp3", dd)
-
-    def _as_tensor(
-        self, value: int | float | Tensor, name: str, dd: DD
-    ) -> Tensor:
-        """Cast one cutoff to a scalar tensor; ``name`` labels the error."""
-        if isinstance(value, Tensor):
-            tensor = value.to(**dd)
-        else:
-            tensor = torch.tensor(value, **dd)
-
-        if tensor.ndim != 0:
-            raise ValueError(
-                f"Cutoff '{name}' must be a scalar, but has shape "
-                f"{tuple(tensor.shape)}."
-            )
-
-        return tensor
-
-    def __str__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(cn={float(self.cn)}, "
-            f"disp2={float(self.disp2)}, disp3={float(self.disp3)})"
-        )
-
-    def __repr__(self) -> str:
-        return str(self)
+    def __post_init__(self) -> None:
+        for field in fields(self):
+            name = field.name
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise TypeError(
+                    f"Cutoff '{name}' must be a plain number, not "
+                    f"'{type(value).__name__}'."
+                )
+            object.__setattr__(self, name, float(value))

@@ -36,7 +36,7 @@ repos:
           [
             --include-version-classifiers,
             --min-py-version,
-            "3.8",
+            "3.10",
             --max-py-version,
             "3.14",
           ]
@@ -45,7 +45,7 @@ repos:
     rev: v3.21.2
     hooks:
       - id: pyupgrade
-        args: [--py38-plus, --keep-runtime-typing]
+        args: [--py310-plus, --keep-runtime-typing]
 
   - repo: https://github.com/pycqa/isort
     rev: 9.0.1

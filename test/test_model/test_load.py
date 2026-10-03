@@ -26,3 +26,13 @@ def test_ref() -> None:
     assert c6.shape == torch.Size(
         (defaults.MAX_ELEMENT, defaults.MAX_ELEMENT, 7, 7),
     )
+
+
+def test_ref_is_copy() -> None:
+    """In-place changes must not leak into the cached coefficients."""
+    c6 = reference._load_c6(dtype=torch.double)
+    expected = c6.clone()
+
+    c6.zero_()
+
+    assert torch.equal(reference._load_c6(dtype=torch.double), expected)

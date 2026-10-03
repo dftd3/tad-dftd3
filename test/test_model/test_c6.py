@@ -20,14 +20,14 @@ from __future__ import annotations
 
 import pytest
 import torch
-from tad_mctc._version import __tversion__
+from tad_mctc import Structure
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import model, ncoord, reference
 
-from ..conftest import DEVICE, FAST_MODE
+from ..conftest import DEVICE, FAST_MODE, requires_compile
 from .samples import samples
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
@@ -91,7 +91,6 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == c6.cpu()
 
 
-@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
 def test_vmap() -> None:
     """
     `numbers` is genuinely batched here (different molecules), so
@@ -120,7 +119,6 @@ def test_vmap() -> None:
         )
 
 
-@pytest.mark.skipif(__tversion__ < (2, 0, 0), reason="Requires PyTorch>=2.0.0")
 def test_jacrev() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
@@ -137,16 +135,7 @@ def test_jacrev() -> None:
     assert jac.shape == (nat, nat, nat, nref)
 
 
-@pytest.mark.skipif(__tversion__ < (2, 1, 0), reason="Requires PyTorch>=2.1.0")
-@pytest.mark.skip(
-    reason=(
-        "tad-mctc==0.8.0 (currently pinned) has an `is_compiling` check in "
-        "`tad_mctc.math.einsum` that under-reports on newer PyTorch, so "
-        "`_atomic_c6_safe` falls through to `opt_einsum.contract`, which "
-        "Dynamo cannot trace (`threading.get_ident()`). Re-enable once "
-        "tad-mctc is updated/pinned to a release with the fixed check."
-    )
-)
+@requires_compile
 def test_compile() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
@@ -179,7 +168,7 @@ def gradchecker(
     positions = sample["positions"].to(**dd)
 
     ref = reference.Reference(**dd)
-    cn = ncoord.cn_d3(numbers, positions)
+    cn = ncoord.cn_d3(Structure(numbers=numbers, positions=positions))
     w = model.weight_references(numbers, cn, ref)
 
     # variables to be differentiated

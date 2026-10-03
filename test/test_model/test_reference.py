@@ -16,7 +16,7 @@
 Test the reference.
 """
 
-from typing import Any, Optional, TypedDict, Union
+from typing import Any, TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -38,10 +38,10 @@ def test_reference_dtype(dtype: torch.dtype) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, None])
-def test_reference_dtype_both(dtype: Union[torch.dtype, None]) -> None:
+def test_reference_dtype_both(dtype: torch.dtype | None) -> None:
     class DDNone(TypedDict):
         device: torch.device
-        dtype: Optional[torch.dtype]
+        dtype: torch.dtype | None
 
     dev = torch.device("cpu")
     dd: DDNone = {"device": dev, "dtype": dtype}
@@ -117,3 +117,64 @@ def test_reference_fail() -> None:
         repr(ref)
         == "Reference(n_element=104, n_reference=7, dtype=torch.float64, device=cpu)"
     )
+
+
+def test_default_reference_shares_memory() -> None:
+    """
+    The read-only default reference of `dftd3` does not copy the C6
+    coefficients, while a public `Reference` does.
+    """
+    # pylint: disable=protected-access
+    dd: DD = {"device": torch.device("cpu"), "dtype": torch.float64}
+
+    shared = reference._default_reference(torch.empty(0, **dd))
+    copied = reference.Reference(**dd)
+
+    assert shared.c6.data_ptr() == reference._C6.data_ptr()
+    assert copied.c6.data_ptr() != reference._C6.data_ptr()
+
+    assert torch.equal(shared.c6, copied.c6)
+    assert torch.equal(shared.cn, copied.cn)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_default_reference_dtype(dtype: torch.dtype) -> None:
+    """
+    On any dtype the default reference matches a `Reference`, and it is
+    built once per device and dtype, not per call.
+    """
+    # pylint: disable=protected-access
+    dd: DD = {"device": DEVICE, "dtype": dtype}
+
+    shared = reference._default_reference(torch.empty(0, **dd))
+    copied = reference.Reference(**dd)
+
+    assert shared.dtype == dtype
+    assert torch.equal(shared.c6, copied.c6)
+    assert torch.equal(shared.cn, copied.cn)
+
+    again = reference._default_reference(torch.empty(0, **dd))
+    assert again.c6.data_ptr() == shared.c6.data_ptr()
+    assert again.cn.data_ptr() == shared.cn.data_ptr()
+
+
+def test_dftd3_does_not_copy_reference() -> None:
+    """`dftd3` builds its default reference without copying the C6 table."""
+    # pylint: disable=protected-access
+    from tad_dftd3 import dftd3
+
+    numbers = torch.tensor([1, 1])
+    positions = torch.tensor(
+        [[0.0, 0.0, 0.0], [0.0, 0.0, 1.4]], dtype=torch.float64
+    )
+    param = {"a1": torch.tensor(0.4), "a2": torch.tensor(4.6)}
+
+    with patch(
+        "tad_dftd3.reference._load_c6", side_effect=AssertionError("copied")
+    ):
+        energy = dftd3(numbers, positions, param)
+
+    ref = dftd3(
+        numbers, positions, param, ref=reference.Reference(dtype=torch.float64)
+    )
+    assert pytest.approx(ref) == energy
