@@ -28,7 +28,7 @@ meson setup _build_meson --buildtype=release --prefix "$PWD/_install_meson"
 meson install -C _build_meson
 ```
 
-Either way, `gen_references.py` finds the installed binary itself, at
+Either way, `gen_refs.py` finds the installed binary itself, at
 `_install_fpm/bin/gen_refs_fortran` or `_install_meson/bin/gen_refs_fortran`
 respectively (both -- along with the `_build_fpm`/`_build_meson` build
 directories -- gitignored: machine-specific, not portable; only the
@@ -38,5 +38,5 @@ Fortran source is tracked). Then:
 python tools/refs/gen_refs.py
 ```
 
-`gen_refs.py` writes one `test/references/<molecule>.json` per entry
-in its `SAMPLES`, in place; commit the result.
+`gen_refs.py` writes one `test/references/<collection>/<record>.json` per entry
+in its `SAMPLE_LIST`, in place; commit the result.

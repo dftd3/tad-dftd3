@@ -25,24 +25,29 @@ from tad_dftd3 import model, reference
 
 from ..conftest import DEVICE
 from ..references import reference_cn, reference_weights
-from ..samples import mols
+from ..utils import load_sample
 
-sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
+sample_list: list[tuple[str, str]] = [
+    ("mb16_43", "SiH4"),
+    ("heavy28", "pbh4_bih3"),
+    ("other", "C6H5I-CH3SH"),
+    ("mb16_43", "01"),
+]
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name", sample_list)
-def test_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    numbers = mols[name]["numbers"].to(DEVICE)
+    numbers = load_sample(*source, dd)[0]
     ref = reference.Reference(**dd)
 
     # coordination number and weights both come from s-dftd3's Fortran
     # library (see test/references)
-    cn = reference_cn(name, dd)
-    refgw = reference_weights(name, dd)
+    cn = reference_cn(*source, dd)
+    refgw = reference_weights(*source, dd)
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
@@ -51,23 +56,27 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name1", ["SiH4"])
-@pytest.mark.parametrize("name2", sample_list)
-def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("source1", [("mb16_43", "SiH4")])
+@pytest.mark.parametrize("source2", sample_list)
+def test_batch(
+    dtype: torch.dtype, source1: tuple[str, str], source2: tuple[str, str]
+) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
     numbers = pack(
         (
-            mols[name1]["numbers"].to(DEVICE),
-            mols[name2]["numbers"].to(DEVICE),
+            load_sample(*source1, dd)[0],
+            load_sample(*source2, dd)[0],
         )
     )
     ref = reference.Reference(**dd)
     # s-dftd3 has no notion of a batch of independent molecules; the
     # reference of each molecule is packed like the inputs above
-    cn = pack((reference_cn(name1, dd), reference_cn(name2, dd)))
-    refgw = pack((reference_weights(name1, dd), reference_weights(name2, dd)))
+    cn = pack((reference_cn(*source1, dd), reference_cn(*source2, dd)))
+    refgw = pack(
+        (reference_weights(*source1, dd), reference_weights(*source2, dd))
+    )
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 

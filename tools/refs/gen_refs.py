@@ -25,6 +25,7 @@ from pathlib import Path
 
 import torch
 from tad_mctc.data.structures import get_structure
+from tad_mctc.io.structure import Structure
 
 from tad_dftd3.defaults import D3_CN_CUTOFF
 
@@ -39,16 +40,24 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "test" / "references"
 
 MAX_REFERENCE_SLOTS = 7
 
-# Name used in the tests (the file name in test/references) -> (collection,
-# record) of `tad_mctc.data.structures.get_structure`. The same structures as
-# `test/samples.py`.
-SAMPLES: dict[str, tuple[str, str]] = {
-    "AmF3": ("other", "AmF3"),
-    "SiH4": ("mb16_43", "SiH4"),
-    "PbH4-BiH3": ("heavy28", "pbh4_bih3"),
-    "C6H5I-CH3SH": ("other", "C6H5I-CH3SH"),
-    "MB16_43_01": ("mb16_43", "01"),
-}
+# Every structure that gets a reference, as a `(collection, record)` pair for
+# `tad_mctc.data.structures.get_structure`. The tests load the JSON files this
+# writes, by the same pair, so a new reference is an entry here and a rerun.
+SAMPLE_LIST: list[tuple[str, str]] = [
+    ("other", "AmF3"),
+    ("mb16_43", "SiH4"),
+    ("heavy28", "pbh4_bih3"),
+    ("other", "C6H5I-CH3SH"),
+    ("mb16_43", "01"),
+]
+
+
+def _sample(entry: tuple[str, str]) -> tuple[Path, Structure]:
+    """Resolve one `SAMPLE_LIST` entry to the output path its reference
+    JSON is written to, plus the structure itself."""
+    collection, record = entry
+    out = OUT_DIR / collection / f"{record}.json"
+    return out, get_structure(collection, record, dtype=torch.double)
 
 
 def find_tool() -> Path:
@@ -62,7 +71,10 @@ def find_tool() -> Path:
 
 
 def run_tool(
-    tool: Path, numbers: list[int], positions: list[list[float]], cn_cutoff: float
+    tool: Path,
+    numbers: list[int],
+    positions: list[list[float]],
+    cn_cutoff: float,
 ):
     lines = [str(len(numbers)), repr(cn_cutoff)]
     for z, (x, y, zz) in zip(numbers, positions):
@@ -79,11 +91,14 @@ def run_tool(
 
 def main() -> None:
     tool = find_tool()
-    for name, (collection, record) in SAMPLES.items():
-        structure = get_structure(collection, record, dtype=torch.double)
-        numbers = structure.numbers.tolist()
-        positions = structure.positions.tolist()
-        data = run_tool(tool, numbers, positions, D3_CN_CUTOFF)
+    for entry in SAMPLE_LIST:
+        out, structure = _sample(entry)
+        data = run_tool(
+            tool,
+            structure.numbers.tolist(),
+            structure.positions.tolist(),
+            D3_CN_CUTOFF,
+        )
 
         mref = len(data["weights"][0])
         weights = [
@@ -91,13 +106,9 @@ def main() -> None:
             for row in data["weights"]
         ]
 
-        model_data = {
-            "cn": data["cn"],
-            "weights": weights,
-            "c6": data["c6"],
-        }
+        model_data = {"cn": data["cn"], "weights": weights, "c6": data["c6"]}
 
-        out = OUT_DIR / f"{name}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(model_data, indent=2) + "\n")
         print(f"wrote {out}")
 

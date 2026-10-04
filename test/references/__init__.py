@@ -14,19 +14,19 @@
 # limitations under the License.
 """
 Coordination number, reference-system weights and atomic C6 coefficients
-from the s-dftd3 Fortran *library*, for every molecule any test in this
-suite compares against it. None of these three quantities are reachable
-through the ``dftd3`` Python package (see
-``tools/refs/gen_refs_fortran.f90`` for why), so unlike the
-energy/gradient/Hessian references in ``test/reference.py``, they are not
-computed live at test time -- one JSON file per molecule is dumped once,
-by ``tools/refs``, and committed here instead.
+from the s-dftd3 Fortran *library*, for every structure a test compares
+against it. None of these three quantities are reachable through the
+``dftd3`` Python package (see ``tools/refs/gen_refs_fortran.f90`` for why),
+so unlike the energy/gradient/Hessian references in ``test/reference.py``,
+they are not computed live at test time: one JSON file per structure is
+dumped once by ``tools/refs`` and committed here, as
+``<collection>/<record>.json`` for the ``(collection, record)`` of
+:func:`tad_mctc.data.structures.get_structure`.
 
 All three were generated at the coordination-number cutoff ``dftd3()``
 uses internally (``tad_dftd3.defaults.D3_CN_CUTOFF``), so ``reference_c6``
-is usable wherever an independently computed C6 is needed -- including as a
-drop-in for ``disp.dispersion()`` / ``damping.dispersion_atm()`` in
-``test_disp``, without going through tad-dftd3's own code first.
+is usable wherever an independently computed C6 is needed, without going
+through tad-dftd3's own code first.
 """
 
 from __future__ import annotations
@@ -44,24 +44,27 @@ _DATA_DIR = Path(__file__).parent
 
 
 @lru_cache
-def _data(name: str) -> dict:
-    return json.loads((_DATA_DIR / f"{name}.json").read_text())
+def _data(collection: str, record: str) -> dict:
+    path = _DATA_DIR / collection / f"{record}.json"
+    return json.loads(path.read_text())
 
 
-def reference_cn(name: str, dd: DD) -> Tensor:
-    """Coordination number for molecule ``name``, shape ``(nat,)``."""
-    return torch.tensor(_data(name)["cn"], dtype=torch.double).to(**dd)
+def reference_cn(collection: str, record: str, dd: DD) -> Tensor:
+    """Coordination number of a structure, shape ``(nat,)``."""
+    data = _data(collection, record)
+    return torch.tensor(data["cn"], dtype=torch.double).to(**dd)
 
 
-def reference_weights(name: str, dd: DD) -> Tensor:
+def reference_weights(collection: str, record: str, dd: DD) -> Tensor:
     """
-    Reference-system weights for molecule ``name``, shape ``(nat, 7)``
-    -- zero-padded out to tad-dftd3's fixed width, see
-    ``tad_dftd3.reference.Reference``.
+    Reference-system weights of a structure, shape ``(nat, 7)``, zero-padded
+    out to tad-dftd3's fixed width, see ``tad_dftd3.reference.Reference``.
     """
-    return torch.tensor(_data(name)["weights"], dtype=torch.double).to(**dd)
+    data = _data(collection, record)
+    return torch.tensor(data["weights"], dtype=torch.double).to(**dd)
 
 
-def reference_c6(name: str, dd: DD) -> Tensor:
-    """Atomic C6 coefficients for molecule ``name``, shape ``(nat, nat)``."""
-    return torch.tensor(_data(name)["c6"], dtype=torch.double).to(**dd)
+def reference_c6(collection: str, record: str, dd: DD) -> Tensor:
+    """Atomic C6 coefficients of a structure, shape ``(nat, nat)``."""
+    data = _data(collection, record)
+    return torch.tensor(data["c6"], dtype=torch.double).to(**dd)
