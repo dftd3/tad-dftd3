@@ -16,8 +16,6 @@
 Test calculation of two-body and three-body dispersion terms.
 """
 
-from math import sqrt
-
 import pytest
 import torch
 from tad_mctc import Structure
@@ -31,7 +29,7 @@ from tad_dftd3 import Cutoff, damping, data, disp
 from ..conftest import DEVICE
 from ..reference import reference_pairwise
 from ..references import reference_c6
-from ..utils import load_structure
+from ..utils import load_structure, ref_tol
 
 sample_list: list[tuple[str, str]] = [
     ("other", "AmF3"),
@@ -230,7 +228,6 @@ def test_float_s9() -> None:
 @pytest.mark.parametrize("source", sample_list)
 def test_disp2_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = sqrt(torch.finfo(dtype).eps)
 
     structure = load_structure(*source, dd)
     c6 = reference_c6(*source, dd)
@@ -252,7 +249,7 @@ def test_disp2_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -264,7 +261,6 @@ def test_disp2_batch(
     source2: tuple[str, str],
 ) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = sqrt(torch.finfo(dtype).eps)
 
     structure = pack_structures(
         [load_structure(*source1, dd), load_structure(*source2, dd)]
@@ -282,14 +278,13 @@ def test_disp2_batch(
     energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("source", sample_list)
 def test_atm_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = sqrt(torch.finfo(dtype).eps)
 
     structure = load_structure(*source, dd)
     c6 = reference_c6(*source, dd)
@@ -309,7 +304,7 @@ def test_atm_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -321,7 +316,6 @@ def test_atm_batch(
     source2: tuple[str, str],
 ) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = sqrt(torch.finfo(dtype).eps)
 
     structure = pack_structures(
         [load_structure(*source1, dd), load_structure(*source2, dd)]
@@ -348,14 +342,13 @@ def test_atm_batch(
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
 @pytest.mark.parametrize("source", sample_list)
 def test_full_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    tol = sqrt(torch.finfo(dtype).eps)
 
     structure = load_structure(*source, dd)
     c6 = reference_c6(*source, dd)
@@ -366,4 +359,4 @@ def test_full_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()

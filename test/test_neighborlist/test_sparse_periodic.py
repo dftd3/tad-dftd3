@@ -33,7 +33,7 @@ from ..conftest import DEVICE
 
 cutoff = Cutoff(cn=15.0, disp2=20.0)
 
-tol = 1e-10
+tol = 1e-12
 
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
@@ -110,4 +110,4 @@ def test_gradient_matches_dense() -> None:
         return torch.autograd.grad(energy, (pos, lattice))
 
     for d, s in zip(grads(False), grads(True)):
-        assert pytest.approx(d.cpu(), abs=1e-9) == s.cpu()
+        assert pytest.approx(d.cpu(), abs=1e-12) == s.cpu()

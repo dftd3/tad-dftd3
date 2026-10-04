@@ -37,7 +37,7 @@ from ..utils import load_structure
 # a cutoff below the default, which is what makes the sparse term pay off
 cutoff = Cutoff(cn=15.0, disp2=20.0, disp3=12.0)
 
-tol = 1e-10
+tol = 1e-12
 
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
@@ -121,7 +121,7 @@ def test_chunked_gradient_matches_dense(
         return torch.autograd.grad(energy, pos)[0]
 
     sparse = grad(nbl=nbl, max_triples=max_triples, checkpoint=checkpoint)
-    assert pytest.approx(grad().cpu(), abs=1e-9) == sparse.cpu()
+    assert pytest.approx(grad().cpu(), abs=1e-12) == sparse.cpu()
 
 
 def test_cell_raises() -> None:

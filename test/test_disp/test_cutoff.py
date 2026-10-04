@@ -134,13 +134,12 @@ def test_chain_matches_reference(
     """A chain of separated fragments matches s-dftd3 at the defaults."""
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    # Tighter than the `sqrt(eps)` used elsewhere in this suite: the
-    # smallest shift any cutoff causes here is 2.8e-10, so a looser
-    # tolerance would let a wrong cutoff through in double precision.
-    # Measured agreement in float64 is up to 6.5e-10 relative (the exact
-    # covalent radii depend on the installed tad-mctc, see
-    # `tad_mctc.data.radii.COV_D3`), well below that shift.
-    tol = max(10 * torch.finfo(dtype).eps, 1e-8)
+    # Tight, since the smallest shift any cutoff causes here is 2.8e-10, so
+    # a looser tolerance would let a wrong cutoff through in double
+    # precision. Measured agreement in float64 is 2e-19 absolute with
+    # tad-mctc 0.9.0 (older covalent radii, see
+    # `tad_mctc.data.radii.COV_D3`, gave up to 6.5e-10 relative).
+    tol = 10 * torch.finfo(dtype).eps if dtype == torch.float32 else 1e-12
 
     numbers, positions = fragment_chain(source, dd)
     structure = Structure(numbers=numbers, positions=positions)
@@ -170,12 +169,11 @@ def test_changed_cutoff_matches_reference(
 
     changed = Cutoff(**{field: value})
 
-    # Measured agreement is up to 1.4e-13 absolute (see
-    # test_chain_matches_reference), well below the shift this test
-    # relies on (2.8e-10, checked below).
+    # Measured agreement is 2e-19 absolute (see test_chain_matches_reference),
+    # far below the shift this test relies on (2.8e-10, checked below).
     ref = reference_energy_per_atom(structure, par, cutoff=changed)
     energy = dftd3(structure, par, cutoff=changed)
-    assert pytest.approx(ref.cpu(), abs=5e-11) == energy.cpu()
+    assert pytest.approx(ref.cpu(), abs=1e-12) == energy.cpu()
 
     # Only meaningful if this geometry notices the changed cutoff. The
     # threshold sits above the 5e-11 tolerance above and below the smallest
@@ -214,13 +212,12 @@ def test_large_molecule_matches_reference() -> None:
 
     # No cutoff for the reference, so it uses s-dftd3's own. All three
     # matter here: moving `cn` to 25, `disp2` to 50 or `disp3` to 50 shifts
-    # this energy by 1e-7 or more, against a measured agreement of 1.8e-12
-    # absolute (the exact covalent radii depend on the installed
-    # tad-mctc, see `tad_mctc.data.radii.COV_D3`).
+    # this energy by 1e-7 or more, against a measured agreement of 4e-19
+    # absolute with tad-mctc 0.9.0.
     ref = reference_energy_per_atom(structure, par)
     energy = dftd3(structure, par)
 
-    assert pytest.approx(ref.cpu(), abs=1e-9) == energy.cpu()
+    assert pytest.approx(ref.cpu(), abs=1e-12) == energy.cpu()
 
 
 @pytest.mark.parametrize(

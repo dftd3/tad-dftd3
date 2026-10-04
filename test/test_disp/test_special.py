@@ -29,7 +29,12 @@ from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
-from ..utils import load_structure
+from ..utils import load_structure, ref_tol
+
+
+def _tol(dtype: torch.dtype) -> dict[str, float]:
+    """Tight in float64; the default of `pytest.approx` in float32."""
+    return ref_tol(dtype) if dtype == torch.float64 else {}
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -74,7 +79,7 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu()) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -105,4 +110,4 @@ def test_batch(dtype: torch.dtype) -> None:
 
     energy = dftd3(structure, param)
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu()) == energy.cpu()
+    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()

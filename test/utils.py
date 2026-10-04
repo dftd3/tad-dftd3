@@ -18,11 +18,12 @@ Utility functions for testing.
 
 from __future__ import annotations
 
+import torch
 from tad_mctc.data.structures import get_structure
 from tad_mctc.io.structure import Structure
 from tad_mctc.typing import DD, Tensor
 
-__all__ = ["load_sample", "load_structure"]
+__all__ = ["load_sample", "load_structure", "ref_tol"]
 
 
 def load_structure(collection: str, record: str, dd: DD) -> Structure:
@@ -36,3 +37,23 @@ def load_sample(collection: str, record: str, dd: DD) -> tuple[Tensor, Tensor]:
     """`load_structure`, keeping only `numbers`/`positions`."""
     structure = load_structure(collection, record, dd)
     return structure.numbers, structure.positions
+
+
+_REF_TOL = {
+    torch.float64: {"abs": 1e-12, "rel": 1e-12},
+    torch.float32: {"abs": 1e-8, "rel": 1e-4},
+}
+
+
+def ref_tol(dtype: torch.dtype) -> dict[str, float]:
+    """
+    Absolute and relative tolerance for `pytest.approx` against the s-dftd3
+    references, per dtype.
+
+    Measured against s-dftd3 in float64, energies, gradients, Hessians, C6
+    and weights agree to 1e-15 absolute or better (C6, up to 5e2, to 2e-16
+    relative), so 1e-12 leaves three orders of magnitude of margin for other
+    platforms and still catches any real change. In float32 the agreement is
+    limited by the precision of the dtype (relative 2e-7 to 8e-6 measured).
+    """
+    return _REF_TOL[dtype]

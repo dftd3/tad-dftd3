@@ -34,7 +34,7 @@ from ..utils import load_structure
 
 cutoff = Cutoff(cn=15.0, disp2=20.0)
 
-tol = 1e-10
+tol = 1e-12
 
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
@@ -97,7 +97,7 @@ def test_gradient_matches_dense() -> None:
         energy = dftd3(s, p, cutoff=cutoff, sparse=sparse).sum()
         return torch.autograd.grad(energy, pos)[0]
 
-    assert pytest.approx(grad(False).cpu(), abs=1e-9) == grad(True).cpu()
+    assert pytest.approx(grad(False).cpu(), abs=1e-12) == grad(True).cpu()
 
 
 def test_mixed_dense_and_sparse() -> None:

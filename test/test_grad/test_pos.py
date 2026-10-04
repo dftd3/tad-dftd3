@@ -30,7 +30,7 @@ from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE, FAST_MODE
 from ..reference import reference_gradient
-from ..utils import load_sample, load_structure
+from ..utils import load_sample, load_structure, ref_tol
 
 sample_list: list[tuple[str, str]] = [
     ("mb16_43", "LiH"),
@@ -175,7 +175,7 @@ def test_autograd(dtype: torch.dtype, source: tuple[str, str]) -> None:
     energy = torch.sum(dftd3(Structure(numbers=numbers, positions=pos), param))
     (grad,) = torch.autograd.grad(energy, pos)
 
-    assert pytest.approx(ref.cpu(), abs=tol) == grad.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == grad.cpu()
 
 
 @pytest.mark.grad
@@ -214,7 +214,7 @@ def test_backward(dtype: torch.dtype, source: tuple[str, str]) -> None:
     positions.detach_()
     positions.grad.data.zero_()
 
-    assert pytest.approx(ref.cpu(), abs=tol) == grad_backward.cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == grad_backward.cpu()
 
 
 @pytest.mark.grad
@@ -247,4 +247,4 @@ def test_functorch(dtype: torch.dtype, source: tuple[str, str]) -> None:
     assert isinstance(grad, Tensor)
 
     assert grad.shape == ref.shape
-    assert pytest.approx(ref.cpu(), abs=tol) == grad.detach().cpu()
+    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == grad.detach().cpu()
