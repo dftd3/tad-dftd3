@@ -224,6 +224,7 @@ def dftd3(
     shifts: PeriodicShifts | None = None,
     nbl_cn: NeighborList | None = None,
     nbl_disp2: NeighborList | None = None,
+    nbl_disp3: NeighborList | None = None,
     sparse: bool = False,
     ref: Reference | None = None,
     rcov_table: Tensor | TableFunction | None = None,
@@ -287,8 +288,8 @@ def dftd3(
         )
 
     A list built at a larger cutoff, or with a skin, gives the same energy.
-    The three-body term is not evaluated from a list here, see
-    :func:`dispersion3`.
+    The three-body term is evaluated from a list only if one is given as
+    `nbl_disp3`, see :func:`dispersion3`.
 
     To differentiate with respect to the positions or the lattice with
     ``torch.func``, replace them in the structure inside the function, e.g.
@@ -319,6 +320,12 @@ def dftd3(
     nbl_disp2 : NeighborList | None, optional
         Neighbour list for the two-body energy, built at least at its
         cutoff. Defaults like `nbl_cn`.
+    nbl_disp3 : NeighborList | None, optional
+        Neighbour list for the three-body term of a molecule, built at least
+        at its cutoff. Never built by `sparse`: the memory of the sparse
+        three-body term grows steeply with its cutoff (see
+        :func:`dispersion3`), so choosing it, and a `cutoff.disp3` to match,
+        is left to the caller.
     sparse : bool, optional
         Build the neighbour lists that are not given, instead of evaluating
         that term densely. Defaults to ``False``.
@@ -410,6 +417,7 @@ def dftd3(
         c6,
         shifts=shifts,
         nbl=nbl_disp2,
+        nbl_disp3=nbl_disp3,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
         damping_function=damping_function,
@@ -426,6 +434,7 @@ def dispersion(
     *,
     shifts: PeriodicShifts | None = None,
     nbl: NeighborList | None = None,
+    nbl_disp3: NeighborList | None = None,
     rvdw_table: Tensor | TableFunction | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
     damping_function: DampingFunction = rational_damping,
@@ -457,6 +466,9 @@ def dispersion(
         Neighbour list for the two-body energy, built at least at its
         cutoff, instead of the dense evaluation, see :func:`dftd3`. Not
         together with `shifts`.
+    nbl_disp3 : NeighborList | None, optional
+        Neighbour list for the three-body term, built at least at its
+        cutoff, see :func:`dispersion3`. A molecule only.
     rvdw_table : Tensor | TableFunction, optional
         Van der Waals radii per element pair, of shape ``(104, 104)``.
         Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
@@ -497,6 +509,7 @@ def dispersion(
         c6,
         shifts=shifts,
         nbl=nbl,
+        nbl_disp3=nbl_disp3,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
         damping_function=damping_function,
@@ -512,6 +525,7 @@ def _dispersion(
     *,
     shifts: PeriodicShifts | None,
     nbl: NeighborList | None,
+    nbl_disp3: NeighborList | None,
     rvdw_table: Tensor | TableFunction | None,
     r4r2_table: Tensor | TableFunction | None,
     damping_function: DampingFunction,
@@ -553,6 +567,7 @@ def _dispersion(
             c6,
             rvdw_table=rvdw,
             cutoff=cutoff.disp3,
+            nbl=nbl_disp3,
         )
         energy = energy + e3
 
@@ -885,6 +900,8 @@ def dispersion3(
     rvdw_table: Tensor | TableFunction | None = None,
     cutoff: float = defaults.D3_DISP3_CUTOFF,
     rs9: Tensor | float | None = None,
+    nbl: NeighborList | None = None,
+    **kwargs: Any,
 ) -> Tensor:
     """
     Three-body dispersion term. Currently this is only a wrapper for the
@@ -907,6 +924,14 @@ def dispersion3(
         :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
     rs9 : Tensor | float, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
+    nbl : NeighborList | None, optional
+        Neighbour list built at least at `cutoff`, to enumerate the triples
+        from instead of the dense ``O(nat**3)`` evaluation; see
+        :func:`tad_dftd3.damping.dispersion_atm`, whose `max_triples` and
+        `checkpoint` can be passed as further keyword arguments. Unlike the
+        two-body term, the memory of the sparse ATM term grows steeply with
+        the cutoff, so it pays off for a `cutoff` smaller than the default
+        or for large systems.
 
     Returns
     -------
@@ -928,4 +953,6 @@ def dispersion3(
         s9=param.get("s9"),
         rs9=rs9,
         alp=param.get("alp"),
+        nbl=nbl,
+        **kwargs,
     )
