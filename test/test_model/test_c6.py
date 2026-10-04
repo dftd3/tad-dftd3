@@ -28,7 +28,8 @@ from tad_mctc.typing import DD, Callable, Tensor
 from tad_dftd3 import model, ncoord, reference
 
 from ..conftest import DEVICE, FAST_MODE, compile_test, requires_compile
-from .samples import samples
+from ..references import reference_c6, reference_weights
+from ..samples import mols
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -41,11 +42,13 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols[name]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
-    weights = sample["weights"].to(**dd)
-    refc6 = sample["c6"].to(**dd)
+
+    # weights and C6 both come from s-dftd3's Fortran library (see
+    # test/references); feeding in its weights isolates this test to atomic_c6
+    weights = reference_weights(name, dd)
+    refc6 = reference_c6(name, dd)
 
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -61,29 +64,18 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample1, sample2 = (
-        samples[name1],
-        samples[name2],
-    )
     numbers = pack(
         (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
+            mols[name1]["numbers"].to(DEVICE),
+            mols[name2]["numbers"].to(DEVICE),
         )
     )
     ref = reference.Reference(**dd)
-    weights = pack(
-        (
-            sample1["weights"].to(**dd),
-            sample2["weights"].to(**dd),
-        )
-    )
-    refc6 = pack(
-        (
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        )
-    )
+
+    # s-dftd3 has no notion of a batch of independent molecules; each
+    # reference is packed like the inputs above
+    weights = pack((reference_weights(name1, dd), reference_weights(name2, dd)))
+    refc6 = pack((reference_c6(name1, dd), reference_c6(name2, dd)))
 
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -99,11 +91,9 @@ def test_vmap() -> None:
     """
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    sample1, sample2 = samples["SiH4"], samples["PbH4-BiH3"]
-    numbers = pack(
-        (sample1["numbers"].to(DEVICE), sample2["numbers"].to(DEVICE))
-    )
-    weights = pack((sample1["weights"].to(**dd), sample2["weights"].to(**dd)))
+    names = ("SiH4", "PbH4-BiH3")
+    numbers = pack(tuple(mols[n]["numbers"].to(DEVICE) for n in names))
+    weights = pack(tuple(reference_weights(n, dd) for n in names))
     ref = reference.Reference(**dd)
 
     def f(nums: Tensor, ws: Tensor) -> Tensor:
@@ -111,8 +101,8 @@ def test_vmap() -> None:
 
     batched = torch.func.vmap(f, in_dims=(0, 0))(numbers, weights)
 
-    for i, sample in enumerate((sample1, sample2)):
-        refc6 = sample["c6"].to(**dd)
+    for i, name in enumerate(names):
+        refc6 = reference_c6(name, dd)
         nat = refc6.shape[-1]
         assert pytest.approx(refc6.cpu(), abs=tol, rel=tol) == (
             batched[i, :nat, :nat].cpu()
@@ -122,10 +112,9 @@ def test_vmap() -> None:
 def test_jacrev() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    sample = samples["SiH4"]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols["SiH4"]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
-    weights = sample["weights"].to(**dd)
+    weights = reference_weights("SiH4", dd)
 
     def f(ws: Tensor) -> Tensor:
         return model.atomic_c6(numbers, ws, ref)
@@ -139,11 +128,10 @@ def test_jacrev() -> None:
 def test_compile() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    sample = samples["SiH4"]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols["SiH4"]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
-    weights = sample["weights"].to(**dd)
-    refc6 = sample["c6"].to(**dd)
+    weights = reference_weights("SiH4", dd)
+    refc6 = reference_c6("SiH4", dd)
 
     compiled = compile_test(model.atomic_c6, fullgraph=True)
     c6 = compiled(numbers, weights, ref)
@@ -163,9 +151,8 @@ def gradchecker(
 ]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    numbers = mols[name]["numbers"].to(DEVICE)
+    positions = mols[name]["positions"].to(**dd)
 
     ref = reference.Reference(**dd)
     cn = ncoord.cn_d3(Structure(numbers=numbers, positions=positions))

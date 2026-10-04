@@ -24,7 +24,8 @@ from tad_mctc.typing import DD
 from tad_dftd3 import model, reference
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..references import reference_cn, reference_weights
+from ..samples import mols
 
 sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
@@ -35,11 +36,13 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
+    numbers = mols[name]["numbers"].to(DEVICE)
     ref = reference.Reference(**dd)
-    cn = sample["cn"].to(**dd)
-    refgw = sample["weights"].to(**dd)
+
+    # coordination number and weights both come from s-dftd3's Fortran
+    # library (see test/references)
+    cn = reference_cn(name, dd)
+    refgw = reference_weights(name, dd)
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
@@ -54,29 +57,17 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = torch.finfo(dtype).eps ** 0.5
 
-    sample1, sample2 = (
-        samples[name1],
-        samples[name2],
-    )
     numbers = pack(
         (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
+            mols[name1]["numbers"].to(DEVICE),
+            mols[name2]["numbers"].to(DEVICE),
         )
     )
     ref = reference.Reference(**dd)
-    cn = pack(
-        (
-            sample1["cn"].to(**dd),
-            sample2["cn"].to(**dd),
-        )
-    )
-    refgw = pack(
-        (
-            sample1["weights"].to(**dd),
-            sample2["weights"].to(**dd),
-        )
-    )
+    # s-dftd3 has no notion of a batch of independent molecules; the
+    # reference of each molecule is packed like the inputs above
+    cn = pack((reference_cn(name1, dd), reference_cn(name2, dd)))
+    refgw = pack((reference_weights(name1, dd), reference_weights(name2, dd)))
 
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 

@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/dftd3/simple-dftd3
+revision = v1.6.0
+depth = 1
