@@ -64,8 +64,10 @@ from tad_mctc import Structure, storch
 from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
 from tad_mctc.data import pse
-from tad_mctc.ncoord.common import _periodic_images
+from tad_mctc.ncoord.common import _periodic_images, sum_over_neighborlist
+from tad_mctc.neighbor import pair_distance_squared, split_lattice
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
+from tad_mctc.neighbor.list import NeighborList, build_neighborlists
 from tad_mctc.typing import (
     DD,
     CountingFunction,
@@ -166,6 +168,32 @@ def _cell_shifts(
     return build_periodic_shifts(cell.lattice, cell.periodic, cutoff)
 
 
+def _check_pairs(
+    structure: Structure,
+    shifts: PeriodicShifts | None,
+    nbl: NeighborList | None,
+    cutoff: float,
+) -> None:
+    """
+    Reject a neighbour list that is given together with `shifts`, or that
+    does not cover `structure` at `cutoff`.
+
+    The check reads the values of the periodic mask, so it is eager: with
+    ``torch.compile``, ``vmap`` or ``jacrev``, call it once beforehand (any
+    evaluation does) and pass the list in.
+    """
+    if nbl is None:
+        return
+
+    if shifts is not None:
+        raise ValueError(
+            "Give either periodic image 'shifts' or a neighbour list, not "
+            "both: they are two ways of enumerating the same pairs."
+        )
+
+    nbl.check_compatible(structure, cutoff)
+
+
 def _check_three_body(
     param: dict[str, Tensor | float], structure: Structure
 ) -> None:
@@ -194,6 +222,9 @@ def dftd3(
     param: dict[str, Tensor | float],
     *,
     shifts: PeriodicShifts | None = None,
+    nbl_cn: NeighborList | None = None,
+    nbl_disp2: NeighborList | None = None,
+    sparse: bool = False,
     ref: Reference | None = None,
     rcov_table: Tensor | TableFunction | None = None,
     rvdw_table: Tensor | TableFunction | None = None,
@@ -239,6 +270,26 @@ def dftd3(
     it would with a table built at its own cutoff. Only the energy is
     unaffected.
 
+    Instead of dense, all-pairs sums, the coordination number and the two-body
+    energy can run over pre-built, padded neighbour lists
+    (:class:`tad_mctc.neighbor.list.NeighborList`), which scale linearly with
+    the number of atoms, for molecules, batches and cells alike. With
+    ``sparse=True`` both lists are built eagerly on each call, sharing one
+    search. To reuse them, e.g. over the steps of a molecular dynamics, build
+    them once with :func:`tad_mctc.neighbor.list.build_neighborlists`, each at
+    (at least) its own cutoff, and pass them as `nbl_cn` and `nbl_disp2`::
+
+        from tad_mctc.neighbor.list import build_neighborlists
+
+        cutoff = Cutoff()
+        nbl_cn, nbl_disp2 = build_neighborlists(
+            structure, (cutoff.cn, cutoff.disp2), skin=1.0
+        )
+
+    A list built at a larger cutoff, or with a skin, gives the same energy.
+    The three-body term is not evaluated from a list here, see
+    :func:`dispersion3`.
+
     To differentiate with respect to the positions or the lattice with
     ``torch.func``, replace them in the structure inside the function, e.g.
     ``jacrev(lambda pos: dftd3(structure.replace(positions=pos), param))``.
@@ -260,7 +311,17 @@ def dftd3(
         :func:`tad_mctc.neighbor.images.build_periodic_shifts`, at least at
         the coordination-number and the two-body cutoff. Defaults to
         building them on each call. A table covering more images than
-        needed gives the same energy.
+        needed gives the same energy. Not together with a neighbour list.
+    nbl_cn : NeighborList | None, optional
+        Neighbour list for the coordination number, built at least at its
+        cutoff. Defaults to the dense (or `shifts`) evaluation, or to a list
+        built here if `sparse`.
+    nbl_disp2 : NeighborList | None, optional
+        Neighbour list for the two-body energy, built at least at its
+        cutoff. Defaults like `nbl_cn`.
+    sparse : bool, optional
+        Build the neighbour lists that are not given, instead of evaluating
+        that term densely. Defaults to ``False``.
     ref : reference.Reference, optional
         Reference C6 coefficients.
     rcov_table : Tensor | TableFunction, optional
@@ -295,7 +356,8 @@ def dftd3(
         If an element without D3 parameters is present, `rcov_table`,
         `rvdw_table` or `r4r2_table` is not shaped like a table, `shifts`
         is given for a molecule or does not cover the cell at the cutoffs,
-        or a cell has a three-body term.
+        a neighbour list does not match the structure or its cutoff, or is
+        given together with `shifts`, or a cell has a three-body term.
     TypeError
         If `structure` is not a ``Structure``, or one of the names of
         0.7.0, `rcov`, `rvdw` or `r4r2`, is passed.
@@ -306,6 +368,26 @@ def dftd3(
     numbers, positions = structure.numbers, structure.positions
 
     cutoff = _resolve_cutoff(cutoff)
+
+    if sparse:
+        if shifts is not None:
+            raise ValueError(
+                "'sparse' builds neighbour lists, which replace the periodic "
+                "image 'shifts'; give only one of them."
+            )
+
+        # One shared search for the lists that are missing, eagerly: it is
+        # data dependent. Both are built if only one is missing, which costs
+        # no more than the larger one alone.
+        if nbl_cn is None or nbl_disp2 is None:
+            built_cn, built_disp2 = build_neighborlists(
+                structure, (cutoff.cn, cutoff.disp2)
+            )
+            nbl_cn = built_cn if nbl_cn is None else nbl_cn
+            nbl_disp2 = built_disp2 if nbl_disp2 is None else nbl_disp2
+
+    _check_pairs(structure, shifts, nbl_cn, cutoff.cn)
+    _check_pairs(structure, shifts, nbl_disp2, cutoff.disp2)
     if ref is None:
         # `dftd3` only reads the reference, so it need not be copied.
         ref = _default_reference(positions)
@@ -317,7 +399,7 @@ def dftd3(
     )
     # Builds the image shifts of a cell at its own cutoff, or checks the
     # given ones against it.
-    cn = cn_model(structure, shifts)
+    cn = cn_model(structure, nbl_cn if nbl_cn is not None else shifts)
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
 
@@ -327,6 +409,7 @@ def dftd3(
         param,
         c6,
         shifts=shifts,
+        nbl=nbl_disp2,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
         damping_function=damping_function,
@@ -342,6 +425,7 @@ def dispersion(
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None = None,
+    nbl: NeighborList | None = None,
     rvdw_table: Tensor | TableFunction | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
     damping_function: DampingFunction = rational_damping,
@@ -369,6 +453,10 @@ def dispersion(
     shifts : PeriodicShifts | None, optional
         Periodic image shifts, at least at the two-body cutoff, see
         :func:`dftd3`.
+    nbl : NeighborList | None, optional
+        Neighbour list for the two-body energy, built at least at its
+        cutoff, instead of the dense evaluation, see :func:`dftd3`. Not
+        together with `shifts`.
     rvdw_table : Tensor | TableFunction, optional
         Van der Waals radii per element pair, of shape ``(104, 104)``.
         Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
@@ -400,15 +488,19 @@ def dispersion(
     _check_inputs(structure, shifts)
     _check_three_body(param, structure)
 
+    cutoff = _resolve_cutoff(cutoff)
+    _check_pairs(structure, shifts, nbl, cutoff.disp2)
+
     return _dispersion(
         structure,
         param,
         c6,
         shifts=shifts,
+        nbl=nbl,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
         damping_function=damping_function,
-        cutoff=_resolve_cutoff(cutoff),
+        cutoff=cutoff,
         **kwargs,
     )
 
@@ -419,6 +511,7 @@ def _dispersion(
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None,
+    nbl: NeighborList | None,
     rvdw_table: Tensor | TableFunction | None,
     r4r2_table: Tensor | TableFunction | None,
     damping_function: DampingFunction,
@@ -442,6 +535,7 @@ def _dispersion(
         param,
         c6,
         shifts=shifts,
+        nbl=nbl,
         r4r2_table=r4r2,
         damping_function=damping_function,
         cutoff=cutoff.disp2,
@@ -493,6 +587,7 @@ def dispersion2(
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None = None,
+    nbl: NeighborList | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: float = defaults.D3_DISP2_CUTOFF,
@@ -516,6 +611,10 @@ def dispersion2(
         Atomic C6 dispersion coefficients.
     shifts : PeriodicShifts | None, optional
         Periodic image shifts, at least at `cutoff`, see :func:`dftd3`.
+    nbl : NeighborList | None, optional
+        Neighbour list, built at least at `cutoff`, to sum over instead of
+        the dense evaluation, see :func:`dftd3`. Not together with `shifts`.
+        This takes ``O(n_pairs)`` memory instead of ``O(nat**2 * n_shift)``.
     r4r2_table : Tensor | TableFunction | None, optional
         r⁴ over r² expectation values per element, of shape ``(119,)``, or
         ``None`` for :func:`tad_dftd3.data.R4R2`.
@@ -534,12 +633,14 @@ def dispersion2(
         If `structure` is not a ``Structure``.
     """
     _check_inputs(structure, shifts)
+    _check_pairs(structure, shifts, nbl, cutoff)
 
     return _dispersion2(
         structure,
         param,
         c6,
         shifts=shifts,
+        nbl=nbl,
         r4r2_table=r4r2_table,
         damping_function=damping_function,
         cutoff=cutoff,
@@ -553,6 +654,7 @@ def _dispersion2(
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None,
+    nbl: NeighborList | None,
     r4r2_table: Tensor | TableFunction | None,
     damping_function: DampingFunction,
     cutoff: float,
@@ -573,6 +675,19 @@ def _dispersion2(
     # infinite. Masking only the output does not help (0 * inf = NaN), so the
     # input is replaced too, as is done for the distances.
     r4r2_atom = torch.where(numbers != 0, r4r2_atom, torch.ones_like(r4r2_atom))
+
+    if nbl is not None:
+        return _sparse_dispersion2(
+            structure,
+            param,
+            c6,
+            r4r2_atom,
+            nbl,
+            damping_function=damping_function,
+            cutoff=cutoff,
+            **kwargs,
+        )
+
     qq = 3 * r4r2_atom.unsqueeze(-1) * r4r2_atom.unsqueeze(-2)
 
     if structure.lattice is None:
@@ -606,6 +721,95 @@ def _dispersion2(
     s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
     s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
     return s6 * e6 + s8 * e8
+
+
+def _sparse_dispersion2(
+    structure: Structure,
+    param: dict[str, Tensor | float],
+    c6: Tensor,
+    r4r2_atom: Tensor,
+    nbl: NeighborList,
+    *,
+    damping_function: DampingFunction,
+    cutoff: float,
+    **kwargs: Any,
+) -> Tensor:
+    """
+    Two-body energy summed over a :class:`~tad_mctc.neighbor.list.NeighborList`
+    instead of all pairs and images, for a molecule, a batch or a cell.
+
+    A batch is one flat system: atom ``i`` of system ``b`` is ``b * nat + i``
+    in the list, and the C6 of a pair is ``c6.reshape(-1, nat)[a, b % nat]``.
+    Each entry of the list stands for the pair in both directions and the
+    walk adds its contribution to both atoms, also for an atom with its own
+    image, so every entry carries the ``-0.5`` of the dense sum.
+
+    The walk is :func:`tad_mctc.ncoord.common.sum_over_neighborlist`, the one
+    behind the sparse coordination number, with its conventions: padded slots
+    point at a phantom atom appended to the positions, and all of it is
+    fixed-shape tensor algebra. The positions are the ones as given, not
+    folded into the cell: the shifts of the list include the fold.
+    """
+    positions = structure.positions
+    dd: DD = {"device": positions.device, "dtype": positions.dtype}
+
+    nat = positions.shape[-2]
+    flat_positions = positions.reshape(-1, 3)
+    total_atoms = flat_positions.shape[0]
+
+    padded_positions = torch.cat(
+        [flat_positions, flat_positions.new_zeros(1, 3)]
+    )
+    shared_lattice, system_lattices = split_lattice(structure.lattice)
+    if system_lattices is not None:
+        system_lattices = torch.cat(
+            [system_lattices, system_lattices.new_zeros(1, 3, 3)]
+        )
+
+    c6_rows = c6.reshape(-1, nat)
+    r4r2_flat = r4r2_atom.reshape(-1)
+
+    s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
+    s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
+
+    def pair_contributions(
+        idx_i: Tensor, idx_j: Tensor, mask: Tensor, shift: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        distance_squared = pair_distance_squared(
+            idx_i,
+            idx_j,
+            shift,
+            padded_positions,
+            shared_lattice=shared_lattice,
+            system_lattices=system_lattices,
+            atoms_per_system=nat,
+        )
+
+        # The list may be wider than `cutoff` (skin, or built at a larger
+        # cutoff for reuse), so its own mask is not enough. Replaced before
+        # the square root, like the dense path: a padded slot is `sqrt(0)`
+        # otherwise, and its derivative is infinite.
+        mask = mask & (distance_squared <= cutoff * cutoff)
+        distances = torch.sqrt(torch.where(mask, distance_squared, 1.0))
+
+        # The tables know nothing about the phantom atom, so padded slots
+        # are clamped to a real index, and masked below.
+        real_i = idx_i.clamp(max=total_atoms - 1)
+        real_j = idx_j.clamp(max=total_atoms - 1)
+        c6_pair = c6_rows[real_i, real_j % nat]
+        qq = 3 * r4r2_flat[real_i] * r4r2_flat[real_j]
+
+        t6 = damping_function(6, distances, qq, param, **kwargs)
+        t8 = damping_function(8, distances, qq, param, **kwargs)
+
+        contribution = -0.5 * c6_pair * (s6 * t6 + s8 * qq * t8)
+        contribution = torch.where(
+            mask, contribution, torch.zeros_like(contribution)
+        )
+        return contribution, contribution
+
+    energy = sum_over_neighborlist(nbl, pair_contributions, flat_positions)
+    return energy.reshape(structure.numbers.shape)
 
 
 def _molecular_distances(
