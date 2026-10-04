@@ -23,6 +23,8 @@ __all__ = [
     "D3_CN_CUTOFF",
     "D3_DISP2_CUTOFF",
     "D3_DISP3_CUTOFF",
+    "D3_DISP2_WIDTH",
+    "D3_DISP3_WIDTH",
     "D3_KCN",
     "A1",
     "A2",
@@ -47,6 +49,12 @@ D3_DISP2_CUTOFF = 60.0
 
 D3_DISP3_CUTOFF = 40.0
 """Three-body interaction cutoff (40.0)."""
+
+D3_DISP2_WIDTH = 0.0
+"""Width of the smooth two-body cutoff (0.0, a hard cutoff)."""
+
+D3_DISP3_WIDTH = 0.0
+"""Width of the smooth three-body cutoff (0.0, a hard cutoff)."""
 
 D3_KCN = 16.0
 """Steepness of counting function (16.0)."""

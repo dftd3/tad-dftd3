@@ -93,6 +93,8 @@ def _build_model(
             cn=cutoff.cn,
             disp2=cutoff.disp2,
             disp3=cutoff.disp3,
+            width2=cutoff.width2,
+            width3=cutoff.width3,
         )
 
     return model

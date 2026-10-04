@@ -44,6 +44,7 @@ from tad_mctc.typing import DD, TableFunction, Tensor
 from torch.utils.checkpoint import checkpoint as _torch_checkpoint
 
 from .. import defaults
+from ..cutoff import smooth_cutoff
 from .._checks import require_molecule, takes_structure
 from ..data.table import element_table, reject_renamed_tables
 
@@ -58,6 +59,7 @@ def dispersion_atm(
     *,
     rvdw_table: Tensor | TableFunction | None = None,
     cutoff: float = defaults.D3_DISP3_CUTOFF,
+    width: float = defaults.D3_DISP3_WIDTH,
     s9: Tensor | float | None = None,
     rs9: Tensor | float | None = None,
     alp: Tensor | float | None = None,
@@ -82,6 +84,10 @@ def dispersion_atm(
     cutoff : float, optional
         Real-space cutoff, in Bohr. Defaults to
         :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
+    width : float, optional
+        Width of the smooth cutoff, in Bohr: a triple is scaled by the switch
+        of each of its three distances, see :mod:`tad_dftd3.cutoff`. Defaults
+        to zero, a hard cutoff.
     s9 : Tensor | float, optional
         Scaling for dispersion coefficients. Defaults to `1.0`.
     rs9 : Tensor | float, optional
@@ -137,6 +143,7 @@ def dispersion_atm(
             c6,
             srvdw,
             cutoff,
+            width,
             s9,
             alp,
             nbl,
@@ -211,6 +218,15 @@ def dispersion_atm(
         torch.tensor(0.0, **dd),
     )
 
+    # smooth cutoff of each of the three distances
+    if width > 0.0:
+        ang = (
+            ang
+            * smooth_cutoff(torch.sqrt(r2ij), cutoff, width)
+            * smooth_cutoff(torch.sqrt(r2ik), cutoff, width)
+            * smooth_cutoff(torch.sqrt(r2jk), cutoff, width)
+        )
+
     energy = ang * fdamp * c9
     return torch.sum(energy, dim=(-2, -1)) / 6.0
 
@@ -231,6 +247,7 @@ def _atm_chunk_energy(
     c6: Tensor,
     srvdw: Tensor,
     cutoff: float,
+    width: float,
     s9: Tensor,
     alp: Tensor,
     chunk: TripleChunk,
@@ -289,6 +306,15 @@ def _atm_chunk_energy(
     s = (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik)
     ang = torch.where(mask, 0.375 * s / r5 + 1.0 / r3, torch.zeros_like(r5))
 
+    # smooth cutoff of each of the three distances
+    if width > 0.0:
+        ang = (
+            ang
+            * smooth_cutoff(torch.sqrt(r2ij), cutoff, width)
+            * smooth_cutoff(torch.sqrt(r2ik), cutoff, width)
+            * smooth_cutoff(torch.sqrt(r2jk), cutoff, width)
+        )
+
     # Each triple is listed once; the dense `/ 6.0` over its six
     # permutations is the equal share of its three atoms.
     return ang * fdamp * c9 / 3.0
@@ -299,6 +325,7 @@ def _sparse_dispersion_atm(
     c6: Tensor,
     srvdw: Tensor,
     cutoff: float,
+    width: float,
     s9: Tensor,
     alp: Tensor,
     nbl: NeighborList,
@@ -327,7 +354,7 @@ def _sparse_dispersion_atm(
         if chunk.idx_i.shape[0] == 0:
             continue
 
-        args = (flat_positions, c6, srvdw, cutoff, s9, alp, chunk, nat)
+        args = (flat_positions, c6, srvdw, cutoff, width, s9, alp, chunk, nat)
         if checkpoint:
             share = _torch_checkpoint(
                 _atm_chunk_energy, *args, use_reentrant=False

@@ -123,6 +123,10 @@ The dispersion energy is assembled as a pipeline, each stage its own module:
 since they decay at different rates (exponential, R⁻⁶, R⁻⁹ respectively) —
 mirrors s-dftd3's `realspace_cutoff` so both implementations discard the same
 pairs/triples at the same distance.
+`width2`/`width3` switch the two- and three-body terms off smoothly over the
+last `width` Bohr (`cutoff.smooth_cutoff`, s-dftd3's quintic); the default of
+zero is the hard cutoff. Tests pin both to s-dftd3 through
+`test/reference.py`.
 
 Because the dispersion energy is fully differentiable, forces are a plain
 `torch.autograd.grad` backward pass and the Hessian is two backward passes

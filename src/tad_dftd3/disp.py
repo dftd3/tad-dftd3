@@ -78,7 +78,7 @@ from tad_mctc.typing import (
 
 from . import defaults, model, ncoord
 from ._checks import takes_structure
-from .cutoff import Cutoff
+from .cutoff import Cutoff, smooth_cutoff
 from .damping import dispersion_atm, rational_damping
 from .data.table import element_table, reject_renamed_tables
 from .model.weights import WeightingFunction
@@ -553,6 +553,7 @@ def _dispersion(
         r4r2_table=r4r2,
         damping_function=damping_function,
         cutoff=cutoff.disp2,
+        width=cutoff.width2,
         **kwargs,
     )
 
@@ -567,6 +568,7 @@ def _dispersion(
             c6,
             rvdw_table=rvdw,
             cutoff=cutoff.disp3,
+            width=cutoff.width3,
             nbl=nbl_disp3,
         )
         energy = energy + e3
@@ -606,6 +608,7 @@ def dispersion2(
     r4r2_table: Tensor | TableFunction | None = None,
     damping_function: DampingFunction = rational_damping,
     cutoff: float = defaults.D3_DISP2_CUTOFF,
+    width: float = defaults.D3_DISP2_WIDTH,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -639,6 +642,10 @@ def dispersion2(
     cutoff : float, optional
         Real-space cutoff of the pairs, in Bohr. Defaults to
         :data:`tad_dftd3.defaults.D3_DISP2_CUTOFF`.
+    width : float, optional
+        Width of the smooth cutoff, in Bohr: the contribution of a pair is
+        scaled down to zero over the last `width` below `cutoff`, see
+        :mod:`tad_dftd3.cutoff`. Defaults to zero, a hard cutoff.
 
     Raises
     ------
@@ -659,6 +666,7 @@ def dispersion2(
         r4r2_table=r4r2_table,
         damping_function=damping_function,
         cutoff=cutoff,
+        width=width,
         **kwargs,
     )
 
@@ -673,6 +681,7 @@ def _dispersion2(
     r4r2_table: Tensor | TableFunction | None,
     damping_function: DampingFunction,
     cutoff: float,
+    width: float,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -700,6 +709,7 @@ def _dispersion2(
             nbl,
             damping_function=damping_function,
             cutoff=cutoff,
+            width=width,
             **kwargs,
         )
 
@@ -716,11 +726,16 @@ def _dispersion2(
         qq_pairs = qq.unsqueeze(-1)
 
     zero = torch.tensor(0.0, **dd)
+    switch = smooth_cutoff(distances, cutoff, width)
     t6 = torch.where(
-        keep, damping_function(6, distances, qq_pairs, param, **kwargs), zero
+        keep,
+        switch * damping_function(6, distances, qq_pairs, param, **kwargs),
+        zero,
     )
     t8 = torch.where(
-        keep, damping_function(8, distances, qq_pairs, param, **kwargs), zero
+        keep,
+        switch * damping_function(8, distances, qq_pairs, param, **kwargs),
+        zero,
     )
 
     if structure.lattice is not None:
@@ -747,6 +762,7 @@ def _sparse_dispersion2(
     *,
     damping_function: DampingFunction,
     cutoff: float,
+    width: float,
     **kwargs: Any,
 ) -> Tensor:
     """
@@ -817,7 +833,8 @@ def _sparse_dispersion2(
         t6 = damping_function(6, distances, qq, param, **kwargs)
         t8 = damping_function(8, distances, qq, param, **kwargs)
 
-        contribution = -0.5 * c6_pair * (s6 * t6 + s8 * qq * t8)
+        switch = smooth_cutoff(distances, cutoff, width)
+        contribution = -0.5 * c6_pair * switch * (s6 * t6 + s8 * qq * t8)
         contribution = torch.where(
             mask, contribution, torch.zeros_like(contribution)
         )
@@ -899,6 +916,7 @@ def dispersion3(
     *,
     rvdw_table: Tensor | TableFunction | None = None,
     cutoff: float = defaults.D3_DISP3_CUTOFF,
+    width: float = defaults.D3_DISP3_WIDTH,
     rs9: Tensor | float | None = None,
     nbl: NeighborList | None = None,
     **kwargs: Any,
@@ -922,6 +940,10 @@ def dispersion3(
     cutoff : float, optional
         Real-space cutoff, in Bohr. Defaults to
         :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
+    width : float, optional
+        Width of the smooth cutoff, in Bohr, see :func:`dispersion2`. A triple
+        is scaled by the switch of each of its three distances. Defaults to
+        zero, a hard cutoff.
     rs9 : Tensor | float, optional
         Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
     nbl : NeighborList | None, optional
@@ -950,6 +972,7 @@ def dispersion3(
         c6,
         rvdw_table=rvdw_table,
         cutoff=cutoff,
+        width=width,
         s9=param.get("s9"),
         rs9=rs9,
         alp=param.get("alp"),

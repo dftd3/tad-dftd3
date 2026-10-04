@@ -227,6 +227,11 @@ numbers stored in this repository. The ``dftd3`` package is therefore a
 required test dependency, not an optional one -- it is pulled in by the
 ``[dev]`` extra, and there is no offline fallback if it is missing.
 
+The coordination number, the weights of the reference systems and the C6
+coefficients have no accessor in those bindings. They are stored in
+``test/references/``, generated once from a from-source build of s-dftd3 by
+``tools/refs/gen_refs.py`` (see ``tools/refs/README.md``).
+
 
 Element parameters
 ------------------
@@ -348,10 +353,66 @@ built for a larger cell silently misses images. If the cell shrinks (cell
 relaxation, NPT), rebuild the table, or call
 ``shifts.check_compatible(structure, cutoff)`` once eagerly beforehand.
 
-The evaluation is dense: every atom is paired with every image of every atom,
-which takes memory proportional to ``n_atoms**2 * n_images``. The three-body
+By default the evaluation is dense: every atom is paired with every image of
+every atom, which takes memory proportional to ``n_atoms**2 * n_images``. For
+larger systems, use neighbour lists (see `Neighbour lists`_). The three-body
 term has no periodic evaluation, so for a cell ``s9`` must be left out or set to
 the Python number ``0.0``.
+
+
+Neighbour lists
+---------------
+
+The coordination number and the two-body energy can be summed over a padded,
+pre-built neighbour list (:class:`tad_mctc.neighbor.list.NeighborList`)
+instead of all pairs. The memory then grows linearly with the number of atoms
+(for a fixed cutoff), for molecules, batches and periodic cells alike, and the
+energy and its derivatives to any order are those of the dense evaluation:
+
+.. code-block:: python
+
+    energy = d3.dftd3(structure, param, sparse=True)
+
+``sparse=True`` builds one list per cutoff eagerly, with a single shared
+search. To reuse the lists, e.g. over the steps of a molecular dynamics, build
+them once with ``build_neighborlists`` and pass them as ``nbl_cn`` and
+``nbl_disp2``. A list built at a larger cutoff, or with a ``skin``, gives the
+same energy:
+
+.. code-block:: python
+
+    from tad_mctc.neighbor.list import build_neighborlists
+
+    cutoff = d3.Cutoff()
+    nbl_cn, nbl_disp2 = build_neighborlists(
+        structure, (cutoff.cn, cutoff.disp2), skin=1.0
+    )
+    energy = d3.dftd3(structure, param, nbl_cn=nbl_cn, nbl_disp2=nbl_disp2)
+
+The three-body term of a molecule is evaluated from a list only if one is
+given as ``nbl_disp3``, built at ``cutoff.disp3``. ``sparse=True`` never builds
+it, because the memory of the sparse three-body term grows steeply with its
+cutoff: it pays off for a ``disp3`` smaller than the default of 40 Bohr, or for
+large systems.
+
+
+Smooth cutoffs
+--------------
+
+The two-body and three-body terms are cut off abruptly at ``Cutoff.disp2`` and
+``Cutoff.disp3``, which makes the energy jump where a pair crosses the cutoff.
+As in s-dftd3, a width switches them off smoothly instead: between
+``disp - width`` and ``disp`` a contribution is scaled by a quintic that goes
+from 1 to 0 with vanishing first and second derivatives. The three-body term
+is scaled by the switch of each of the three distances of a triple.
+
+.. code-block:: python
+
+    cutoff = d3.Cutoff(disp2=60.0, width2=10.0, disp3=40.0, width3=5.0)
+    energy = d3.dftd3(structure, param, cutoff=cutoff)
+
+The widths default to zero, the hard cutoff, as in s-dftd3. There is no width
+for the coordination number.
 
 
 Migrating from 0.7.0
