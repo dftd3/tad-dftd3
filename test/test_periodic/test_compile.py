@@ -40,6 +40,12 @@ requires_compiled_transforms = pytest.mark.skipif(
     reason="`torch.compile` of `torch.func` transforms needs PyTorch 2.5.0.",
 )
 
+requires_compiled_jacfwd = pytest.mark.skipif(
+    __tversion__ < (2, 6, 0),
+    reason="`torch.compile` of `jacfwd` needs PyTorch 2.6.0 (2.5 fails in "
+    "`_jvp_treespec_compare` and on `push_jvp` arguments).",
+)
+
 tol = 1e-10
 
 cutoff = Cutoff(cn=10.0, disp2=12.0)
@@ -132,7 +138,13 @@ def test_fullgraph_autograd() -> None:
 
 @requires_compile
 @requires_compiled_transforms
-@pytest.mark.parametrize("transform", ["vmap(jacrev)", "jacfwd(vmap)"])
+@pytest.mark.parametrize(
+    "transform",
+    [
+        "vmap(jacrev)",
+        pytest.param("jacfwd(vmap)", marks=requires_compiled_jacfwd),
+    ],
+)
 def test_fullgraph_vmap_jac(transform: str) -> None:
     """
     Compiled gradients with respect to positions and lattice, of a padded
@@ -173,6 +185,7 @@ def test_fullgraph_vmap_jac(transform: str) -> None:
 
 @requires_compile
 @requires_compiled_transforms
+@requires_compiled_jacfwd
 def test_fullgraph_hessian() -> None:
     """Compiled forward-over-reverse Hessian with respect to the lattice."""
     structure = cells["periodic_triclinic"].to(DEVICE)
