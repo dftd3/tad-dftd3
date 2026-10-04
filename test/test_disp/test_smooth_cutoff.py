@@ -34,13 +34,13 @@ from tad_mctc.typing import DD, Tensor
 from tad_dftd3 import dftd3
 from tad_dftd3.cutoff import Cutoff, smooth_cutoff
 
+from ..conftest import DEVICE
 from ..reference import (
     reference_energy_per_atom,
     reference_gradient,
     reference_hessian,
     reference_pairwise,
 )
-from ..conftest import DEVICE
 from ..utils import load_structure
 
 DD64: DD = {"device": DEVICE, "dtype": torch.double}

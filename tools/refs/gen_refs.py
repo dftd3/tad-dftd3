@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import torch
 from tad_mctc.data.structures import get_structure
@@ -75,7 +76,7 @@ def run_tool(
     numbers: list[int],
     positions: list[list[float]],
     cn_cutoff: float,
-):
+) -> Any:
     lines = [str(len(numbers)), repr(cn_cutoff)]
     for z, (x, y, zz) in zip(numbers, positions):
         lines.append(f"{z} {x!r} {y!r} {zz!r}")

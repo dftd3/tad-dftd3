@@ -36,6 +36,7 @@ DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
 def test_shifts_and_list_exclusive() -> None:
     structure = cells["urea"]
+    assert structure.lattice is not None and structure.periodic is not None
     p = param_on(DD64)
     shifts = build_periodic_shifts(
         structure.lattice, structure.periodic, cutoff.disp2

@@ -25,7 +25,7 @@ from tad_dftd3 import model, reference
 
 from ..conftest import DEVICE
 from ..references import reference_cn, reference_weights
-from ..utils import load_sample, ref_tol
+from ..utils import approx_ref, load_sample
 
 sample_list: list[tuple[str, str]] = [
     ("mb16_43", "SiH4"),
@@ -51,7 +51,7 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
-    assert pytest.approx(refgw.cpu(), **ref_tol(dtype)) == weights.cpu()
+    assert approx_ref(refgw.cpu(), dtype) == weights.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -79,4 +79,4 @@ def test_batch(
     weights = model.weight_references(numbers, cn, ref, model.gaussian_weight)
 
     assert weights.dtype == dtype
-    assert pytest.approx(refgw.cpu(), **ref_tol(dtype)) == weights.cpu()
+    assert approx_ref(refgw.cpu(), dtype) == weights.cpu()

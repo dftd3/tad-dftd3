@@ -20,8 +20,8 @@ import pytest
 import torch
 from tad_mctc import Structure
 from tad_mctc.batch import pack
-from tad_mctc.io.structure import pack_structures
 from tad_mctc.data import radii
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import Cutoff, damping, data, dftd3, model, reference
@@ -30,16 +30,18 @@ from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
-from ..utils import load_structure, ref_tol
+from ..utils import approx_ref, load_structure
 
 
-def _tol(dtype: torch.dtype) -> dict[str, float]:
+def _approx(expected: torch.Tensor, dtype: torch.dtype) -> object:
     """
     The tolerance against s-dftd3: tight in float64; in float32, the default
     of `pytest.approx` (relative 1e-6), which is already close to the
     precision of the dtype (measured: 3.8e-7).
     """
-    return ref_tol(dtype) if dtype == torch.float64 else {}
+    if dtype == torch.float64:
+        return approx_ref(expected, dtype)
+    return pytest.approx(expected)
 
 
 def test_fail() -> None:
@@ -187,7 +189,7 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()
+    assert _approx(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -218,7 +220,7 @@ def test_batch(dtype: torch.dtype) -> None:
     energy = dftd3(structure, param)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()
+    assert _approx(ref.cpu(), dtype) == energy.cpu()
 
 
 def test_default_tables_cached() -> None:

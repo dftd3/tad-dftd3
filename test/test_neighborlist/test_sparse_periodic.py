@@ -100,6 +100,7 @@ def test_mixed_dense_and_sparse() -> None:
 def test_gradient_matches_dense() -> None:
     """Gradients with respect to the positions and the lattice."""
     structure = cells["urea"]
+    assert structure.lattice is not None
     p = param_on(DD64)
 
     def grads(sparse: bool) -> tuple[torch.Tensor, ...]:

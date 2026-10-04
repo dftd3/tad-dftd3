@@ -28,19 +28,29 @@ damping.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+
 import torch
 from tad_mctc.typing import DD, Tensor
 
 from .. import defaults
 
-__all__ = ["rational_damping"]
+__all__ = ["DampingFunction", "rational_damping"]
+
+DampingFunction = Callable[
+    [int, Tensor, Tensor, Mapping[str, Tensor | float]], Tensor
+]
+"""
+Damping function ``f(order, distances, qq, param)``. Unlike the alias of
+``tad_mctc.typing``, the damping parameters may also be Python numbers.
+"""
 
 
 def rational_damping(
     order: int,
     distances: Tensor,
     qq: Tensor,
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
 ) -> Tensor:
     """
     Rational damped dispersion interaction between pairs.
@@ -54,7 +64,7 @@ def rational_damping(
         Pairwise distances between atoms in the system.
     qq : Tensor
         Quotient of C8 and C6 dispersion coefficients.
-    param : dict[str, Tensor]
+    param : Mapping[str, Tensor | float]
         DFT-D3 damping parameters.
 
     Returns

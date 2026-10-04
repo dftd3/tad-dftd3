@@ -29,7 +29,7 @@ from tad_dftd3 import Cutoff, damping, data, disp
 from ..conftest import DEVICE
 from ..reference import reference_pairwise
 from ..references import reference_c6
-from ..utils import load_structure, ref_tol
+from ..utils import approx_ref, load_structure
 
 sample_list: list[tuple[str, str]] = [
     ("other", "AmF3"),
@@ -249,7 +249,7 @@ def test_disp2_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
+    assert approx_ref(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -278,7 +278,7 @@ def test_disp2_batch(
     energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
+    assert approx_ref(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -304,7 +304,7 @@ def test_atm_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
+    assert approx_ref(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -342,7 +342,7 @@ def test_atm_batch(
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
+    assert approx_ref(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
@@ -352,11 +352,12 @@ def test_full_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
 
     structure = load_structure(*source, dd)
     c6 = reference_c6(*source, dd)
-    ref = sum(_reference_terms(source, dd))
+    two_body, three_body = _reference_terms(source, dd)
+    ref = two_body + three_body
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
     energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == energy.cpu()
+    assert approx_ref(ref.cpu(), dtype) == energy.cpu()

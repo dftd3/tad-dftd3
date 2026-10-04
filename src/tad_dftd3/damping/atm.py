@@ -44,8 +44,8 @@ from tad_mctc.typing import DD, TableFunction, Tensor
 from torch.utils.checkpoint import checkpoint as _torch_checkpoint
 
 from .. import defaults
-from ..cutoff import smooth_cutoff
 from .._checks import require_molecule, takes_structure
+from ..cutoff import smooth_cutoff
 from ..data.table import element_table, reject_renamed_tables
 
 __all__ = ["dispersion_atm"]

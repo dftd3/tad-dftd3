@@ -47,6 +47,7 @@ axes.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import dftd3.interface as dftd3_interface
@@ -107,7 +108,7 @@ def _dd(structure: Structure) -> DD:
 
 
 def _build_damping_param(
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
 ) -> dftd3_interface.RationalDampingParam:
     """Translate a tad-dftd3 ``param`` dict into a ``RationalDampingParam``,
     shared by every function in this module.
@@ -134,7 +135,7 @@ def _build_damping_param(
 
 def reference_energy_per_atom(
     structure: Structure,
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
     *,
     cutoff: Cutoff | None = None,
 ) -> Tensor:
@@ -179,7 +180,7 @@ def reference_energy_per_atom(
 
 def reference_pairwise(
     structure: Structure,
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
     *,
     cutoff: Cutoff | None = None,
 ) -> tuple[Tensor, Tensor]:
@@ -234,7 +235,7 @@ def reference_pairwise(
 
 def reference_gradient(
     structure: Structure,
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
     *,
     cutoff: Cutoff | None = None,
 ) -> tuple[Tensor, Tensor]:
@@ -277,7 +278,7 @@ def reference_gradient(
 
 def reference_hessian(
     structure: Structure,
-    param: dict[str, Tensor],
+    param: Mapping[str, Tensor | float],
     *,
     cutoff: Cutoff | None = None,
 ) -> Tensor:

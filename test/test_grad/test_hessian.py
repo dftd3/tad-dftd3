@@ -29,7 +29,7 @@ from tad_dftd3.disp import dftd3
 
 from ..conftest import DEVICE
 from ..reference import reference_hessian
-from ..utils import load_sample, load_structure, ref_tol
+from ..utils import approx_ref, load_sample, load_structure
 
 sample_list: list[tuple[str, str]] = [
     ("mb16_43", "LiH"),
@@ -84,7 +84,7 @@ def test_single(dtype: torch.dtype, source: tuple[str, str], mode: str) -> None:
     hess = _hessian(mode, _energy)(numbers, positions)
     assert isinstance(hess, Tensor)
 
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == hess.detach().cpu()
+    assert approx_ref(ref.cpu(), dtype) == hess.detach().cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.double])
@@ -127,4 +127,4 @@ def test_batch(
 
     hess = vmap(_hessian("rev", _energy), in_dims=(0, 0))(numbers, positions)
     assert isinstance(hess, Tensor)
-    assert pytest.approx(ref.cpu(), **ref_tol(dtype)) == hess.detach().cpu()
+    assert approx_ref(ref.cpu(), dtype) == hess.detach().cpu()

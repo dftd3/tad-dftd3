@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
+r"""
 Real-space cutoffs
 ==================
 
@@ -112,7 +112,7 @@ class Cutoff:
 
 
 def smooth_cutoff(distance: Tensor, cutoff: float, width: float) -> Tensor:
-    """
+    r"""
     Smooth switch-off of a contribution at the real-space `cutoff`, as in
     s-dftd3's ``smooth_cutoff``: 1 up to ``cutoff - width``, 0 from `cutoff`,
     and the quintic :math:`x^3 (10 - 15 x + 6 x^2)` of

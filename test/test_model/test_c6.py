@@ -29,7 +29,7 @@ from tad_dftd3 import model, ncoord, reference
 
 from ..conftest import DEVICE, FAST_MODE, compile_test, requires_compile
 from ..references import reference_c6, reference_weights
-from ..utils import load_sample, ref_tol
+from ..utils import approx_ref, load_sample
 
 sample_list: list[tuple[str, str]] = [
     ("mb16_43", "SiH4"),
@@ -57,8 +57,8 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     c6 = model.atomic_c6(numbers, weights, ref)
 
     assert c6.dtype == dtype
-    assert pytest.approx(refc6.cpu(), **ref_tol(dtype)) == c6.cpu()
-    assert pytest.approx(c6.cpu(), **ref_tol(dtype)) == c6.mT.cpu()
+    assert approx_ref(refc6.cpu(), dtype) == c6.cpu()
+    assert approx_ref(c6.cpu(), dtype) == c6.mT.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -87,7 +87,7 @@ def test_batch(
     c6 = model.atomic_c6(numbers, weights, ref)
 
     assert c6.dtype == dtype
-    assert pytest.approx(refc6.cpu(), **ref_tol(dtype)) == c6.cpu()
+    assert approx_ref(refc6.cpu(), dtype) == c6.cpu()
 
 
 def test_vmap() -> None:
@@ -111,7 +111,7 @@ def test_vmap() -> None:
     for i, src in enumerate(sources):
         refc6 = reference_c6(*src, dd)
         nat = refc6.shape[-1]
-        assert pytest.approx(refc6.cpu(), **ref_tol(torch.double)) == (
+        assert approx_ref(refc6.cpu(), torch.double) == (
             batched[i, :nat, :nat].cpu()
         )
 
@@ -143,7 +143,7 @@ def test_compile() -> None:
     compiled = compile_test(model.atomic_c6, fullgraph=True)
     c6 = compiled(numbers, weights, ref)
 
-    assert pytest.approx(refc6.cpu(), **ref_tol(torch.double)) == c6.cpu()
+    assert approx_ref(refc6.cpu(), torch.double) == c6.cpu()
 
 
 ###############################################################################

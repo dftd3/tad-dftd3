@@ -20,8 +20,8 @@ weird handling of exceptional values in the calculation of the weights.
 import pytest
 import torch
 from tad_mctc.batch import pack
-from tad_mctc.io.structure import pack_structures
 from tad_mctc.data import radii
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.typing import DD
 
 from tad_dftd3 import Cutoff, damping, data, dftd3, model, reference
@@ -29,12 +29,14 @@ from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
-from ..utils import load_structure, ref_tol
+from ..utils import approx_ref, load_structure
 
 
-def _tol(dtype: torch.dtype) -> dict[str, float]:
+def _approx(expected: torch.Tensor, dtype: torch.dtype) -> object:
     """Tight in float64; the default of `pytest.approx` in float32."""
-    return ref_tol(dtype) if dtype == torch.float64 else {}
+    if dtype == torch.float64:
+        return approx_ref(expected, dtype)
+    return pytest.approx(expected)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -79,7 +81,7 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     )
 
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()
+    assert _approx(ref.cpu(), dtype) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -110,4 +112,4 @@ def test_batch(dtype: torch.dtype) -> None:
 
     energy = dftd3(structure, param)
     assert energy.dtype == dtype
-    assert pytest.approx(ref.cpu(), **_tol(dtype)) == energy.cpu()
+    assert _approx(ref.cpu(), dtype) == energy.cpu()

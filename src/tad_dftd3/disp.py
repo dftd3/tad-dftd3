@@ -57,6 +57,7 @@ Example
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import torch
@@ -71,7 +72,6 @@ from tad_mctc.neighbor.list import NeighborList, build_neighborlists
 from tad_mctc.typing import (
     DD,
     CountingFunction,
-    DampingFunction,
     TableFunction,
     Tensor,
 )
@@ -79,7 +79,7 @@ from tad_mctc.typing import (
 from . import defaults, model, ncoord
 from ._checks import takes_structure
 from .cutoff import Cutoff, smooth_cutoff
-from .damping import dispersion_atm, rational_damping
+from .damping import DampingFunction, dispersion_atm, rational_damping
 from .data.table import element_table, reject_renamed_tables
 from .model.weights import WeightingFunction
 from .reference import Reference, _default_reference
@@ -195,7 +195,7 @@ def _check_pairs(
 
 
 def _check_three_body(
-    param: dict[str, Tensor | float], structure: Structure
+    param: Mapping[str, Tensor | float], structure: Structure
 ) -> None:
     """
     Reject a three-body term for a cell, which has no periodic evaluation.
@@ -219,7 +219,7 @@ def _check_three_body(
 @takes_structure
 def dftd3(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     *,
     shifts: PeriodicShifts | None = None,
     nbl_cn: NeighborList | None = None,
@@ -304,7 +304,7 @@ def dftd3(
         :func:`tad_mctc.io.structure.pack_structures`). A periodic cell
         also has a ``lattice`` (vectors as rows, in Bohr, ``(3, 3)`` or
         ``(nbatch, 3, 3)``) and its ``periodic`` axes.
-    param : dict[str, Tensor | float]
+    param : Mapping[str, Tensor | float]
         DFT-D3 damping parameters. The three-body term is skipped if `s9` is
         missing or zero; see :func:`dispersion` for when that is decided.
     shifts : PeriodicShifts | None, optional
@@ -429,7 +429,7 @@ def dftd3(
 @takes_structure
 def dispersion(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None = None,
@@ -455,7 +455,7 @@ def dispersion(
     ----------
     structure : Structure
         The system, a molecule or a periodic cell, see :func:`dftd3`.
-    param : dict[str, Tensor | float]
+    param : Mapping[str, Tensor | float]
         DFT-D3 damping parameters. `s9` may be a Python number.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
@@ -520,7 +520,7 @@ def dispersion(
 
 def _dispersion(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None,
@@ -600,7 +600,7 @@ def _has_three_body(s9: Tensor | float | int) -> bool:
 @takes_structure
 def dispersion2(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None = None,
@@ -623,7 +623,7 @@ def dispersion2(
     ----------
     structure : Structure
         The system, a molecule or a periodic cell, see :func:`dftd3`.
-    param : dict[str, Tensor | float]
+    param : Mapping[str, Tensor | float]
         DFT-D3 damping parameters.
     c6 : Tensor
         Atomic C6 dispersion coefficients.
@@ -673,7 +673,7 @@ def dispersion2(
 
 def _dispersion2(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     *,
     shifts: PeriodicShifts | None,
@@ -755,7 +755,7 @@ def _dispersion2(
 
 def _sparse_dispersion2(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     r4r2_atom: Tensor,
     nbl: NeighborList,
@@ -911,7 +911,7 @@ def _periodic_distances(
 @takes_structure
 def dispersion3(
     structure: Structure,
-    param: dict[str, Tensor | float],
+    param: Mapping[str, Tensor | float],
     c6: Tensor,
     *,
     rvdw_table: Tensor | TableFunction | None = None,
@@ -929,7 +929,7 @@ def dispersion3(
     ----------
     structure : Structure
         The system, a molecule (see :func:`dftd3`).
-    param : dict[str, Tensor | float]
+    param : Mapping[str, Tensor | float]
         Dictionary of dispersion parameters. Default values are used for
         missing keys.
     c6 : Tensor

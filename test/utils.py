@@ -18,12 +18,13 @@ Utility functions for testing.
 
 from __future__ import annotations
 
+import pytest
 import torch
 from tad_mctc.data.structures import get_structure
 from tad_mctc.io.structure import Structure
 from tad_mctc.typing import DD, Tensor
 
-__all__ = ["load_sample", "load_structure", "ref_tol"]
+__all__ = ["approx_ref", "load_sample", "load_structure", "ref_tol"]
 
 
 def load_structure(collection: str, record: str, dd: DD) -> Structure:
@@ -57,3 +58,9 @@ def ref_tol(dtype: torch.dtype) -> dict[str, float]:
     limited by the precision of the dtype (relative 2e-7 to 8e-6 measured).
     """
     return _REF_TOL[dtype]
+
+
+def approx_ref(expected: Tensor, dtype: torch.dtype) -> object:
+    """`pytest.approx` of `expected` at the :func:`ref_tol` of `dtype`."""
+    tolerance = ref_tol(dtype)
+    return pytest.approx(expected, abs=tolerance["abs"], rel=tolerance["rel"])

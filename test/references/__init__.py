@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import torch
 from tad_mctc.typing import DD, Tensor
@@ -44,7 +45,7 @@ _DATA_DIR = Path(__file__).parent
 
 
 @lru_cache
-def _data(collection: str, record: str) -> dict:
+def _data(collection: str, record: str) -> dict[str, Any]:
     path = _DATA_DIR / collection / f"{record}.json"
     return json.loads(path.read_text())
 
