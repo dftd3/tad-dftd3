@@ -19,6 +19,7 @@ weird handling of exceptional values in the calculation of the weights.
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.typing import DD
@@ -56,8 +57,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     }
 
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(numbers=numbers, positions=positions),
         param,
         ref=reference.Reference(**dd),
         rcov_table=rcov,
@@ -113,6 +113,6 @@ def test_batch(dtype: torch.dtype) -> None:
         "a2": torch.tensor(5.0000, **dd),
     }
 
-    energy = dftd3(numbers, positions, param)
+    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()

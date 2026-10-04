@@ -20,10 +20,11 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.neighbor.images import build_periodic_shifts
 from tad_mctc.typing import Tensor
 
-from tad_dftd3 import dftd3, disp
+from tad_dftd3 import damping, dftd3, disp
 from tad_dftd3.cutoff import Cutoff
 
 from ..cells import cells
@@ -42,26 +43,53 @@ numbers, positions, lattice = (t.to(DEVICE) for t in cells["diamond"])
 periodic = torch.ones(3, dtype=torch.bool, device=DEVICE)
 
 
-def test_periodic_without_lattice() -> None:
-    with pytest.raises(ValueError, match="need a 'lattice'"):
-        dftd3(numbers, positions, param, periodic=periodic)
-
-
 def test_shifts_without_lattice() -> None:
     shifts = build_periodic_shifts(lattice, periodic, cutoff.disp2)
 
-    with pytest.raises(ValueError, match="need a 'lattice'"):
-        dftd3(numbers, positions, param, shifts=shifts)
+    with pytest.raises(ValueError, match="no 'lattice'"):
+        dftd3(
+            Structure(numbers=numbers, positions=positions),
+            param,
+            shifts=shifts,
+        )
 
-    with pytest.raises(ValueError, match="need a 'lattice'"):
+    with pytest.raises(ValueError, match="no 'lattice'"):
         disp.dispersion2(
-            numbers, positions, param, torch.ones(8, 8), shifts=shifts
+            Structure(numbers=numbers, positions=positions),
+            param,
+            torch.ones(8, 8),
+            shifts=shifts,
         )
 
 
-def test_wrong_lattice_shape() -> None:
-    with pytest.raises((ValueError, RuntimeError)):
-        dftd3(numbers, positions, param, lattice=lattice[:2])
+def test_vmap_shared_lattice() -> None:
+    """
+    `vmap` over a batched `Structure` splits every field, so one `(3, 3)`
+    lattice shared by the batch would reach each system as one row of it.
+    """
+    batch = Structure(
+        numbers=numbers.expand(3, -1),
+        positions=positions.expand(3, -1, -1),
+        lattice=lattice,
+    )
+    shifts = build_periodic_shifts(lattice, periodic, cutoff.disp2)
+
+    def energy(structure: Structure) -> Tensor:
+        return dftd3(structure, param, shifts=shifts, cutoff=cutoff)
+
+    with pytest.raises(ValueError, match="own lattice and mask"):
+        torch.func.vmap(energy)(batch)
+
+    # also if only the lattice is stacked, but not the mask
+    with pytest.raises(ValueError, match="own lattice and mask"):
+        torch.func.vmap(energy)(batch.replace(lattice=lattice.expand(3, 3, 3)))
+
+    # stacked per system, it works, and agrees with the batched call
+    stacked = batch.replace(
+        lattice=lattice.expand(3, 3, 3), periodic=periodic.expand(3, 3)
+    )
+    out = torch.func.vmap(energy)(stacked)
+    assert torch.allclose(out, energy(batch), atol=1e-12, rtol=0)
 
 
 def test_shifts_too_short() -> None:
@@ -70,10 +98,8 @@ def test_shifts_too_short() -> None:
 
     with pytest.raises(ValueError, match="cutoff"):
         dftd3(
-            numbers,
-            positions,
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
             param,
-            lattice=lattice,
             shifts=shifts,
             cutoff=cutoff,
         )
@@ -85,10 +111,8 @@ def test_shifts_for_a_larger_cell() -> None:
 
     with pytest.raises(ValueError, match="image rings"):
         dftd3(
-            numbers,
-            positions,
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
             param,
-            lattice=lattice,
             shifts=shifts,
             cutoff=Cutoff(cn=cutoff.disp2, disp2=cutoff.disp2),
         )
@@ -100,10 +124,8 @@ def test_shifts_missing_an_axis() -> None:
 
     with pytest.raises(ValueError, match="periodic axis"):
         dftd3(
-            numbers,
-            positions,
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
             param,
-            lattice=lattice,
             shifts=shifts,
             cutoff=cutoff,
         )
@@ -115,11 +137,29 @@ def test_three_body(s9: float | Tensor) -> None:
     par = {**param, "s9": s9}
 
     with pytest.raises(ValueError, match="three-body"):
-        dftd3(numbers, positions, par, lattice=lattice)
+        dftd3(
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
+            par,
+        )
 
     with pytest.raises(ValueError, match="three-body"):
         disp.dispersion(
-            numbers, positions, par, torch.ones(8, 8), lattice=lattice
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
+            par,
+            torch.ones(8, 8),
+        )
+
+    with pytest.raises(ValueError, match="three-body"):
+        disp.dispersion3(
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
+            par,
+            torch.ones(8, 8),
+        )
+
+    with pytest.raises(ValueError, match="three-body"):
+        damping.dispersion_atm(
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
+            torch.ones(8, 8),
         )
 
 
@@ -131,4 +171,7 @@ def test_three_body_zero_tensor_with_grad() -> None:
     s9 = torch.tensor(0.0, dtype=torch.double, requires_grad=True)
 
     with pytest.raises(ValueError, match="three-body"):
-        dftd3(numbers, positions, {**param, "s9": s9}, lattice=lattice)
+        dftd3(
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
+            {**param, "s9": s9},
+        )

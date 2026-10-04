@@ -73,7 +73,10 @@ def test_crystal_default_cutoffs(name: str) -> None:
     numbers, positions, lattice = (t.to(DEVICE) for t in cells[name])
 
     ref = reference_energy_per_atom(numbers, positions, param, lattice=lattice)
-    energy = dftd3(numbers, positions, _param(dd), lattice=lattice)
+    energy = dftd3(
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+    )
 
     assert energy.shape == numbers.shape
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()
@@ -89,13 +92,18 @@ def test_crystal_changed_cutoff(name: str) -> None:
         numbers, positions, param, cutoff=cutoff, lattice=lattice
     )
     energy = dftd3(
-        numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
     )
 
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()
 
     # only meaningful if the cutoff changes the result
-    default = dftd3(numbers, positions, _param(dd), lattice=lattice)
+    default = dftd3(
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+    )
     assert not torch.allclose(energy, default, atol=1e-8, rtol=0)
 
 
@@ -108,10 +116,12 @@ def test_crystal_float32(name: str) -> None:
         numbers, positions, param, cutoff=cutoff, lattice=lattice
     )
     energy = dftd3(
-        numbers,
-        positions.to(**dd),
+        Structure(
+            numbers=numbers,
+            positions=positions.to(**dd),
+            lattice=lattice.to(**dd),
+        ),
         _param(dd),
-        lattice=lattice.to(**dd),
         cutoff=cutoff,
     )
 
@@ -131,7 +141,9 @@ def test_self_images(seed: int) -> None:
         numbers, positions, param, cutoff=cutoff, lattice=lattice
     )
     energy = dftd3(
-        numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
     )
 
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()
@@ -153,11 +165,9 @@ def test_two_body_pairwise(name: str) -> None:
         numbers, positions, param, cutoff=cutoff, lattice=lattice
     )
     energy = disp.dispersion2(
-        numbers,
-        positions,
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
         _param(dd),
         c6,
-        lattice=lattice,
         cutoff=cutoff.disp2,
     )
 
@@ -194,10 +204,14 @@ def test_unwrapped_positions(name: str) -> None:
         numbers, unwrapped, param, cutoff=cutoff, lattice=lattice
     )
     energy = dftd3(
-        numbers, unwrapped, _param(dd), lattice=lattice, cutoff=cutoff
+        Structure(numbers=numbers, positions=unwrapped, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
     )
     wrapped = dftd3(
-        numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
     )
 
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()
@@ -238,11 +252,10 @@ def test_low_dimensional(periodic: list[bool], seed: int) -> None:
         periodic=mask,
     )
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers, positions=positions, lattice=lattice, periodic=mask
+        ),
         _param(dd),
-        lattice=lattice,
-        periodic=mask,
         cutoff=cutoff,
     )
 
@@ -268,11 +281,10 @@ def test_short_vector_along_open_axis() -> None:
         periodic=mask,
     )
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers, positions=positions, lattice=lattice, periodic=mask
+        ),
         _param(dd),
-        lattice=lattice,
-        periodic=mask,
         cutoff=cutoff,
     )
 
@@ -285,14 +297,17 @@ def test_no_periodic_axis_is_a_molecule() -> None:
     mask = torch.tensor([False, False, False], device=DEVICE)
 
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers, positions=positions, lattice=lattice, periodic=mask
+        ),
         _param(dd),
-        lattice=lattice,
-        periodic=mask,
         cutoff=cutoff,
     )
-    molecule = dftd3(numbers, positions, _param(dd), cutoff=cutoff)
+    molecule = dftd3(
+        Structure(numbers=numbers, positions=positions),
+        _param(dd),
+        cutoff=cutoff,
+    )
     ref = reference_energy_per_atom(numbers, positions, param, cutoff=cutoff)
 
     assert pytest.approx(molecule.cpu(), abs=tol, rel=0) == energy.cpu()
@@ -317,11 +332,13 @@ def test_batch() -> None:
     periodic = torch.tensor([s[3] for s in systems], device=DEVICE)
 
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers,
+            positions=positions,
+            lattice=lattice,
+            periodic=periodic,
+        ),
         _param(dd),
-        lattice=lattice,
-        periodic=periodic,
         cutoff=cutoff,
     )
 
@@ -350,7 +367,9 @@ def test_batch_shared_lattice() -> None:
     positions = torch.stack([positions0, positions1])
 
     energy = dftd3(
-        numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
     )
 
     for i in range(2):
@@ -369,15 +388,17 @@ def test_given_shifts() -> None:
     numbers, positions, lattice = (t.to(DEVICE) for t in cells["urea"])
     periodic = torch.tensor(ALL_AXES, device=DEVICE)
 
-    ref = dftd3(numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff)
+    ref = dftd3(
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
+    )
 
     for table_cutoff in (cutoff.disp2, 2 * cutoff.disp2):
         shifts = build_periodic_shifts(lattice, periodic, table_cutoff)
         energy = dftd3(
-            numbers,
-            positions,
+            Structure(numbers=numbers, positions=positions, lattice=lattice),
             _param(dd),
-            lattice=lattice,
             shifts=shifts,
             cutoff=cutoff,
         )
@@ -389,12 +410,14 @@ def test_three_body_float_zero() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
     numbers, positions, lattice = (t.to(DEVICE) for t in cells["diamond"])
 
-    ref = dftd3(numbers, positions, _param(dd), lattice=lattice, cutoff=cutoff)
+    ref = dftd3(
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
+        _param(dd),
+        cutoff=cutoff,
+    )
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
         {**_param(dd), "s9": 0.0},
-        lattice=lattice,
         cutoff=cutoff,
     )
 
@@ -402,10 +425,8 @@ def test_three_body_float_zero() -> None:
 
     # a zero tensor outside of any transform is skipped as well
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(numbers=numbers, positions=positions, lattice=lattice),
         {**_param(dd), "s9": torch.tensor(0.0, **dd)},
-        lattice=lattice,
         cutoff=cutoff,
     )
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()

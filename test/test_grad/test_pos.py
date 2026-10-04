@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Callable, Tensor
@@ -57,7 +58,7 @@ def gradchecker(dtype: torch.dtype, name: str) -> tuple[
     positions.requires_grad_(True)
 
     def func(pos: Tensor) -> Tensor:
-        return dftd3(numbers, pos, param)
+        return dftd3(Structure(numbers=numbers, positions=pos), param)
 
     return func, positions
 
@@ -117,7 +118,7 @@ def gradchecker_batch(dtype: torch.dtype, name1: str, name2: str) -> tuple[
     positions.requires_grad_(True)
 
     def func(pos: Tensor) -> Tensor:
-        return dftd3(numbers, pos, param)
+        return dftd3(Structure(numbers=numbers, positions=pos), param)
 
     return func, positions
 
@@ -176,7 +177,7 @@ def test_autograd(dtype: torch.dtype, name: str) -> None:
     pos = positions.clone().requires_grad_(True)
 
     # automatic gradient
-    energy = torch.sum(dftd3(numbers, pos, param))
+    energy = torch.sum(dftd3(Structure(numbers=numbers, positions=pos), param))
     (grad,) = torch.autograd.grad(energy, pos)
 
     assert pytest.approx(ref.cpu(), abs=tol) == grad.cpu()
@@ -208,7 +209,9 @@ def test_backward(dtype: torch.dtype, name: str) -> None:
     positions.requires_grad_(True)
 
     # automatic gradient
-    energy = torch.sum(dftd3(numbers, positions, param))
+    energy = torch.sum(
+        dftd3(Structure(numbers=numbers, positions=positions), param)
+    )
     energy.backward()
 
     assert positions.grad is not None
@@ -247,7 +250,7 @@ def test_functorch(dtype: torch.dtype, name: str) -> None:
     pos = positions.clone().requires_grad_(True)
 
     def dftd3_func(p: Tensor) -> Tensor:
-        return dftd3(numbers, p, param).sum()
+        return dftd3(Structure(numbers=numbers, positions=p), param).sum()
 
     grad = jacrev(dftd3_func)(pos)
     assert isinstance(grad, Tensor)

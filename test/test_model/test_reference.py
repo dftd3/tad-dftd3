@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.convert import str_to_device
 from tad_mctc.typing import DD, MockTensor, Tensor
 
@@ -172,9 +173,11 @@ def test_dftd3_does_not_copy_reference() -> None:
     with patch(
         "tad_dftd3.reference._load_c6", side_effect=AssertionError("copied")
     ):
-        energy = dftd3(numbers, positions, param)
+        energy = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     ref = dftd3(
-        numbers, positions, param, ref=reference.Reference(dtype=torch.float64)
+        Structure(numbers=numbers, positions=positions),
+        param,
+        ref=reference.Reference(dtype=torch.float64),
     )
     assert pytest.approx(ref) == energy

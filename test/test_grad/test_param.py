@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.autograd import dgradcheck, dgradgradcheck, vmap_matches_loop
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Callable, Tensor
@@ -55,7 +56,9 @@ def gradchecker(dtype: torch.dtype, name: str) -> tuple[
 
     def func(*inputs: Tensor) -> Tensor:
         input_param = {label[i]: input for i, input in enumerate(inputs)}
-        return dftd3(numbers, positions, input_param)
+        return dftd3(
+            Structure(numbers=numbers, positions=positions), input_param
+        )
 
     return func, param
 
@@ -115,7 +118,9 @@ def gradchecker_batch(dtype: torch.dtype, name1: str, name2: str) -> tuple[
 
     def func(*inputs: Tensor) -> Tensor:
         input_param = {label[i]: input for i, input in enumerate(inputs)}
-        return dftd3(numbers, positions, input_param)
+        return dftd3(
+            Structure(numbers=numbers, positions=positions), input_param
+        )
 
     return func, param
 
@@ -173,11 +178,19 @@ def test_s9_zero_autograd(name: str) -> None:
     numbers, positions, param = _s9_setup(name)
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    e0 = dftd3(numbers, positions, {**param, "s9": torch.tensor(0.0, **dd)})
-    e1 = dftd3(numbers, positions, {**param, "s9": torch.tensor(1.0, **dd)})
+    e0 = dftd3(
+        Structure(numbers=numbers, positions=positions),
+        {**param, "s9": torch.tensor(0.0, **dd)},
+    )
+    e1 = dftd3(
+        Structure(numbers=numbers, positions=positions),
+        {**param, "s9": torch.tensor(1.0, **dd)},
+    )
 
     s9 = torch.tensor(0.0, requires_grad=True, **dd)
-    energy = dftd3(numbers, positions, {**param, "s9": s9}).sum()
+    energy = dftd3(
+        Structure(numbers=numbers, positions=positions), {**param, "s9": s9}
+    ).sum()
     (grad,) = torch.autograd.grad(energy, s9)
 
     assert pytest.approx(e0.sum().item(), abs=tol) == energy.item()
@@ -193,7 +206,9 @@ def test_s9_zero_functorch(name: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
     def energy(s9: Tensor) -> Tensor:
-        return dftd3(numbers, positions, {**param, "s9": s9}).sum()
+        return dftd3(
+            Structure(numbers=numbers, positions=positions), {**param, "s9": s9}
+        ).sum()
 
     s9 = torch.tensor([0.0, 0.5, 1.0], **dd)
     assert vmap_matches_loop(energy, s9, atol=tol)

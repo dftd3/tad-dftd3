@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.io.read import read
 from tad_mctc.typing import DD, Tensor
 
@@ -144,7 +145,7 @@ def test_chain_matches_reference(dtype: torch.dtype, name: str) -> None:
 
     # No cutoff is passed to the reference, so it uses s-dftd3's own.
     ref = reference_energy_per_atom(numbers, positions, par)
-    energy = dftd3(numbers, positions, par)
+    energy = dftd3(Structure(numbers=numbers, positions=positions), par)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu(), abs=tol, rel=tol) == energy.cpu()
@@ -169,13 +170,15 @@ def test_changed_cutoff_matches_reference(
     # test_chain_matches_reference), well below the shift this test
     # relies on (2.8e-10, checked below).
     ref = reference_energy_per_atom(numbers, positions, par, cutoff=changed)
-    energy = dftd3(numbers, positions, par, cutoff=changed)
+    energy = dftd3(
+        Structure(numbers=numbers, positions=positions), par, cutoff=changed
+    )
     assert pytest.approx(ref.cpu(), abs=5e-11) == energy.cpu()
 
     # Only meaningful if this geometry notices the changed cutoff. The
     # threshold sits above the 5e-11 tolerance above and below the smallest
     # shift measured here (2.8e-10).
-    energy_default = dftd3(numbers, positions, par)
+    energy_default = dftd3(Structure(numbers=numbers, positions=positions), par)
     shift = float(torch.sum(energy - energy_default).abs())
     assert shift > 1e-11
 
@@ -188,7 +191,11 @@ def test_dftd3_rejects_a_single_cutoff() -> None:
     par = {k: v.to(**dd) for k, v in param.items()}
 
     with pytest.raises(TypeError):
-        dftd3(numbers, positions, par, cutoff=torch.tensor(50.0, **dd))
+        dftd3(
+            Structure(numbers=numbers, positions=positions),
+            par,
+            cutoff=torch.tensor(50.0, **dd),
+        )
 
 
 @pytest.mark.large
@@ -213,7 +220,7 @@ def test_large_molecule_matches_reference() -> None:
     # absolute (the exact covalent radii depend on the installed
     # tad-mctc, see `tad_mctc.data.radii.COV_D3`).
     ref = reference_energy_per_atom(numbers, positions, par)
-    energy = dftd3(numbers, positions, par)
+    energy = dftd3(Structure(numbers=numbers, positions=positions), par)
 
     assert pytest.approx(ref.cpu(), abs=1e-9) == energy.cpu()
 

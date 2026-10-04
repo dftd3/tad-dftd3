@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.autograd import dgradcheck, dgradgradcheck
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Tensor
@@ -69,11 +70,13 @@ def _gradients(
 
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers,
+            positions=positions,
+            lattice=lattice,
+            periodic=periodic,
+        ),
         _param(dd),
-        lattice=lattice,
-        periodic=periodic,
         cutoff=cut,
     )
     grad_pos, grad_lat = torch.autograd.grad(energy.sum(), (positions, lattice))
@@ -182,7 +185,9 @@ def test_hessian(name: str, mode: str) -> None:
 
     def energy(pos: Tensor) -> Tensor:
         return dftd3(
-            numbers, pos, _param(dd), lattice=lattice, cutoff=cutoff
+            Structure(numbers=numbers, positions=pos, lattice=lattice),
+            _param(dd),
+            cutoff=cutoff,
         ).sum()
 
     if mode == "rev-rev":
@@ -239,7 +244,11 @@ def test_gradcheck() -> None:
     small = Cutoff(cn=8.0, disp2=10.0)
 
     def func(pos: Tensor, lat: Tensor) -> Tensor:
-        return dftd3(numbers, pos, _param(dd), lattice=lat, cutoff=small)
+        return dftd3(
+            Structure(numbers=numbers, positions=pos, lattice=lat),
+            _param(dd),
+            cutoff=small,
+        )
 
     inputs = (
         positions.clone().requires_grad_(True),
@@ -255,7 +264,11 @@ def test_gradgradcheck() -> None:
     small = Cutoff(cn=8.0, disp2=10.0)
 
     def func(pos: Tensor, lat: Tensor) -> Tensor:
-        return dftd3(numbers, pos, _param(dd), lattice=lat, cutoff=small)
+        return dftd3(
+            Structure(numbers=numbers, positions=pos, lattice=lat),
+            _param(dd),
+            cutoff=small,
+        )
 
     inputs = (
         positions.clone().requires_grad_(True),

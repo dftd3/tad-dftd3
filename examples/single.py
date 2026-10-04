@@ -29,7 +29,7 @@ param = {
     "a2": torch.tensor(5.73083694),
 }
 
-energy = d3.dftd3(numbers, positions, param)
+energy = d3.dftd3(mctc.Structure(numbers=numbers, positions=positions), param)
 
 torch.set_printoptions(precision=10)
 print(energy)

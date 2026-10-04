@@ -66,7 +66,8 @@ Example
 ...     s8=torch.tensor(0.3908),
 ...     a2=torch.tensor(3.1280),
 ... )
->>> energy = torch.sum(d3.dftd3(numbers, positions, param), -1)
+>>> structure = mctc.Structure(numbers=numbers, positions=positions)
+>>> energy = torch.sum(d3.dftd3(structure, param), -1)
 >>> print([f"{e:.7f}" for e in energy.tolist()])  # Energies in Hartree
 ['-0.0124292', '-0.0045002']
 >>> print(f"{energy[0] - 2*energy[1]:.7f}")

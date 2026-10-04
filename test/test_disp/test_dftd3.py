@@ -18,6 +18,7 @@ Test calculation of dispersion energy and nuclear gradients.
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.typing import DD, Tensor
@@ -45,11 +46,14 @@ def test_fail() -> None:
 
     # unsupported element
     with pytest.raises(ValueError):
-        dftd3(torch.tensor([1, 105]), positions, param)
+        dftd3(
+            Structure(numbers=torch.tensor([1, 105]), positions=positions),
+            param,
+        )
 
-    # wrong numbers
-    with pytest.raises(ValueError):
-        dftd3(torch.tensor([1]), positions, param)
+    # wrong numbers, rejected by `Structure` itself
+    with pytest.raises(RuntimeError):
+        Structure(numbers=torch.tensor([1]), positions=positions)
 
 
 @pytest.mark.parametrize("name", ["rcov", "rvdw", "r4r2"])
@@ -70,13 +74,21 @@ def test_fail_per_atom(name: str) -> None:
         "r4r2": tables["r4r2"][numbers],
     }
     with pytest.raises(ValueError, match=f"{name}_table"):
-        dftd3(numbers, positions, param, **{f"{name}_table": per_atom[name]})
+        dftd3(
+            Structure(numbers=numbers, positions=positions),
+            param,
+            **{f"{name}_table": per_atom[name]},
+        )
 
     # batched and truncated tables are rejected as well
     table = tables[name]
     for t in (table.expand(2, *table.shape), table[..., :-1]):
         with pytest.raises(ValueError, match=f"{name}_table"):
-            dftd3(numbers, positions, param, **{f"{name}_table": t})
+            dftd3(
+                Structure(numbers=numbers, positions=positions),
+                param,
+                **{f"{name}_table": t},
+            )
 
 
 @pytest.mark.parametrize("name", ["rcov", "rvdw", "r4r2"])
@@ -103,11 +115,19 @@ def test_fail_renamed(name: str) -> None:
     )
 
     with pytest.raises(TypeError, match=f"'{name}_table'"):
-        dftd3(numbers, positions, param, **{name: per_atom})
+        dftd3(
+            Structure(numbers=numbers, positions=positions),
+            param,
+            **{name: per_atom},
+        )
 
     # also when the old name is given the table itself
     with pytest.raises(TypeError, match=f"'{name}_table'"):
-        dftd3(numbers, positions, param, **{name: table})
+        dftd3(
+            Structure(numbers=numbers, positions=positions),
+            param,
+            **{name: table},
+        )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -135,8 +155,7 @@ def test_single(dtype: torch.dtype, name: str) -> None:
     }
 
     energy = dftd3(
-        numbers,
-        positions,
+        Structure(numbers=numbers, positions=positions),
         param,
         ref=reference.Reference(**dd),
         rcov_table=rcov,
@@ -185,7 +204,7 @@ def test_batch(dtype: torch.dtype) -> None:
         "a2": torch.tensor(4.5865, **dd),
     }
 
-    energy = dftd3(numbers, positions, param)
+    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()
@@ -205,11 +224,11 @@ def test_default_tables_cached() -> None:
     defaults = (radii.COV_D3, radii.VDW_PAIRWISE, data.R4R2)
 
     _TABLE_CACHE.clear()
-    dftd3(numbers, positions, param)
+    dftd3(Structure(numbers=numbers, positions=positions), param)
     tables = {fn: dict(_TABLE_CACHE[fn]) for fn in defaults}
     assert all(len(per_table) == 1 for per_table in tables.values())
 
-    dftd3(numbers, positions, param)
+    dftd3(Structure(numbers=numbers, positions=positions), param)
     for fn, per_table in tables.items():
         for key, cached in per_table.items():
             assert _TABLE_CACHE[fn][key] is cached
@@ -269,10 +288,12 @@ def test_manual_pipeline_matches_dftd3() -> None:
     def manual(cn: Tensor) -> Tensor:
         weights = model.weight_references(numbers, cn, ref)
         c6 = model.atomic_c6(numbers, weights, ref)
-        return disp.dispersion(numbers, positions, param, c6)
+        return disp.dispersion(
+            Structure(numbers=numbers, positions=positions), param, c6
+        )
 
     cn_model = ncoord.cn_d3.replace(cutoff=defaults.D3_CN_CUTOFF)
-    energy = dftd3(numbers, positions, param)
+    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     assert (
         pytest.approx(energy.cpu(), abs=1e-14)

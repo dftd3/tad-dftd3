@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
@@ -84,11 +85,8 @@ def energy_fn(shifts: PeriodicShifts) -> Callable[..., Tensor]:
 
     def energy(n: Tensor, p: Tensor, lat: Tensor, per: Tensor) -> Tensor:
         return dftd3(
-            n,
-            p,
+            Structure(numbers=n, positions=p, lattice=lat, periodic=per),
             param,
-            lattice=lat,
-            periodic=per,
             shifts=shifts,
             cutoff=cutoff,
         ).sum()
@@ -141,11 +139,13 @@ def test_vmap_energy(mixed_periodicity: bool) -> None:
 
     # and the same as the batched call without any transform
     batched = dftd3(
-        numbers,
-        positions,
+        Structure(
+            numbers=numbers,
+            positions=positions,
+            lattice=lattice,
+            periodic=periodic,
+        ),
         param,
-        lattice=lattice,
-        periodic=periodic,
         cutoff=cutoff,
     ).sum(-1)
     assert pytest.approx(batched.cpu(), abs=tol) == out.cpu()
@@ -242,10 +242,8 @@ def test_vmap_jac_table(jac: str, name: str) -> None:
 
     def energy(n: Tensor, p: Tensor, lat: Tensor, t: Tensor) -> Tensor:
         return dftd3(
-            n,
-            p,
+            Structure(numbers=n, positions=p, lattice=lat),
             param,
-            lattice=lat,
             shifts=shifts,
             cutoff=cutoff,
             **{f"{name}_table": t},
@@ -277,9 +275,48 @@ def test_vmap_without_shifts() -> None:
     positions = torch.stack([positions0, positions1])
 
     def energy(p: Tensor) -> Tensor:
-        return dftd3(numbers, p, param, lattice=lattice, cutoff=cutoff).sum()
+        return dftd3(
+            Structure(numbers=numbers, positions=p, lattice=lattice),
+            param,
+            cutoff=cutoff,
+        ).sum()
 
     out = torch.func.vmap(torch.func.jacrev(energy))(positions)
     ref = torch.stack([torch.func.jacrev(energy)(p) for p in positions])
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+
+@pytest.mark.parametrize("jac", ["jacrev", "jacfwd"])
+def test_vmap_structure(jac: str) -> None:
+    """
+    `vmap` directly over a padded batch of cells as one `Structure`, with
+    derivatives with respect to positions and lattice by replacing them in
+    the structure.
+    """
+    batch = setup(mixed_periodicity=True)
+    numbers, positions, lattice, periodic, shifts = batch
+    cells_ = Structure(
+        numbers=numbers, positions=positions, lattice=lattice, periodic=periodic
+    )
+
+    def grad(structure: Structure) -> tuple[Tensor, Tensor]:
+        def energy(pos: Tensor, lat: Tensor) -> Tensor:
+            replaced = structure.replace(positions=pos, lattice=lat)
+            return dftd3(replaced, param, shifts=shifts, cutoff=cutoff).sum()
+
+        assert structure.lattice is not None
+        transform = getattr(torch.func, jac)
+        grad_pos = transform(energy, argnums=0)(
+            structure.positions, structure.lattice
+        )
+        grad_lat = transform(energy, argnums=1)(
+            structure.positions, structure.lattice
+        )
+        return grad_pos, grad_lat
+
+    out_pos, out_lat = torch.func.vmap(grad)(cells_)
+
+    for i, (ref_pos, ref_lat) in enumerate(autograd_gradients(batch)):
+        assert pytest.approx(ref_pos.cpu(), abs=tol) == out_pos[i].cpu()
+        assert pytest.approx(ref_lat.cpu(), abs=tol) == out_lat[i].cpu()

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc._version import __tversion__
 from tad_mctc.batch import pack
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
@@ -73,7 +74,12 @@ def test_fullgraph(s9: float | None) -> None:
     par = {**param} if s9 is None else {**param, "s9": s9}
 
     def energy(n: Tensor, p: Tensor, lat: Tensor) -> Tensor:
-        return dftd3(n, p, par, lattice=lat, shifts=shifts, cutoff=cutoff)
+        return dftd3(
+            Structure(numbers=n, positions=p, lattice=lat),
+            par,
+            shifts=shifts,
+            cutoff=cutoff,
+        )
 
     ref = energy(numbers, positions, lattice)
     out = compile_test(energy, fullgraph=True)(numbers, positions, lattice)
@@ -100,11 +106,10 @@ def test_fullgraph_batch() -> None:
 
     def energy(p: Tensor, lat: Tensor) -> Tensor:
         return dftd3(
-            numbers,
-            p,
+            Structure(
+                numbers=numbers, positions=p, lattice=lat, periodic=periodic
+            ),
             param,
-            lattice=lat,
-            periodic=periodic,
             shifts=shifts,
             cutoff=cutoff,
         )
@@ -122,7 +127,10 @@ def test_fullgraph_autograd() -> None:
 
     def energy(p: Tensor, lat: Tensor) -> Tensor:
         return dftd3(
-            numbers, p, param, lattice=lat, shifts=shifts, cutoff=cutoff
+            Structure(numbers=numbers, positions=p, lattice=lat),
+            param,
+            shifts=shifts,
+            cutoff=cutoff,
         ).sum()
 
     def gradients(fn: Callable[..., Tensor]) -> tuple[Tensor, ...]:
@@ -172,7 +180,10 @@ def test_fullgraph_vmap_jac(transform: str) -> None:
 
     def energy(n: Tensor, p: Tensor, lat: Tensor) -> Tensor:
         return dftd3(
-            n, p, param, lattice=lat, shifts=shifts, cutoff=cutoff
+            Structure(numbers=n, positions=p, lattice=lat),
+            param,
+            shifts=shifts,
+            cutoff=cutoff,
         ).sum()
 
     def total(p: Tensor, lat: Tensor) -> Tensor:
@@ -204,7 +215,10 @@ def test_fullgraph_hessian() -> None:
 
     def energy(lat: Tensor) -> Tensor:
         return dftd3(
-            numbers, positions, param, lattice=lat, shifts=shifts, cutoff=cutoff
+            Structure(numbers=numbers, positions=positions, lattice=lat),
+            param,
+            shifts=shifts,
+            cutoff=cutoff,
         ).sum()
 
     hessian = torch.func.jacfwd(torch.func.jacrev(energy))
@@ -212,3 +226,23 @@ def test_fullgraph_hessian() -> None:
     out = compile_test(hessian, fullgraph=True)(lattice)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+
+@requires_compile
+def test_fullgraph_structure_argument() -> None:
+    """The cell is an argument of the compiled function, as a `Structure`."""
+    numbers, positions, lattice, shifts = _setup("periodic_triclinic")
+    structure = Structure(numbers=numbers, positions=positions, lattice=lattice)
+
+    def energy(s: Structure) -> Tensor:
+        return dftd3(s, param, shifts=shifts, cutoff=cutoff)
+
+    ref = energy(structure)
+    out = compile_test(energy, fullgraph=True)(structure)
+
+    assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+    # and for a replaced geometry
+    moved = structure.replace(positions=positions + 0.1)
+    compiled = compile_test(energy, fullgraph=True)
+    assert pytest.approx(energy(moved).cpu(), abs=tol) == compiled(moved).cpu()

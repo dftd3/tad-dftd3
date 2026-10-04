@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc._version import __tversion__
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD, Tensor
@@ -90,8 +91,10 @@ def test_graph_breaks(name: str, s9: float) -> None:
     """
     numbers, positions, param = _setup(name, s9)
 
-    ref = dftd3(numbers, positions, param)
-    out = compile_test(lambda n, p: dftd3(n, p, param))(numbers, positions)
+    ref = dftd3(Structure(numbers=numbers, positions=positions), param)
+    out = compile_test(
+        lambda n, p: dftd3(Structure(numbers=n, positions=p), param)
+    )(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
 
@@ -108,8 +111,11 @@ def test_fullgraph(name: str, s9: float) -> None:
 
     numbers, positions, param = _setup(name, s9)
 
-    ref = dftd3(numbers, positions, param)
-    compiled = compile_test(lambda n, p: dftd3(n, p, param), fullgraph=True)
+    ref = dftd3(Structure(numbers=numbers, positions=positions), param)
+    compiled = compile_test(
+        lambda n, p: dftd3(Structure(numbers=n, positions=p), param),
+        fullgraph=True,
+    )
     out = compiled(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
@@ -137,7 +143,9 @@ def test_fullgraph_vmap_jacrev(s9: float) -> None:
     r4r2 = data.R4R2(**dd)
 
     def energy(n: Tensor, p: Tensor, t: Tensor) -> Tensor:
-        return dftd3(n, p, param, r4r2_table=t).sum(-1)
+        return dftd3(
+            Structure(numbers=n, positions=p), param, r4r2_table=t
+        ).sum(-1)
 
     grad = torch.func.vmap(
         torch.func.jacrev(energy, argnums=(1, 2)), in_dims=(0, 0, None)
@@ -162,16 +170,21 @@ def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
     numbers, positions, param = _setup(name, s9)
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
-    ref = dftd3(numbers, positions, param, cutoff=cutoff)
+    ref = dftd3(
+        Structure(numbers=numbers, positions=positions), param, cutoff=cutoff
+    )
     compiled = compile_test(
-        lambda n, p: dftd3(n, p, param, cutoff=cutoff), fullgraph=True
+        lambda n, p: dftd3(
+            Structure(numbers=n, positions=p), param, cutoff=cutoff
+        ),
+        fullgraph=True,
     )
     out = compiled(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
 
     # only meaningful if the cutoffs change the result
-    default = dftd3(numbers, positions, param)
+    default = dftd3(Structure(numbers=numbers, positions=positions), param)
     assert not torch.allclose(ref, default, atol=1e-10, rtol=0)
 
 
@@ -185,11 +198,12 @@ def test_fullgraph_skips_atm_for_float_s9(
     term is not evaluated under `fullgraph=True`, unlike a tensor `s9`.
     """
     numbers, positions, param = _setup(name, 0.0)
-    ref = dftd3(numbers, positions, param)
+    ref = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     param_float = {**param, "s9": 0.0}
     compiled = compile_test(
-        lambda n, p: dftd3(n, p, param_float), fullgraph=True
+        lambda n, p: dftd3(Structure(numbers=n, positions=p), param_float),
+        fullgraph=True,
     )
     out = compiled(numbers, positions)
 
@@ -198,7 +212,10 @@ def test_fullgraph_skips_atm_for_float_s9(
 
     # a tensor `s9` of zero is traced, so the term is evaluated
     torch._dynamo.reset()  # pylint: disable=protected-access
-    compiled = compile_test(lambda n, p: dftd3(n, p, param), fullgraph=True)
+    compiled = compile_test(
+        lambda n, p: dftd3(Structure(numbers=n, positions=p), param),
+        fullgraph=True,
+    )
     out = compiled(numbers, positions)
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
@@ -210,16 +227,19 @@ def test_fullgraph_skips_atm_for_float_s9(
 def test_fullgraph_float_s9(name: str) -> None:
     """A Python number `s9 = 1.0` gives the same energy as a tensor."""
     numbers, positions, param = _setup(name, 1.0)
-    ref = dftd3(numbers, positions, param)
+    ref = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     param_float = {**param, "s9": 1.0}
     assert (
         pytest.approx(ref.cpu(), abs=tol)
-        == dftd3(numbers, positions, param_float).cpu()
+        == dftd3(
+            Structure(numbers=numbers, positions=positions), param_float
+        ).cpu()
     )
 
     compiled = compile_test(
-        lambda n, p: dftd3(n, p, param_float), fullgraph=True
+        lambda n, p: dftd3(Structure(numbers=n, positions=p), param_float),
+        fullgraph=True,
     )
     out = compiled(numbers, positions)
 
@@ -233,14 +253,16 @@ def test_float_s9_as_argument(
     name: str, fullgraph: bool, dispersion3_calls: list[int]
 ) -> None:
     """
-    As in the README, `param` with `s9 = 0.0` is an argument of the
-    compiled function, not captured: the three-body term is still skipped.
+    As in the README, the `Structure` and `param` with `s9 = 0.0` are
+    arguments of the compiled function, not captured: the three-body term
+    is still skipped.
     """
     numbers, positions, param = _setup(name, 0.0)
-    ref = dftd3(numbers, positions, param)
+    structure = Structure(numbers=numbers, positions=positions)
+    ref = dftd3(structure, param)
 
     compiled = compile_test(dftd3, fullgraph=fullgraph)
-    out = compiled(numbers, positions, {**param, "s9": 0.0})
+    out = compiled(structure, {**param, "s9": 0.0})
 
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
     assert len(dispersion3_calls) == 0
