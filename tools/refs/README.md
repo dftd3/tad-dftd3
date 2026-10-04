@@ -39,4 +39,4 @@ python tools/refs/gen_refs.py
 ```
 
 `gen_refs.py` writes one `test/references/<molecule>.json` per entry
-in its `SAMPLE_LIST`, in place; commit the result.
+in its `SAMPLES`, in place; commit the result.

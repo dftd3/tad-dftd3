@@ -21,16 +21,14 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from pathlib import Path
+
+import torch
+from tad_mctc.data.structures import get_structure
 
 from tad_dftd3.defaults import D3_CN_CUTOFF
 
 HERE = Path(__file__).resolve().parent
-
-# the geometries are the ones of the test suite
-sys.path.insert(0, str(HERE.parents[1]))
-from test.samples import mols  # noqa: E402
 # fpm's and Meson's own, already-fixed install paths -- see README.md for
 # how to build either one; whichever exists is used.
 TOOL_CANDIDATES = [
@@ -41,7 +39,16 @@ OUT_DIR = Path(__file__).resolve().parents[2] / "test" / "references"
 
 MAX_REFERENCE_SLOTS = 7
 
-SAMPLE_LIST = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
+# Name used in the tests (the file name in test/references) -> (collection,
+# record) of `tad_mctc.data.structures.get_structure`. The same structures as
+# `test/samples.py`.
+SAMPLES: dict[str, tuple[str, str]] = {
+    "AmF3": ("other", "AmF3"),
+    "SiH4": ("mb16_43", "SiH4"),
+    "PbH4-BiH3": ("heavy28", "pbh4_bih3"),
+    "C6H5I-CH3SH": ("other", "C6H5I-CH3SH"),
+    "MB16_43_01": ("mb16_43", "01"),
+}
 
 
 def find_tool() -> Path:
@@ -72,10 +79,10 @@ def run_tool(
 
 def main() -> None:
     tool = find_tool()
-    for name in SAMPLE_LIST:
-        mol = mols[name]
-        numbers = mol["numbers"].tolist()
-        positions = mol["positions"].tolist()
+    for name, (collection, record) in SAMPLES.items():
+        structure = get_structure(collection, record, dtype=torch.double)
+        numbers = structure.numbers.tolist()
+        positions = structure.positions.tolist()
         data = run_tool(tool, numbers, positions, D3_CN_CUTOFF)
 
         mref = len(data["weights"][0])
