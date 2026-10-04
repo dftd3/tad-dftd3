@@ -28,7 +28,8 @@ import pytest
 import torch
 from tad_mctc import Structure
 from tad_mctc.io.structure import pack_structures
-from tad_mctc.neighbor.list import build_neighborlists
+from tad_mctc.neighbor import pair_distance_squared
+from tad_mctc.neighbor.list import build_neighborlist, build_neighborlists
 from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import dftd3
@@ -117,13 +118,47 @@ def test_virial_is_symmetric(name: str, sparse: bool) -> None:
     assert pytest.approx(virial.cpu(), abs=tol, rel=0) == virial.mT.cpu()
 
 
+def _distance_to_cutoffs(structure: Structure) -> float:
+    """
+    Smallest distance of any pair (or pair with an image) from either hard
+    cutoff, in Bohr.
+    """
+    assert structure.lattice is not None
+    nbl = build_neighborlist(structure, cutoff.disp2 + 1.0)
+    real = nbl.mask
+    distances = torch.sqrt(
+        pair_distance_squared(
+            nbl.idx_i[real],
+            nbl.idx_j[real],
+            nbl.shift[real],
+            structure.positions,
+            shared_lattice=structure.lattice,
+            system_lattices=None,
+            atoms_per_system=structure.positions.shape[-2],
+        )
+    )
+    return min(
+        float((distances - cut).abs().min())
+        for cut in (cutoff.cn, cutoff.disp2)
+    )
+
+
 @pytest.mark.parametrize("name", ["urea", "periodic_triclinic"])
 def test_virial_finite_difference(name: str) -> None:
     """Central differences of the energy, for each strain component."""
     structure = cells[name].to(DEVICE)
+
+    # The cutoffs are hard, so the energy jumps where a pair crosses one,
+    # which central differences would pick up and the analytic derivative
+    # does not. Only meaningful if no pair is within reach of a cutoff.
+    step = 1e-5
+    margin = 100 * step
+    nearest = _distance_to_cutoffs(structure)
+    if nearest < margin:
+        pytest.skip(f"a pair is {nearest:.1e} Bohr from a hard cutoff")
+
     virial = _virial(structure, sparse=False)
 
-    step = 1e-5
     for i in range(3):
         for j in range(3):
             strain = torch.zeros(3, 3, **DD64)
