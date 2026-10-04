@@ -64,11 +64,8 @@ from tad_mctc import Structure, storch
 from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
 from tad_mctc.data import pse
-from tad_mctc.neighbor.images import (
-    PeriodicShifts,
-    build_periodic_shifts,
-    wrap_to_central_cell,
-)
+from tad_mctc.ncoord.common import _periodic_images
+from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
 from tad_mctc.typing import (
     DD,
     CountingFunction,
@@ -237,6 +234,11 @@ def dftd3(
             structure.lattice, structure.periodic, max(cutoff.cn, cutoff.disp2)
         )
 
+    The coordination number also runs over every shift of this table, so with
+    the default cutoffs (40 and 60 Bohr) it does about three times the work
+    it would with a table built at its own cutoff. Only the energy is
+    unaffected.
+
     To differentiate with respect to the positions or the lattice with
     ``torch.func``, replace them in the structure inside the function, e.g.
     ``jacrev(lambda pos: dftd3(structure.replace(positions=pos), param))``.
@@ -313,14 +315,14 @@ def dftd3(
         cutoff=cutoff.cn,
         rcov=element_table(rcov_table, "rcov_table", positions),
     )
-    if structure.lattice is None:
-        cn = cn_model(structure)
-    else:
-        cn = cn_model(structure, _cell_shifts(structure, shifts, cutoff.cn))
+    # Builds the image shifts of a cell at its own cutoff, or checks the
+    # given ones against it.
+    cn = cn_model(structure, shifts)
     weights = model.weight_references(numbers, cn, ref, weighting_function)
     c6 = model.atomic_c6(numbers, weights, ref)
 
-    return dispersion(
+    # The inputs are checked above, so the unchecked kernel is called.
+    return _dispersion(
         structure,
         param,
         c6,
@@ -395,11 +397,38 @@ def dispersion(
         If `structure` is not a ``Structure``, or one of the names of
         0.7.0, `rvdw` or `r4r2`, is passed.
     """
-    cutoff = _resolve_cutoff(cutoff)
-
     _check_inputs(structure, shifts)
     _check_three_body(param, structure)
 
+    return _dispersion(
+        structure,
+        param,
+        c6,
+        shifts=shifts,
+        rvdw_table=rvdw_table,
+        r4r2_table=r4r2_table,
+        damping_function=damping_function,
+        cutoff=_resolve_cutoff(cutoff),
+        **kwargs,
+    )
+
+
+def _dispersion(
+    structure: Structure,
+    param: dict[str, Tensor | float],
+    c6: Tensor,
+    *,
+    shifts: PeriodicShifts | None,
+    rvdw_table: Tensor | TableFunction | None,
+    r4r2_table: Tensor | TableFunction | None,
+    damping_function: DampingFunction,
+    cutoff: Cutoff,
+    **kwargs: Any,
+) -> Tensor:
+    """
+    :func:`dispersion` without checking its inputs, for callers that have
+    already checked them.
+    """
     positions = structure.positions
 
     # Resolved once here and passed on as tensors. Also rejects a wrong
@@ -408,7 +437,7 @@ def dispersion(
     r4r2 = element_table(r4r2_table, "r4r2_table", positions)
 
     # two-body dispersion
-    energy = dispersion2(
+    energy = _dispersion2(
         structure,
         param,
         c6,
@@ -506,6 +535,33 @@ def dispersion2(
     """
     _check_inputs(structure, shifts)
 
+    return _dispersion2(
+        structure,
+        param,
+        c6,
+        shifts=shifts,
+        r4r2_table=r4r2_table,
+        damping_function=damping_function,
+        cutoff=cutoff,
+        **kwargs,
+    )
+
+
+def _dispersion2(
+    structure: Structure,
+    param: dict[str, Tensor | float],
+    c6: Tensor,
+    *,
+    shifts: PeriodicShifts | None,
+    r4r2_table: Tensor | TableFunction | None,
+    damping_function: DampingFunction,
+    cutoff: float,
+    **kwargs: Any,
+) -> Tensor:
+    """
+    :func:`dispersion2` without checking its inputs, for callers that have
+    already checked them.
+    """
     numbers, positions = structure.numbers, structure.positions
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
@@ -521,29 +577,31 @@ def dispersion2(
 
     if structure.lattice is None:
         distances, keep = _molecular_distances(numbers, positions, cutoff)
-        atom_pair_dims: tuple[int, ...] = (-1,)
+        qq_pairs = qq
     else:
         image_shifts = _cell_shifts(structure, shifts, cutoff)
         distances, keep = _periodic_distances(structure, image_shifts, cutoff)
 
-        # One entry per pair and image: the pair's C6 and `qq` apply to
-        # every image alike.
-        c6 = c6.unsqueeze(-1)
-        qq = qq.unsqueeze(-1)
-        atom_pair_dims = (-2, -1)
-
-    c8 = c6 * qq
+        # One entry per pair and image, all with the pair's `qq`.
+        qq_pairs = qq.unsqueeze(-1)
 
     zero = torch.tensor(0.0, **dd)
     t6 = torch.where(
-        keep, damping_function(6, distances, qq, param, **kwargs), zero
+        keep, damping_function(6, distances, qq_pairs, param, **kwargs), zero
     )
     t8 = torch.where(
-        keep, damping_function(8, distances, qq, param, **kwargs), zero
+        keep, damping_function(8, distances, qq_pairs, param, **kwargs), zero
     )
 
-    e6 = -0.5 * torch.sum(c6 * t6, dim=atom_pair_dims)
-    e8 = -0.5 * torch.sum(c8 * t8, dim=atom_pair_dims)
+    if structure.lattice is not None:
+        # C6 and C8 are the same for every image of a pair, so the damped
+        # terms are summed over the images first and multiplied per pair.
+        t6 = t6.sum(dim=-1)
+        t8 = t8.sum(dim=-1)
+
+    c8 = c6 * qq
+    e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
+    e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
 
     s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
     s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
@@ -584,76 +642,33 @@ def _periodic_distances(
     whole lattice vectors.
     """
     assert cell.lattice is not None and cell.periodic is not None
-    lattice = cell.lattice
 
-    # The shifts reach every image within the cutoff only from atoms inside
-    # the central cell (see `build_periodic_shifts`), so the atoms are
-    # folded into it first, as s-dftd3 does. The mask gets an explicit atom
-    # axis, so that a batched `(nbatch, 3)` mask cannot align with the atom
-    # axis when the batch is as large as the number of atoms.
-    positions, _ = wrap_to_central_cell(
-        cell.positions, lattice, cell.periodic.unsqueeze(-2)
+    # The same images as the coordination number of tad-mctc: the atoms
+    # folded into the central cell (which the shifts are built for, as in
+    # s-dftd3), the Cartesian translation of each image, and which
+    # `(i, j, image)` entries are pairs.
+    images = _periodic_images(
+        cell.numbers, cell.positions, cell.lattice, shifts.shifts, cell.periodic
     )
-
-    # (..., n_shift, 3), one table for every system of a batch
-    translations = shifts.shifts.to(positions.dtype) @ lattice
+    assert images.translations is not None
+    positions = images.positions
 
     # (..., nat, nat, 3): entry `(i, j)` points from atom `i` to atom `j`
     pair_vectors = positions.unsqueeze(-3) - positions.unsqueeze(-2)
 
     # (..., nat, nat, n_shift, 3)
-    image_translations = translations[..., None, None, :, :]
+    image_translations = images.translations[..., None, None, :, :]
     image_vectors = pair_vectors.unsqueeze(-2) + image_translations
     distance_squared = torch.sum(image_vectors * image_vectors, dim=-1)
 
-    is_pair = _periodic_pairs(cell.numbers, shifts.shifts, cell.periodic)
-    keep = is_pair & (distance_squared <= cutoff * cutoff)
+    keep = images.valid & (distance_squared <= cutoff * cutoff)
 
     # Replaced before the square root, not after: an atom with itself at
     # the zero shift has a distance of zero, where the derivative of the
     # square root is infinite and would turn the masked gradient into NaN.
-    one = torch.ones_like(distance_squared)
-    distances = torch.sqrt(torch.where(keep, distance_squared, one))
+    distances = torch.sqrt(torch.where(keep, distance_squared, 1.0))
 
     return distances, keep
-
-
-def _periodic_pairs(
-    numbers: Tensor, shifts: Tensor, periodic: Tensor
-) -> Tensor:
-    """
-    Which entries ``(i, j, image)`` of the periodic pair grid are pairs,
-    ``(..., nat, nat, n_shift)``: both atoms are real (not padding), the
-    entry is not an atom with itself at the zero shift, and the image does
-    not lie along an axis that is not periodic for this system.
-
-    An atom with one of its own images at a non-zero shift is a pair.
-
-    Parameters
-    ----------
-    numbers : Tensor
-        Atomic numbers, of shape ``(..., nat)``, zero for padding.
-    shifts : Tensor
-        Integer lattice translations, of shape ``(n_shift, 3)``.
-    periodic : Tensor
-        Periodic axes of each system, of shape ``(3,)`` or ``(..., 3)``.
-    """
-    both_real = real_pairs(numbers, mask_diagonal=False).unsqueeze(-1)
-
-    nat = numbers.shape[-1]
-    is_same_atom = torch.eye(nat, dtype=torch.bool, device=numbers.device)
-    is_zero_shift = (shifts == 0).all(dim=-1)
-    is_self_pair = is_same_atom.unsqueeze(-1) & is_zero_shift
-
-    # One table serves a whole batch, so it may translate along an axis that
-    # is periodic for another system but not for this one. The cutoff does
-    # not remove such an image: a non-periodic axis may have a short
-    # placeholder lattice vector.
-    along_open_axis = (shifts != 0) & ~periodic.unsqueeze(-2)
-    is_image = ~along_open_axis.any(dim=-1)  # (..., n_shift)
-    is_image = is_image.unsqueeze(-2).unsqueeze(-2)  # (..., 1, 1, n_shift)
-
-    return both_real & ~is_self_pair & is_image
 
 
 @reject_renamed_tables

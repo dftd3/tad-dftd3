@@ -34,8 +34,9 @@ compiled-in cutoffs, so a comparison against tad-dftd3's defaults checks
 :class:`tad_dftd3.cutoff.Cutoff` pins s-dftd3 to it instead, via
 ``DispersionModel.set_realspace_cutoff``.
 
-Periodic cells: every function takes ``lattice`` and ``periodic``, passed
-straight to ``dftd3.interface.DispersionModel``. For a cell that is not
+Every function takes a :class:`tad_mctc.Structure`, a single system. For a
+periodic cell, its ``lattice`` and ``periodic`` mask are passed straight to
+``dftd3.interface.DispersionModel``. For a cell that is not
 periodic along every axis, s-dftd3 folds the atoms into the cell along
 *all* axes (``wrap_to_central_cell`` in ``s-dftd3/src/dftd3/utils.f90``),
 also along the open ones, which moves atoms that lie outside the cell along
@@ -46,9 +47,13 @@ axes.
 
 from __future__ import annotations
 
+from typing import Any
+
 import dftd3.interface as dftd3_interface
 import numpy as np
 import torch
+from numpy.typing import NDArray
+from tad_mctc import Structure
 from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import defaults
@@ -62,32 +67,25 @@ __all__ = [
 ]
 
 
+def _to_numpy(tensor: Tensor, dtype: type) -> NDArray[Any]:
+    """A detached NumPy copy of `tensor` as `dtype`."""
+    return tensor.detach().cpu().numpy().astype(dtype)
+
+
 def _build_model(
-    numbers: Tensor,
-    positions: Tensor,
-    cutoff: Cutoff | None,
-    lattice: Tensor | None,
-    periodic: Tensor | None,
+    structure: Structure, cutoff: Cutoff | None
 ) -> dftd3_interface.DispersionModel:
     """
     Build a ``DispersionModel``, shared by every function here.
     ``cutoff=None`` leaves s-dftd3 at its own cutoffs (see module docstring).
-    ``lattice=None`` is a molecule; ``periodic=None`` with a ``lattice`` is
-    periodic along all three axes, as in s-dftd3.
     """
-    numbers_numpy = numbers.detach().cpu().numpy().astype(np.int32)
-    positions_numpy = positions.detach().cpu().numpy().astype(np.float64)
-
-    lattice_numpy = None
-    if lattice is not None:
-        lattice_numpy = lattice.detach().cpu().numpy().astype(np.float64)
-
-    periodic_numpy = None
-    if periodic is not None:
-        periodic_numpy = periodic.detach().cpu().numpy().astype(np.bool_)
-
+    lattice = structure.lattice
+    periodic = structure.periodic
     model = dftd3_interface.DispersionModel(
-        numbers_numpy, positions_numpy, lattice_numpy, periodic_numpy
+        _to_numpy(structure.numbers, np.int32),
+        _to_numpy(structure.positions, np.float64),
+        None if lattice is None else _to_numpy(lattice, np.float64),
+        None if periodic is None else _to_numpy(periodic, np.bool_),
     )
 
     if cutoff is not None:
@@ -98,6 +96,12 @@ def _build_model(
         )
 
     return model
+
+
+def _dd(structure: Structure) -> DD:
+    """Device and dtype of the positions, which every result is cast to."""
+    positions = structure.positions
+    return {"device": positions.device, "dtype": positions.dtype}
 
 
 def _build_damping_param(
@@ -127,13 +131,10 @@ def _build_damping_param(
 
 
 def reference_energy_per_atom(
-    numbers: Tensor,
-    positions: Tensor,
+    structure: Structure,
     param: dict[str, Tensor],
     *,
     cutoff: Cutoff | None = None,
-    lattice: Tensor | None = None,
-    periodic: Tensor | None = None,
 ) -> Tensor:
     """
     Atom-resolved dispersion energy from the s-dftd3 Fortran reference.
@@ -151,36 +152,22 @@ def reference_energy_per_atom(
 
     Parameters
     ----------
-    numbers : Tensor
-        Atomic numbers, shape ``(nat,)``.
-    positions : Tensor
-        Cartesian coordinates in Bohr, shape ``(nat, 3)``.
+    structure : Structure
+        A single molecule or cell, coordinates in Bohr.
     param : dict[str, Tensor]
         Damping parameters in tad-dftd3's own convention (``s6``, ``s8``,
         ``a1``, ``a2``, and optionally ``s9``, ``alp``).
     cutoff : Cutoff | None, optional
         Real-space cutoffs to pin s-dftd3 to. Defaults to ``None``, i.e.
         s-dftd3's own.
-    lattice : Tensor | None, optional
-        Lattice vectors as rows, shape ``(3, 3)``, in Bohr. Defaults to
-        ``None``, a molecule.
-    periodic : Tensor | None, optional
-        Periodic axes, shape ``(3,)``. Defaults to all three for a cell.
 
     Returns
     -------
     Tensor
         Atom-resolved energy, shape ``(nat,)``, in Hartree, cast to
-        ``positions``'s dtype and moved to its device.
+        the positions' dtype and moved to their device.
     """
-    two_body, three_body = reference_pairwise(
-        numbers,
-        positions,
-        param,
-        cutoff=cutoff,
-        lattice=lattice,
-        periodic=periodic,
-    )
+    two_body, three_body = reference_pairwise(structure, param, cutoff=cutoff)
 
     # Each matrix holds half of every pair's energy at both [i, j] and
     # [j, i] (confirmed against get_dispersion's own total, not assumed),
@@ -189,13 +176,10 @@ def reference_energy_per_atom(
 
 
 def reference_pairwise(
-    numbers: Tensor,
-    positions: Tensor,
+    structure: Structure,
     param: dict[str, Tensor],
     *,
     cutoff: Cutoff | None = None,
-    lattice: Tensor | None = None,
-    periodic: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """
     Pair-resolved two-body and three-body energies from the s-dftd3 Fortran
@@ -217,54 +201,40 @@ def reference_pairwise(
 
     Parameters
     ----------
-    numbers : Tensor
-        Atomic numbers, shape ``(nat,)``.
-    positions : Tensor
-        Cartesian coordinates in Bohr, shape ``(nat, 3)``.
+    structure : Structure
+        A single molecule or cell, coordinates in Bohr.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
     cutoff : Cutoff | None, optional
         Real-space cutoffs, as in :func:`reference_energy_per_atom`.
-    lattice : Tensor | None, optional
-        Lattice vectors, as in :func:`reference_energy_per_atom`.
-    periodic : Tensor | None, optional
-        Periodic axes, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
     tuple[Tensor, Tensor]
         ``(two_body, three_body)``, each shape ``(nat, nat)`` and in
-        Hartree, cast to ``positions``'s dtype and device. ``three_body``
+        Hartree, cast to the positions' dtype and device. ``three_body``
         is s-dftd3's "non-additive pairwise energy"; it sums to the ATM
         energy only to about 1e-10 relative, not to full precision, because
         the three-body term is genuinely a sum over atom triples, not
         pairs, and there is more than one reasonable way to fold a
         triple's energy back onto a pairwise matrix.
     """
-    model = _build_model(numbers, positions, cutoff, lattice, periodic)
+    model = _build_model(structure, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_pairwise_dispersion(damping_param)
     two_body = np.asarray(result["additive pairwise energy"])
     three_body = np.asarray(result["non-additive pairwise energy"])
 
-    two_body_tensor = torch.tensor(
-        two_body, dtype=positions.dtype, device=positions.device
-    )
-    three_body_tensor = torch.tensor(
-        three_body, dtype=positions.dtype, device=positions.device
-    )
-    return two_body_tensor, three_body_tensor
+    dd: DD = _dd(structure)
+    return torch.tensor(two_body, **dd), torch.tensor(three_body, **dd)
 
 
 def reference_gradient(
-    numbers: Tensor,
-    positions: Tensor,
+    structure: Structure,
     param: dict[str, Tensor],
     *,
     cutoff: Cutoff | None = None,
-    lattice: Tensor | None = None,
-    periodic: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """
     Nuclear gradient and virial of the dispersion energy from the s-dftd3
@@ -278,45 +248,36 @@ def reference_gradient(
 
     Parameters
     ----------
-    numbers : Tensor
-        Atomic numbers, shape ``(nat,)``.
-    positions : Tensor
-        Cartesian coordinates in Bohr, shape ``(nat, 3)``.
+    structure : Structure
+        A single molecule or cell, coordinates in Bohr.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
     cutoff : Cutoff | None, optional
         Real-space cutoffs, as in :func:`reference_energy_per_atom`.
-    lattice : Tensor | None, optional
-        Lattice vectors, as in :func:`reference_energy_per_atom`.
-    periodic : Tensor | None, optional
-        Periodic axes, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
     tuple[Tensor, Tensor]
         ``(gradient, virial)``, shapes ``(nat, 3)`` and ``(3, 3)``, in
-        Hartree per Bohr and Hartree, cast to ``positions``'s dtype and
+        Hartree per Bohr and Hartree, cast to the positions' dtype and
         device.
     """
-    model = _build_model(numbers, positions, cutoff, lattice, periodic)
+    model = _build_model(structure, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_dispersion(damping_param, grad=True)
     gradient = np.asarray(result["gradient"])
     virial = np.asarray(result["virial"])
 
-    dd: DD = {"dtype": positions.dtype, "device": positions.device}
+    dd: DD = _dd(structure)
     return torch.tensor(gradient, **dd), torch.tensor(virial, **dd)
 
 
 def reference_hessian(
-    numbers: Tensor,
-    positions: Tensor,
+    structure: Structure,
     param: dict[str, Tensor],
     *,
     cutoff: Cutoff | None = None,
-    lattice: Tensor | None = None,
-    periodic: Tensor | None = None,
 ) -> Tensor:
     """
     Hessian of the dispersion energy with respect to the positions from the
@@ -329,31 +290,24 @@ def reference_hessian(
 
     Parameters
     ----------
-    numbers : Tensor
-        Atomic numbers, shape ``(nat,)``.
-    positions : Tensor
-        Cartesian coordinates in Bohr, shape ``(nat, 3)``.
+    structure : Structure
+        A single molecule or cell, coordinates in Bohr.
     param : dict[str, Tensor]
         Damping parameters, as in :func:`reference_energy_per_atom`.
     cutoff : Cutoff | None, optional
         Real-space cutoffs, as in :func:`reference_energy_per_atom`.
-    lattice : Tensor | None, optional
-        Lattice vectors, as in :func:`reference_energy_per_atom`.
-    periodic : Tensor | None, optional
-        Periodic axes, as in :func:`reference_energy_per_atom`.
 
     Returns
     -------
     Tensor
         Hessian, shape ``(nat, 3, nat, 3)``, in Hartree per Bohr squared,
-        cast to ``positions``'s dtype and device.
+        cast to the positions' dtype and device.
     """
-    model = _build_model(numbers, positions, cutoff, lattice, periodic)
+    model = _build_model(structure, cutoff)
     damping_param = _build_damping_param(param)
 
     result = model.get_hessian(damping_param)
-    nat = numbers.shape[-1]
+    nat = structure.numbers.shape[-1]
     hessian = np.asarray(result["hessian"]).reshape(nat, 3, nat, 3)
 
-    dd: DD = {"dtype": positions.dtype, "device": positions.device}
-    return torch.tensor(hessian, **dd)
+    return torch.tensor(hessian, **_dd(structure))

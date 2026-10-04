@@ -26,31 +26,20 @@ from __future__ import annotations
 import pytest
 import torch
 from tad_mctc import Structure
-from tad_mctc.batch import pack
 from tad_mctc.data import radii
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
 from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import data, dftd3
 from tad_dftd3.cutoff import Cutoff
 
-from ..cells import cells, random_cell
+from ..cells import TRICLINIC, cells, param, random_cell
 from ..conftest import DEVICE
 
 tol = 1e-10
 
-param = {
-    "s6": torch.tensor(1.0000, dtype=torch.double),
-    "s8": torch.tensor(1.2576, dtype=torch.double),
-    "a1": torch.tensor(0.3768, dtype=torch.double),
-    "a2": torch.tensor(4.5865, dtype=torch.double),
-}
-
 cutoff = Cutoff(cn=10.0, disp2=12.0)
-
-TRICLINIC = torch.tensor(
-    [[7.0, 0.0, 0.0], [1.2, 6.5, 0.0], [0.6, 0.9, 6.0]], dtype=torch.double
-)
 
 Batch = tuple[Tensor, Tensor, Tensor, Tensor, PeriodicShifts]
 
@@ -61,23 +50,25 @@ def setup(mixed_periodicity: bool = False) -> Batch:
     ``(numbers, positions, lattice, periodic, shifts)``.
     """
     dd: DD = {"device": DEVICE, "dtype": torch.double}
-    systems = [
-        tuple(t.to(DEVICE) for t in cells["periodic_triclinic"]),
-        random_cell(TRICLINIC, 3, dd, seed=21),
-    ]
-
-    numbers = pack([s[0] for s in systems])
-    positions = pack([s[1] for s in systems])
-    lattice = torch.stack([s[2] for s in systems])
-
-    periodic = torch.ones(2, 3, dtype=torch.bool, device=DEVICE)
-    if mixed_periodicity:
-        periodic[1, 2] = False
+    periodic = torch.tensor([True, True, not mixed_periodicity], device=DEVICE)
+    batch = pack_structures(
+        [
+            cells["periodic_triclinic"].to(DEVICE),
+            random_cell(TRICLINIC, 3, dd, seed=21, periodic=periodic),
+        ]
+    )
+    assert batch.lattice is not None and batch.periodic is not None
 
     shifts = build_periodic_shifts(
-        lattice, periodic, max(cutoff.cn, cutoff.disp2)
+        batch.lattice, batch.periodic, max(cutoff.cn, cutoff.disp2)
     )
-    return numbers, positions, lattice, periodic, shifts
+    return (
+        batch.numbers,
+        batch.positions,
+        batch.lattice,
+        batch.periodic,
+        shifts,
+    )
 
 
 def energy_fn(shifts: PeriodicShifts) -> Callable[..., Tensor]:
@@ -270,16 +261,13 @@ def test_vmap_without_shifts() -> None:
     given: they are built from the lattice, which is not batched.
     """
     dd: DD = {"device": DEVICE, "dtype": torch.double}
-    numbers, positions0, lattice = random_cell(TRICLINIC, 4, dd, seed=22)
-    _, positions1, _ = random_cell(TRICLINIC, 4, dd, seed=23)
-    positions = torch.stack([positions0, positions1])
+    structure = random_cell(TRICLINIC, 4, dd, seed=22)
+    other = random_cell(TRICLINIC, 4, dd, seed=23)
+    positions = torch.stack([structure.positions, other.positions])
 
     def energy(p: Tensor) -> Tensor:
-        return dftd3(
-            Structure(numbers=numbers, positions=p, lattice=lattice),
-            param,
-            cutoff=cutoff,
-        ).sum()
+        cell = structure.replace(positions=p)
+        return dftd3(cell, param, cutoff=cutoff).sum()
 
     out = torch.func.vmap(torch.func.jacrev(energy))(positions)
     ref = torch.stack([torch.func.jacrev(energy)(p) for p in positions])

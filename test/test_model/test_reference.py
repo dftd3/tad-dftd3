@@ -170,13 +170,14 @@ def test_dftd3_does_not_copy_reference() -> None:
     )
     param = {"a1": torch.tensor(0.4), "a2": torch.tensor(4.6)}
 
+    structure = Structure(numbers=numbers, positions=positions)
     with patch(
         "tad_dftd3.reference._load_c6", side_effect=AssertionError("copied")
     ):
-        energy = dftd3(Structure(numbers=numbers, positions=positions), param)
+        energy = dftd3(structure, param)
 
     ref = dftd3(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         param,
         ref=reference.Reference(dtype=torch.float64),
     )

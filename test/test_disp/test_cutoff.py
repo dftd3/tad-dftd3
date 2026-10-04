@@ -141,11 +141,12 @@ def test_chain_matches_reference(dtype: torch.dtype, name: str) -> None:
     tol = max(10 * torch.finfo(dtype).eps, 1e-8)
 
     numbers, positions = fragment_chain(name, dd)
+    structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 
     # No cutoff is passed to the reference, so it uses s-dftd3's own.
-    ref = reference_energy_per_atom(numbers, positions, par)
-    energy = dftd3(Structure(numbers=numbers, positions=positions), par)
+    ref = reference_energy_per_atom(structure, par)
+    energy = dftd3(structure, par)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu(), abs=tol, rel=tol) == energy.cpu()
@@ -162,6 +163,7 @@ def test_changed_cutoff_matches_reference(
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
 
     numbers, positions = fragment_chain(name, dd)
+    structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 
     changed = Cutoff(**{field: value})
@@ -169,16 +171,14 @@ def test_changed_cutoff_matches_reference(
     # Measured agreement is up to 1.4e-13 absolute (see
     # test_chain_matches_reference), well below the shift this test
     # relies on (2.8e-10, checked below).
-    ref = reference_energy_per_atom(numbers, positions, par, cutoff=changed)
-    energy = dftd3(
-        Structure(numbers=numbers, positions=positions), par, cutoff=changed
-    )
+    ref = reference_energy_per_atom(structure, par, cutoff=changed)
+    energy = dftd3(structure, par, cutoff=changed)
     assert pytest.approx(ref.cpu(), abs=5e-11) == energy.cpu()
 
     # Only meaningful if this geometry notices the changed cutoff. The
     # threshold sits above the 5e-11 tolerance above and below the smallest
     # shift measured here (2.8e-10).
-    energy_default = dftd3(Structure(numbers=numbers, positions=positions), par)
+    energy_default = dftd3(structure, par)
     shift = float(torch.sum(energy - energy_default).abs())
     assert shift > 1e-11
 
@@ -188,14 +188,11 @@ def test_dftd3_rejects_a_single_cutoff() -> None:
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
 
     numbers, positions = fragment_chain("H2O", dd)
+    structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 
     with pytest.raises(TypeError):
-        dftd3(
-            Structure(numbers=numbers, positions=positions),
-            par,
-            cutoff=torch.tensor(50.0, **dd),
-        )
+        dftd3(structure, par, cutoff=torch.tensor(50.0, **dd))
 
 
 @pytest.mark.large
@@ -209,8 +206,7 @@ def test_large_molecule_matches_reference() -> None:
 
     path = Path(__file__).parents[1] / "molecules" / "c83h168.xyz"
     structure = read(path, **dd)
-    numbers, positions = structure.numbers, structure.positions
-    numbers = numbers.to(DEVICE)
+    structure = structure.replace(numbers=structure.numbers.to(DEVICE))
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -219,8 +215,8 @@ def test_large_molecule_matches_reference() -> None:
     # this energy by 1e-7 or more, against a measured agreement of 1.8e-12
     # absolute (the exact covalent radii depend on the installed
     # tad-mctc, see `tad_mctc.data.radii.COV_D3`).
-    ref = reference_energy_per_atom(numbers, positions, par)
-    energy = dftd3(Structure(numbers=numbers, positions=positions), par)
+    ref = reference_energy_per_atom(structure, par)
+    energy = dftd3(structure, par)
 
     assert pytest.approx(ref.cpu(), abs=1e-9) == energy.cpu()
 

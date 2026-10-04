@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """
-Periodic cells for the tests of the periodic dispersion energy.
+Periodic cells and parameters for the tests of the periodic dispersion
+energy.
 
 Real crystals from :func:`tad_mctc.data.structures.get_structure` (molecular
 crystals of the X23 set, and a few small inorganic and synthetic cells),
@@ -24,14 +25,34 @@ enough that an atom interacts with its own images, and slabs and chains.
 from __future__ import annotations
 
 import torch
+from tad_mctc import Structure
 from tad_mctc.data.structures import get_structure
 from tad_mctc.typing import DD, Tensor
 
-__all__ = ["Cell", "cells", "random_cell"]
+__all__ = ["TRICLINIC", "cells", "param", "param_on", "random_cell"]
 
 
-Cell = tuple[Tensor, Tensor, Tensor]
-"""``(numbers, positions, lattice)``, all periodic along every axis."""
+param: dict[str, Tensor | float] = {
+    "s6": torch.tensor(1.0000, dtype=torch.double),
+    "s8": torch.tensor(1.2576, dtype=torch.double),
+    "a1": torch.tensor(0.3768, dtype=torch.double),
+    "a2": torch.tensor(4.5865, dtype=torch.double),
+}
+"""TPSS0-D3(BJ), without the three-body term, which is not periodic."""
+
+
+def param_on(dd: DD) -> dict[str, Tensor | float]:
+    """:data:`param` on the device and dtype of `dd`."""
+    return {
+        k: v.to(**dd) if isinstance(v, Tensor) else v for k, v in param.items()
+    }
+
+
+TRICLINIC = torch.tensor(
+    [[7.0, 0.0, 0.0], [1.2, 6.5, 0.0], [0.6, 0.9, 6.0]], dtype=torch.double
+)
+"""Lattice of a triclinic cell, in Bohr."""
+
 
 _SOURCES: dict[str, tuple[str, str]] = {
     "ammonia": ("x23", "ammonia"),
@@ -46,24 +67,24 @@ _SOURCES: dict[str, tuple[str, str]] = {
 """Name used in the tests -> ``(collection, record)``."""
 
 
-def _cell(collection: str, record: str) -> Cell:
-    structure = get_structure(collection, record, dtype=torch.double)
-    assert structure.lattice is not None
-    return structure.numbers, structure.positions, structure.lattice
-
-
-cells: dict[str, Cell] = {
-    name: _cell(*source) for name, source in _SOURCES.items()
+cells: dict[str, Structure] = {
+    name: get_structure(collection, record, dtype=torch.double)
+    for name, (collection, record) in _SOURCES.items()
 }
-"""Crystals, in double precision on the CPU."""
+"""Crystals, periodic along every axis, in double precision on the CPU."""
 
 
-def random_cell(lattice: Tensor, nat: int, dd: DD, seed: int = 0) -> Cell:
+def random_cell(
+    lattice: Tensor,
+    nat: int,
+    dd: DD,
+    seed: int = 0,
+    periodic: Tensor | None = None,
+) -> Structure:
     """
     ``nat`` atoms (Li to Zn) at random fractional coordinates of
     `lattice`, so every atom lies inside the cell whatever its shape.
-
-    Returns ``(numbers, positions, lattice)``, with `lattice` cast to `dd`.
+    `periodic` defaults to all three axes.
     """
     lattice = lattice.to(**dd)
 
@@ -72,4 +93,9 @@ def random_cell(lattice: Tensor, nat: int, dd: DD, seed: int = 0) -> Cell:
     positions = fractional.to(**dd) @ lattice
 
     numbers = torch.randint(3, 31, (nat,), generator=generator)
-    return numbers.to(dd["device"]), positions, lattice
+    return Structure(
+        numbers=numbers.to(dd["device"]),
+        positions=positions,
+        lattice=lattice,
+        periodic=periodic,
+    )

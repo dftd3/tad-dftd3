@@ -73,9 +73,10 @@ def test_fail_per_atom(name: str) -> None:
         "rvdw": tables["rvdw"][numbers.unsqueeze(-1), numbers.unsqueeze(-2)],
         "r4r2": tables["r4r2"][numbers],
     }
+    structure = Structure(numbers=numbers, positions=positions)
     with pytest.raises(ValueError, match=f"{name}_table"):
         dftd3(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             **{f"{name}_table": per_atom[name]},
         )
@@ -85,7 +86,7 @@ def test_fail_per_atom(name: str) -> None:
     for t in (table.expand(2, *table.shape), table[..., :-1]):
         with pytest.raises(ValueError, match=f"{name}_table"):
             dftd3(
-                Structure(numbers=numbers, positions=positions),
+                structure,
                 param,
                 **{f"{name}_table": t},
             )
@@ -114,9 +115,10 @@ def test_fail_renamed(name: str) -> None:
         else table[numbers]
     )
 
+    structure = Structure(numbers=numbers, positions=positions)
     with pytest.raises(TypeError, match=f"'{name}_table'"):
         dftd3(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             **{name: per_atom},
         )
@@ -124,7 +126,7 @@ def test_fail_renamed(name: str) -> None:
     # also when the old name is given the table itself
     with pytest.raises(TypeError, match=f"'{name}_table'"):
         dftd3(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             **{name: table},
         )
@@ -224,11 +226,12 @@ def test_default_tables_cached() -> None:
     defaults = (radii.COV_D3, radii.VDW_PAIRWISE, data.R4R2)
 
     _TABLE_CACHE.clear()
-    dftd3(Structure(numbers=numbers, positions=positions), param)
+    structure = Structure(numbers=numbers, positions=positions)
+    dftd3(structure, param)
     tables = {fn: dict(_TABLE_CACHE[fn]) for fn in defaults}
     assert all(len(per_table) == 1 for per_table in tables.values())
 
-    dftd3(Structure(numbers=numbers, positions=positions), param)
+    dftd3(structure, param)
     for fn, per_table in tables.items():
         for key, cached in per_table.items():
             assert _TABLE_CACHE[fn][key] is cached
@@ -264,8 +267,6 @@ def test_manual_pipeline_matches_dftd3() -> None:
     `tad_mctc.ncoord.cn_d3`, but within the 40 Bohr cutoff of `dftd3`.
     """
     # pylint: disable=import-outside-toplevel
-    from tad_mctc import Structure
-
     from tad_dftd3 import defaults, disp, ncoord
 
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
@@ -288,12 +289,10 @@ def test_manual_pipeline_matches_dftd3() -> None:
     def manual(cn: Tensor) -> Tensor:
         weights = model.weight_references(numbers, cn, ref)
         c6 = model.atomic_c6(numbers, weights, ref)
-        return disp.dispersion(
-            Structure(numbers=numbers, positions=positions), param, c6
-        )
+        return disp.dispersion(structure, param, c6)
 
     cn_model = ncoord.cn_d3.replace(cutoff=defaults.D3_CN_CUTOFF)
-    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
+    energy = dftd3(structure, param)
 
     assert (
         pytest.approx(energy.cpu(), abs=1e-14)

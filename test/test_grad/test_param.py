@@ -178,19 +178,18 @@ def test_s9_zero_autograd(name: str) -> None:
     numbers, positions, param = _s9_setup(name)
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
+    structure = Structure(numbers=numbers, positions=positions)
     e0 = dftd3(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         {**param, "s9": torch.tensor(0.0, **dd)},
     )
     e1 = dftd3(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         {**param, "s9": torch.tensor(1.0, **dd)},
     )
 
     s9 = torch.tensor(0.0, requires_grad=True, **dd)
-    energy = dftd3(
-        Structure(numbers=numbers, positions=positions), {**param, "s9": s9}
-    ).sum()
+    energy = dftd3(structure, {**param, "s9": s9}).sum()
     (grad,) = torch.autograd.grad(energy, s9)
 
     assert pytest.approx(e0.sum().item(), abs=tol) == energy.item()

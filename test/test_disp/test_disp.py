@@ -116,14 +116,12 @@ def test_fail_renamed_and_positional() -> None:
         with pytest.raises(TypeError, match="rvdw_table"):
             func(structure, param, c6, rvdw=rvdw)
     with pytest.raises(TypeError, match="rvdw_table"):
-        damping.dispersion_atm(
-            Structure(numbers=numbers, positions=positions), c6, rvdw=rvdw
-        )
+        damping.dispersion_atm(structure, c6, rvdw=rvdw)
 
     # positional calls of 0.7.0: everything after `c6` is keyword-only
     with pytest.raises(TypeError, match="positional"):
         disp.dispersion(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             c6,
             rvdw,
@@ -131,7 +129,7 @@ def test_fail_renamed_and_positional() -> None:
         )
     with pytest.raises(TypeError, match="positional"):
         disp.dispersion2(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             c6,
             r4r2,
@@ -140,16 +138,14 @@ def test_fail_renamed_and_positional() -> None:
         )
     with pytest.raises(TypeError, match="positional"):
         disp.dispersion3(
-            Structure(numbers=numbers, positions=positions),
+            structure,
             param,
             c6,
             rvdw,
             50.0,
         )
     with pytest.raises(TypeError, match="positional"):
-        damping.dispersion_atm(
-            Structure(numbers=numbers, positions=positions), c6, rvdw, 50.0
-        )
+        damping.dispersion_atm(structure, c6, rvdw, 50.0)
 
 
 def test_fail_numbers_positions() -> None:
@@ -183,25 +179,22 @@ def test_float_s9() -> None:
     c6 = sample["c6"].to(**dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
-    ref = disp.dispersion(
-        Structure(numbers=numbers, positions=positions), par, c6
-    )
+    structure = Structure(numbers=numbers, positions=positions)
+    ref = disp.dispersion(structure, par, c6)
 
     par_float = {**par, "s9": 1.0, "alp": 14.0}
-    energy = disp.dispersion(
-        Structure(numbers=numbers, positions=positions), par_float, c6
-    )
+    energy = disp.dispersion(structure, par_float, c6)
     assert pytest.approx(ref.cpu(), abs=1e-14) == energy.cpu()
 
     atm = damping.dispersion_atm(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         c6,
         s9=1.0,
         rs9=4.0 / 3.0,
         alp=14.0,
     )
     atm_ref = damping.dispersion_atm(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         c6,
         s9=par["s9"],
         alp=par["alp"],
@@ -209,9 +202,7 @@ def test_float_s9() -> None:
     assert pytest.approx(atm_ref.cpu(), abs=1e-14) == atm.cpu()
 
     # `s9 = 0.0` skips the three-body term
-    no_atm = disp.dispersion(
-        Structure(numbers=numbers, positions=positions), {**par, "s9": 0.0}, c6
-    )
+    no_atm = disp.dispersion(structure, {**par, "s9": 0.0}, c6)
     assert pytest.approx(ref.cpu() - atm_ref.cpu(), abs=1e-14) == no_atm.cpu()
 
 

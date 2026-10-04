@@ -51,12 +51,7 @@ def fixture_dispersion3_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return calls
 
 
-@pytest.fixture(autouse=True)
-def _reset_dynamo():
-    """Isolate compile state between tests."""
-    torch._dynamo.reset()  # pylint: disable=protected-access
-    yield
-    torch._dynamo.reset()  # pylint: disable=protected-access
+pytestmark = pytest.mark.usefixtures("reset_dynamo")
 
 
 tol = 1e-8
@@ -170,9 +165,8 @@ def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
     numbers, positions, param = _setup(name, s9)
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
-    ref = dftd3(
-        Structure(numbers=numbers, positions=positions), param, cutoff=cutoff
-    )
+    structure = Structure(numbers=numbers, positions=positions)
+    ref = dftd3(structure, param, cutoff=cutoff)
     compiled = compile_test(
         lambda n, p: dftd3(
             Structure(numbers=n, positions=p), param, cutoff=cutoff
@@ -184,7 +178,7 @@ def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
 
     # only meaningful if the cutoffs change the result
-    default = dftd3(Structure(numbers=numbers, positions=positions), param)
+    default = dftd3(structure, param)
     assert not torch.allclose(ref, default, atol=1e-10, rtol=0)
 
 
@@ -227,14 +221,12 @@ def test_fullgraph_skips_atm_for_float_s9(
 def test_fullgraph_float_s9(name: str) -> None:
     """A Python number `s9 = 1.0` gives the same energy as a tensor."""
     numbers, positions, param = _setup(name, 1.0)
-    ref = dftd3(Structure(numbers=numbers, positions=positions), param)
+    structure = Structure(numbers=numbers, positions=positions)
+    ref = dftd3(structure, param)
 
     param_float = {**param, "s9": 1.0}
     assert (
-        pytest.approx(ref.cpu(), abs=tol)
-        == dftd3(
-            Structure(numbers=numbers, positions=positions), param_float
-        ).cpu()
+        pytest.approx(ref.cpu(), abs=tol) == dftd3(structure, param_float).cpu()
     )
 
     compiled = compile_test(
