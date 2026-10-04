@@ -37,18 +37,20 @@ import torch
 from tad_mctc import storch
 from tad_mctc.batch import real_pairs, real_triples
 from tad_mctc.convert import any_to_tensor
+from tad_mctc.io.structure import Structure
 from tad_mctc.typing import DD, TableFunction, Tensor
 
 from .. import defaults
+from .._checks import require_molecule, takes_structure
 from ..data.table import element_table, reject_renamed_tables
 
 __all__ = ["dispersion_atm"]
 
 
 @reject_renamed_tables
+@takes_structure
 def dispersion_atm(
-    numbers: Tensor,
-    positions: Tensor,
+    structure: Structure,
     c6: Tensor,
     *,
     rvdw_table: Tensor | TableFunction | None = None,
@@ -62,10 +64,9 @@ def dispersion_atm(
 
     Parameters
     ----------
-    numbers : Tensor
-        Atomic numbers of the atoms in the system.
-    positions : Tensor
-        Cartesian coordinates of the atoms in the system.
+    structure : Structure
+        The system, a molecule: atomic numbers and Cartesian coordinates,
+        single or batched (see :func:`tad_dftd3.disp.dftd3`).
     c6 : Tensor
         Atomic C6 dispersion coefficients.
     rvdw_table : Tensor | TableFunction | None, optional
@@ -86,7 +87,18 @@ def dispersion_atm(
     -------
     Tensor
         Atom-resolved ATM dispersion energy.
+
+    Raises
+    ------
+    ValueError
+        If `structure` is a periodic cell, for which the ATM term has no
+        evaluation.
+    TypeError
+        If `structure` is not a ``Structure``.
     """
+    require_molecule(structure, "three-body (ATM) term")
+
+    numbers, positions = structure.numbers, structure.positions
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
     s9 = any_to_tensor(defaults.S9 if s9 is None else s9, **dd)

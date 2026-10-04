@@ -71,8 +71,7 @@ param = {
 }
 
 energy = d3.dftd3(
-    numbers,
-    positions,
+    mctc.Structure(numbers=numbers, positions=positions),
     param,
     ref=ref,
     rcov_table=rcov,

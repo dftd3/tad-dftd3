@@ -46,7 +46,7 @@ param = {
 #######################
 
 pos = positions.clone().requires_grad_(True)
-energy = d3.dftd3(numbers, pos, param)
+energy = d3.dftd3(mctc.Structure(numbers=numbers, positions=pos), param)
 
 (grad,) = torch.autograd.grad(energy.sum(), pos)
 
@@ -64,10 +64,14 @@ step = 1e-5
 for i in range(numbers.shape[-1]):
     for j in range(3):
         positions[i, j] += step
-        e1 = d3.dftd3(numbers, positions, param).sum()
+        e1 = d3.dftd3(
+            mctc.Structure(numbers=numbers, positions=positions), param
+        ).sum()
 
         positions[i, j] -= 2 * step
-        e2 = d3.dftd3(numbers, positions, param).sum()
+        e2 = d3.dftd3(
+            mctc.Structure(numbers=numbers, positions=positions), param
+        ).sum()
 
         positions[i, j] += step
         num_grad[i, j] = (e1 - e2) / (2 * step)

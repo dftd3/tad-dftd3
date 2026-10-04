@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.typing import DD
 
@@ -75,7 +76,7 @@ def test_single(dtype: torch.dtype) -> None:
 
     pos.requires_grad_(True)
 
-    energy = dftd3(nums, pos, par)
+    energy = dftd3(Structure(numbers=nums, positions=pos), par)
     assert not torch.isnan(energy).any(), "Energy contains NaN values"
 
     energy.sum().backward()
@@ -112,7 +113,7 @@ def test_batch(dtype: torch.dtype, name: str) -> None:
 
     pos.requires_grad_(True)
 
-    energy = dftd3(nums, pos, par)
+    energy = dftd3(Structure(numbers=nums, positions=pos), par)
     assert not torch.isnan(energy).any(), "Energy contains NaN values"
 
     energy.sum().backward()

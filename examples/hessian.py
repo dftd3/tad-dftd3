@@ -78,7 +78,9 @@ def _energy(numbers: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
     Returns the energy as a scalar, which is required for Hessian computation
     to obtain the correct shape of ``(..., nat, 3, nat, 3)``.
     """
-    return d3.dftd3(numbers, positions, param).sum(-1)
+    return d3.dftd3(
+        mctc.Structure(numbers=numbers, positions=positions), param
+    ).sum(-1)
 
 
 def hessian(

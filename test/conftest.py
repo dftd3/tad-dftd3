@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 
 import numpy as np
@@ -70,6 +70,14 @@ generating C++ code.
 def compile_test(fn: Callable[..., Any], **kwargs: Any) -> Callable[..., Any]:
     """`torch.compile` on `COMPILE_BACKEND`."""
     return torch.compile(fn, backend=COMPILE_BACKEND, **kwargs)
+
+
+@pytest.fixture(name="reset_dynamo")
+def fixture_reset_dynamo() -> Generator[None, None, None]:
+    """Isolate `torch.compile` state between tests."""
+    torch._dynamo.reset()  # pylint: disable=protected-access
+    yield
+    torch._dynamo.reset()  # pylint: disable=protected-access
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pytest
 import torch
+from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
 from tad_mctc.typing import DD, Callable, Tensor
@@ -72,7 +73,7 @@ def test_vmap_energy(names: tuple[str, str], s9: float) -> None:
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
 
     def energy(n: Tensor, p: Tensor) -> Tensor:
-        return dftd3(n, p, param)
+        return dftd3(Structure(numbers=n, positions=p), param)
 
     ref = per_sample(energy, nums, pos)
     out = torch.func.vmap(energy, in_dims=(0, 0))(numbers, positions)
@@ -89,7 +90,7 @@ def test_vmap_jac(names: tuple[str, str], s9: float, jac: str) -> None:
     jacfn = getattr(torch.func, jac)
 
     def energy(n: Tensor, p: Tensor) -> Tensor:
-        return dftd3(n, p, param).sum(-1)
+        return dftd3(Structure(numbers=n, positions=p), param).sum(-1)
 
     grad = jacfn(energy, argnums=1)
     ref = per_sample(grad, nums, pos)
@@ -106,7 +107,7 @@ def test_jacrev_jacfwd_single(names: tuple[str, str], s9: float) -> None:
     _, _, nums, pos, param = setup(torch.double, names, s9)
 
     def energy(p: Tensor) -> Tensor:
-        return dftd3(nums[1], p, param).sum(-1)
+        return dftd3(Structure(numbers=nums[1], positions=p), param).sum(-1)
 
     rev = torch.func.jacrev(energy)(pos[1])
     fwd = torch.func.jacfwd(energy)(pos[1])
@@ -124,7 +125,7 @@ def test_jac_of_vmap(names: tuple[str, str], s9: float, jac: str) -> None:
     jacfn = getattr(torch.func, jac)
 
     def energy(n: Tensor, p: Tensor) -> Tensor:
-        return dftd3(n, p, param).sum(-1)
+        return dftd3(Structure(numbers=n, positions=p), param).sum(-1)
 
     def total(p: Tensor) -> Tensor:
         return torch.func.vmap(energy, in_dims=(0, 0))(numbers, p).sum()
@@ -147,7 +148,7 @@ def test_vmap_hessian(
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
 
     def energy(n: Tensor, p: Tensor) -> Tensor:
-        return dftd3(n, p, param).sum(-1)
+        return dftd3(Structure(numbers=n, positions=p), param).sum(-1)
 
     def hess(f: Callable[..., Tensor], a: str, b: str) -> Callable[..., Tensor]:
         return getattr(torch.func, a)(
@@ -195,7 +196,9 @@ def test_vmap_jac_table(
     }[name](**dd)
 
     def energy(n: Tensor, p: Tensor, t: Tensor) -> Tensor:
-        return dftd3(n, p, param, **{f"{name}_table": t}).sum(-1)
+        return dftd3(
+            Structure(numbers=n, positions=p), param, **{f"{name}_table": t}
+        ).sum(-1)
 
     # `jacrev` of the unbatched energy is the reference
     rev = torch.func.jacrev(energy, argnums=(1, 2))
@@ -234,7 +237,7 @@ def test_vmap_jacrev_changed_cutoff(names: tuple[str, str], s9: float) -> None:
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
     def energy(n: Tensor, p: Tensor, c: Cutoff | None) -> Tensor:
-        return dftd3(n, p, param, cutoff=c).sum(-1)
+        return dftd3(Structure(numbers=n, positions=p), param, cutoff=c).sum(-1)
 
     def grad(c: Cutoff | None) -> Callable[[Tensor, Tensor], Tensor]:
         return torch.func.jacrev(lambda n, p: energy(n, p, c), argnums=1)
@@ -248,3 +251,34 @@ def test_vmap_jacrev_changed_cutoff(names: tuple[str, str], s9: float) -> None:
     # only meaningful if the cutoffs change the result
     default = torch.func.vmap(grad(None), in_dims=(0, 0))(numbers, positions)
     assert not torch.allclose(out, default, atol=1e-10, rtol=0)
+
+
+@pytest.mark.parametrize("names", names)
+@pytest.mark.parametrize("s9", [0.0, 1.0])
+def test_vmap_structure(names: tuple[str, str], s9: float) -> None:
+    """
+    `vmap` directly over a padded batch of `Structure`s, and derivatives by
+    replacing the positions in the structure.
+    """
+    numbers, positions, nums, pos, param = setup(torch.double, names, s9)
+    batch = Structure(numbers=numbers, positions=positions)
+
+    def energy(structure: Structure) -> Tensor:
+        return dftd3(structure, param).sum(-1)
+
+    def grad(structure: Structure) -> Tensor:
+        def from_positions(p: Tensor) -> Tensor:
+            return energy(structure.replace(positions=p))
+
+        return torch.func.jacrev(from_positions)(structure.positions)
+
+    def ref_energy(n: Tensor, p: Tensor) -> Tensor:
+        return energy(Structure(numbers=n, positions=p))
+
+    ref = torch.stack([ref_energy(n, p) for n, p in zip(nums, pos)])
+    out = torch.func.vmap(energy)(batch)
+    assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
+
+    ref_grad = per_sample(torch.func.jacrev(ref_energy, argnums=1), nums, pos)
+    out_grad = torch.func.vmap(grad)(batch)
+    assert pytest.approx(ref_grad.cpu(), abs=tol) == out_grad.cpu()

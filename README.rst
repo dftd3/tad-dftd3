@@ -263,14 +263,114 @@ to skip it under ``torch.compile`` (also with ``fullgraph=True``), give
 .. code:: python
 
     param = {"a1": a1, "a2": a2, "s8": s8, "s9": 0.0}  # no three-body term
-    energy = torch.compile(d3.dftd3)(numbers, positions, param)
+    energy = torch.compile(d3.dftd3)(structure, param)
 
 The parameter loader in ``tad_dftd3.param`` returns tensors, so overwrite
 ``param["s9"]`` with a Python number (or delete it) to get the same effect.
 
 
+Periodic systems
+----------------
+
+Give the ``Structure`` lattice vectors (as rows, in Bohr) to treat the system
+as a periodic cell. The coordination number and the two-body energy then sum over all
+periodic images within their cutoffs, as in s-dftd3. ``periodic`` (default: all
+three axes) selects the periodic axes of a slab or chain, and atoms need not
+lie inside the cell. Forces and the stress follow from one backward pass:
+
+.. code:: python
+
+    import torch
+    import tad_dftd3 as d3
+    import tad_mctc as mctc
+
+    # diamond, conventional cubic cell
+    numbers = mctc.convert.symbol_to_number(symbols=8 * ["C"])
+    fractional = torch.tensor(
+        [
+            [0.00, 0.00, 0.00],
+            [0.00, 0.50, 0.50],
+            [0.50, 0.00, 0.50],
+            [0.50, 0.50, 0.00],
+            [0.25, 0.25, 0.25],
+            [0.25, 0.75, 0.75],
+            [0.75, 0.25, 0.75],
+            [0.75, 0.75, 0.25],
+        ],
+        dtype=torch.double,
+    )
+    lattice = 6.7406 * torch.eye(3, dtype=torch.double)
+    positions = (fractional @ lattice).requires_grad_(True)
+    lattice.requires_grad_(True)
+    param = {  # PBE-D3(BJ)
+        "a1": torch.tensor(0.4289, dtype=torch.double),
+        "s8": torch.tensor(0.7875, dtype=torch.double),
+        "a2": torch.tensor(4.4407, dtype=torch.double),
+    }
+
+    structure = mctc.Structure(numbers=numbers, positions=positions, lattice=lattice)
+    energy = d3.dftd3(structure, param)
+    print(f"{energy.sum():.10f}")
+    # -0.0562022045
+
+    grad_pos, grad_lat = torch.autograd.grad(energy.sum(), (positions, lattice))
+    virial = positions.mT @ grad_pos + lattice.mT @ grad_lat
+    stress = virial / torch.linalg.det(lattice)
+
+Which images lie within a cutoff depends on the values of the lattice, so by
+default the image shifts are built anew on each call. Under ``torch.compile``
+(``fullgraph=True``), ``vmap`` over cells, or ``jacrev``/``jacfwd`` with
+respect to the lattice, build them once beforehand, at the larger of the
+coordination-number and two-body cutoffs, and pass them as ``shifts``:
+
+.. code:: python
+
+    from tad_mctc.neighbor.images import build_periodic_shifts
+
+    cutoff = d3.Cutoff()
+    shifts = build_periodic_shifts(
+        structure.lattice.detach(), structure.periodic, max(cutoff.cn, cutoff.disp2)
+    )
+
+    def total(pos, lat):
+        cell = structure.replace(positions=pos, lattice=lat)
+        return d3.dftd3(cell, param, shifts=shifts).sum()
+
+    compiled = torch.compile(total, fullgraph=True)
+    grad_lat = torch.func.jacrev(total, argnums=1)(positions, lattice)
+
+For a batch of cells, build one table from the stacked lattices; it covers
+every cell of the batch. Under ``vmap`` over a batched ``Structure``, every
+field is split per system, so give each system its own lattice and periodic
+mask (e.g. ``lattice.expand(nbatch, 3, 3)``), not one shared by the batch. Whether a table covers the lattice is only checked in
+eager mode, not under ``torch.compile``, ``vmap`` or ``jacrev``, where a table
+built for a larger cell silently misses images. If the cell shrinks (cell
+relaxation, NPT), rebuild the table, or call
+``shifts.check_compatible(structure, cutoff)`` once eagerly beforehand.
+
+The evaluation is dense: every atom is paired with every image of every atom,
+which takes memory proportional to ``n_atoms**2 * n_images``. The three-body
+term has no periodic evaluation, so for a cell ``s9`` must be left out or set to
+the Python number ``0.0``.
+
+
 Migrating from 0.7.0
 --------------------
+
+- **Structure.** ``dftd3``, ``dispersion``, ``dispersion2``, ``dispersion3``
+  and ``damping.dispersion_atm`` take a ``tad_mctc.Structure`` instead of
+  ``numbers`` and ``positions``. A periodic cell is a ``Structure`` with a
+  ``lattice``. Passing ``numbers`` and ``positions`` raises a ``TypeError``.
+  To differentiate with ``torch.func``, replace the positions (or the
+  lattice) inside the function with ``structure.replace(positions=...)``.
+
+  .. code:: python
+
+      # 0.7.0
+      energy = d3.dftd3(numbers, positions, param)
+      # now
+      structure = mctc.Structure(numbers=numbers, positions=positions)
+      energy = d3.dftd3(structure, param)
 
 - **Element parameters.** Up to 0.7.0, ``rcov``, ``rvdw`` and ``r4r2`` took
   per-atom (or per-pair) values, i.e. ``table[numbers]``. They are now
@@ -283,7 +383,7 @@ Migrating from 0.7.0
       # 0.7.0
       d3.dftd3(numbers, positions, param, r4r2=d3.data.R4R2()[numbers])
       # now
-      d3.dftd3(numbers, positions, param, r4r2_table=d3.data.R4R2())
+      d3.dftd3(structure, param, r4r2_table=d3.data.R4R2())
 
 - **Keyword-only arguments.** All arguments of ``dispersion``,
   ``dispersion2`` and ``dispersion3`` after ``c6``, and of
@@ -356,7 +456,8 @@ The following example shows how to calculate the DFT-D3 dispersion energy for a 
         "a2": torch.tensor(5.73083694),
     }
 
-    energy = d3.dftd3(numbers, positions, param)
+    structure = mctc.Structure(numbers=numbers, positions=positions)
+    energy = d3.dftd3(structure, param)
 
     torch.set_printoptions(precision=10)
     print(energy)
@@ -445,8 +546,7 @@ The next example shows the calculation of dispersion energies for a batch of str
     weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
     c6 = d3.model.atomic_c6(numbers, weights, ref)
     energy = d3.disp.dispersion(
-        numbers,
-        positions,
+        structure,
         param,
         c6,
         rvdw_table=rvdw,
@@ -493,7 +593,8 @@ obtained from a simple backward pass.
         "a2": torch.tensor(5.73083694),
     }
 
-    energy = d3.dftd3(numbers, positions, param)
+    structure = mctc.Structure(numbers=numbers, positions=positions)
+    energy = d3.dftd3(structure, param)
 
     (grad,) = torch.autograd.grad(energy.sum(), positions)
     forces = -grad
@@ -508,9 +609,8 @@ applying reverse-mode automatic differentiation twice (see
 Limitations
 -----------
 
-The current implementation only works for molecular structures.
-Periodic boundary conditions are **not** implemented, i.e., no stress tensor or
-lattice gradient is available.
+The three-body (ATM) term is only implemented for molecules (see
+`Periodic systems`_).
 
 The code is fully vectorized for maximum efficiency.
 Therefore, all quantities are stored as full tensors, which makes calculations rather **memory intensive**.
