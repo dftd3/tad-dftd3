@@ -23,14 +23,25 @@ import torch
 from tad_mctc import Structure
 from tad_mctc.batch import pack
 from tad_mctc.data import radii
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.typing import DD
 
 from tad_dftd3 import Cutoff, damping, data, disp
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_pairwise
+from ..references import reference_c6
+from ..utils import load_structure
 
-sample_list = ["AmF3", "SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
+sample_list: list[tuple[str, str]] = [
+    ("other", "AmF3"),
+    ("mb16_43", "SiH4"),
+    ("heavy28", "pbh4_bih3"),
+    ("other", "C6H5I-CH3SH"),
+    ("mb16_43", "01"),
+]
+
+DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
 # TPSS0-D3BJ-ATM parameters
 param = {
@@ -48,10 +59,22 @@ param_noatm = {
 }
 
 
+def _reference_terms(
+    source: tuple[str, str], dd: DD, cutoff: Cutoff | None = None
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Atom-resolved two-body and three-body energies of a sample from the
+    s-dftd3 Fortran library, in the dtype and on the device of `dd`.
+    """
+    structure = load_structure(*source, DD64)
+    two_body, three_body = reference_pairwise(structure, param, cutoff=cutoff)
+    return two_body.sum(-1).to(**dd), three_body.sum(-1).to(**dd)
+
+
 def test_fail() -> None:
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    c6 = samples["PbH4-BiH3"]["c6"]
+    c6 = torch.ones((2, 2))
 
     # wrong numbers, rejected by `Structure` itself
     with pytest.raises(RuntimeError):
@@ -173,13 +196,10 @@ def test_fail_numbers_positions() -> None:
 def test_float_s9() -> None:
     """`s9`, `rs9` and `alp` may be Python numbers."""
     dd: DD = {"device": DEVICE, "dtype": torch.double}
-    sample = samples["SiH4"]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    c6 = sample["c6"].to(**dd)
+    structure = load_structure("mb16_43", "SiH4", dd)
+    c6 = reference_c6("mb16_43", "SiH4", dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
-    structure = Structure(numbers=numbers, positions=positions)
     ref = disp.dispersion(structure, par, c6)
 
     par_float = {**par, "s9": 1.0, "alp": 14.0}
@@ -207,24 +227,22 @@ def test_float_s9() -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", sample_list)
-def test_disp2_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_disp2_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    ref = sample["disp2"].to(**dd)
-    c6 = sample["c6"].to(**dd)
+    structure = load_structure(*source, dd)
+    c6 = reference_c6(*source, dd)
     rvdw = radii.VDW_PAIRWISE(**dd)
     r4r2 = data.R4R2(**dd)
     cutoff = Cutoff(disp2=50.0)
+    ref, _ = _reference_terms(source, dd, cutoff)
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
 
     energy = disp.dispersion(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         par,
         c6,
         rvdw_table=rvdw,
@@ -238,66 +256,51 @@ def test_disp2_single(dtype: torch.dtype, name: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name1", sample_list)
-@pytest.mark.parametrize("name2", ["SiH4"])
-def test_disp2_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("source1", sample_list)
+@pytest.mark.parametrize("source2", [("mb16_43", "SiH4")])
+def test_disp2_batch(
+    dtype: torch.dtype,
+    source1: tuple[str, str],
+    source2: tuple[str, str],
+) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
-    sample1, sample2 = samples[name1], samples[name2]
-    numbers = pack(
-        [
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        ]
+    structure = pack_structures(
+        [load_structure(*source1, dd), load_structure(*source2, dd)]
     )
-    positions = pack(
-        [
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        ]
-    )
-    c6 = pack(
-        [
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        ]
-    )
+    c6 = pack([reference_c6(*source1, dd), reference_c6(*source2, dd)])
     ref = pack(
         [
-            sample1["disp2"].to(**dd),
-            sample2["disp2"].to(**dd),
+            _reference_terms(source1, dd)[0],
+            _reference_terms(source2, dd)[0],
         ]
     )
 
     par = {k: v.to(**dd) for k, v in param_noatm.items()}
 
-    energy = disp.dispersion(
-        Structure(numbers=numbers, positions=positions), par, c6
-    )
+    energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", sample_list)
-def test_atm_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_atm_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    c6 = sample["c6"].to(**dd)
-    ref = sample["disp3"].to(**dd)
+    structure = load_structure(*source, dd)
+    c6 = reference_c6(*source, dd)
+    _, ref = _reference_terms(source, dd, Cutoff(disp3=50.0))
 
     rvdw = radii.VDW_PAIRWISE(**dd)
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
     energy = damping.dispersion_atm(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         c6,
         rvdw_table=rvdw,
         cutoff=50.0,
@@ -310,35 +313,24 @@ def test_atm_single(dtype: torch.dtype, name: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name1", sample_list)
-@pytest.mark.parametrize("name2", ["SiH4"])
-def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("source1", sample_list)
+@pytest.mark.parametrize("source2", [("mb16_43", "SiH4")])
+def test_atm_batch(
+    dtype: torch.dtype,
+    source1: tuple[str, str],
+    source2: tuple[str, str],
+) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
-    sample1, sample2 = samples[name1], samples[name2]
-    numbers = pack(
-        [
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        ]
+    structure = pack_structures(
+        [load_structure(*source1, dd), load_structure(*source2, dd)]
     )
-    positions = pack(
-        [
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        ]
-    )
-    c6 = pack(
-        [
-            sample1["c6"].to(**dd),
-            sample2["c6"].to(**dd),
-        ]
-    )
+    c6 = pack([reference_c6(*source1, dd), reference_c6(*source2, dd)])
     ref = pack(
         [
-            sample1["disp3"].to(**dd),
-            sample2["disp3"].to(**dd),
+            _reference_terms(source1, dd)[1],
+            _reference_terms(source2, dd)[1],
         ]
     )
 
@@ -347,7 +339,7 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
     rvdw = radii.VDW_PAIRWISE(**dd)
 
     energy = damping.dispersion_atm(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         c6,
         rvdw_table=rvdw,
         cutoff=50.0,
@@ -360,22 +352,18 @@ def test_atm_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", sample_list)
-def test_full_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_full_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
     tol = sqrt(torch.finfo(dtype).eps)
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    c6 = sample["c6"].to(**dd)
-    ref = (sample["disp2"] + sample["disp3"]).to(**dd)
+    structure = load_structure(*source, dd)
+    c6 = reference_c6(*source, dd)
+    ref = sum(_reference_terms(source, dd))
 
     par = {k: v.to(**dd) for k, v in param.items()}
 
-    energy = disp.dispersion(
-        Structure(numbers=numbers, positions=positions), par, c6
-    )
+    energy = disp.dispersion(structure, par, c6)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu(), abs=tol) == energy.cpu()

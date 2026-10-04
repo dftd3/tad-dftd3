@@ -30,7 +30,7 @@ from tad_dftd3.cutoff import Cutoff
 
 from ..cells import param_on
 from ..conftest import DEVICE
-from ..samples import mols
+from ..utils import load_structure
 
 cutoff = Cutoff(cn=15.0, disp2=20.0)
 
@@ -39,17 +39,16 @@ tol = 1e-10
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
 
-def _molecule(name: str) -> Structure:
-    sample = mols[name]
-    return Structure(
-        numbers=sample["numbers"].to(DEVICE),
-        positions=sample["positions"].to(**DD64),
-    )
+def _molecule(source: tuple[str, str]) -> Structure:
+    return load_structure(*source, DD64)
 
 
-@pytest.mark.parametrize("name", ["PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"])
-def test_matches_dense(name: str) -> None:
-    structure = _molecule(name)
+@pytest.mark.parametrize(
+    "source",
+    [("heavy28", "pbh4_bih3"), ("other", "C6H5I-CH3SH"), ("mb16_43", "01")],
+)
+def test_matches_dense(source: tuple[str, str]) -> None:
+    structure = _molecule(source)
     p = param_on(DD64)
 
     dense = dftd3(structure, p, cutoff=cutoff)
@@ -59,7 +58,10 @@ def test_matches_dense(name: str) -> None:
 
 def test_batch_matches_dense() -> None:
     structure = pack_structures(
-        [_molecule("PbH4-BiH3"), _molecule("C6H5I-CH3SH")]
+        [
+            _molecule(("heavy28", "pbh4_bih3")),
+            _molecule(("other", "C6H5I-CH3SH")),
+        ]
     )
     p = param_on(DD64)
 
@@ -70,7 +72,7 @@ def test_batch_matches_dense() -> None:
 
 @pytest.mark.parametrize("skin", [0.0, 2.0])
 def test_wide_list_matches_dense(skin: float) -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     p = param_on(DD64)
 
     # built at larger cutoffs (and with a skin) than used
@@ -86,7 +88,7 @@ def test_wide_list_matches_dense(skin: float) -> None:
 
 
 def test_gradient_matches_dense() -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     p = param_on(DD64)
 
     def grad(sparse: bool) -> torch.Tensor:
@@ -99,7 +101,7 @@ def test_gradient_matches_dense() -> None:
 
 
 def test_mixed_dense_and_sparse() -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     p = param_on(DD64)
     (nbl_cn,) = build_neighborlists(structure, (cutoff.cn,))
 

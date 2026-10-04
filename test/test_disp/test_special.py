@@ -19,8 +19,8 @@ weird handling of exceptional values in the calculation of the weights.
 
 import pytest
 import torch
-from tad_mctc import Structure
 from tad_mctc.batch import pack
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.data import radii
 from tad_mctc.typing import DD
 
@@ -28,18 +28,16 @@ from tad_dftd3 import Cutoff, damping, data, dftd3, model, reference
 from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_energy_per_atom
+from ..utils import load_structure
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name", ["La3N@C80"])
-def test_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", [("other", "La3N@C80")])
+def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    ref = sample["disp2"].to(**dd)
+    structure = load_structure(*source, dd)
 
     rcov = radii.COV_D3(**dd)
     rvdw = radii.VDW_PAIRWISE(**dd)
@@ -56,8 +54,14 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         "a2": torch.tensor(5.0000, **dd),
     }
 
+    ref = reference_energy_per_atom(
+        load_structure(*source, {"device": DEVICE, "dtype": torch.double}),
+        param,
+        cutoff=cutoff,
+    ).to(**dd)
+
     energy = dftd3(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         param,
         ref=reference.Reference(**dd),
         rcov_table=rcov,
@@ -77,32 +81,8 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 def test_batch(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample1, sample2 = (samples["LiH"], samples["La3N@C80"])
-    numbers = pack(
-        (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        )
-    )
-    positions = pack(
-        (
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        )
-    )
-    ref = pack(
-        (
-            torch.tensor(
-                [
-                    -4.1054019506089849e-05,
-                    -4.1054019506089849e-05,
-                ],
-                **dd
-            ),
-            sample2["disp2"].to(**dd),
-        )
-    )
-
+    sources = [("mb16_43", "LiH"), ("other", "La3N@C80")]
+    structure = pack_structures([load_structure(*src, dd) for src in sources])
     # GFN1-xTB parameters
     param = {
         "s6": torch.tensor(1.0000, **dd),
@@ -113,6 +93,16 @@ def test_batch(dtype: torch.dtype) -> None:
         "a2": torch.tensor(5.0000, **dd),
     }
 
-    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
+    ref = pack(
+        [
+            reference_energy_per_atom(
+                load_structure(*src, {"device": DEVICE, "dtype": torch.double}),
+                param,
+            ).to(**dd)
+            for src in sources
+        ]
+    )
+
+    energy = dftd3(structure, param)
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()

@@ -20,6 +20,7 @@ import pytest
 import torch
 from tad_mctc import Structure
 from tad_mctc.batch import pack
+from tad_mctc.io.structure import pack_structures
 from tad_mctc.data import radii
 from tad_mctc.typing import DD, Tensor
 
@@ -28,7 +29,8 @@ from tad_dftd3.data.table import TABLES, element_table
 from tad_dftd3.ncoord import exp_count
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_energy_per_atom
+from ..utils import load_structure
 
 
 def test_fail() -> None:
@@ -133,14 +135,14 @@ def test_fail_renamed(name: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name", ["LiH", "SiH4", "PbH4-BiH3"])
-def test_single(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize(
+    "source",
+    [("mb16_43", "LiH"), ("mb16_43", "SiH4"), ("heavy28", "pbh4_bih3")],
+)
+def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
-    ref = (sample["disp2"] + sample["disp3"]).to(**dd)
+    structure = load_structure(*source, dd)
 
     rcov = radii.COV_D3(**dd)
     rvdw = radii.VDW_PAIRWISE(**dd)
@@ -156,8 +158,14 @@ def test_single(dtype: torch.dtype, name: str) -> None:
         "a2": torch.tensor(4.5865, **dd),
     }
 
+    ref = reference_energy_per_atom(
+        load_structure(*source, {"device": DEVICE, "dtype": torch.double}),
+        param,
+        cutoff=cutoff,
+    ).to(**dd)
+
     energy = dftd3(
-        Structure(numbers=numbers, positions=positions),
+        structure,
         param,
         ref=reference.Reference(**dd),
         rcov_table=rcov,
@@ -177,26 +185,8 @@ def test_single(dtype: torch.dtype, name: str) -> None:
 def test_batch(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample1, sample2 = (samples["PbH4-BiH3"], samples["C6H5I-CH3SH"])
-    numbers = pack(
-        (
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        )
-    )
-    positions = pack(
-        (
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        )
-    )
-    ref = pack(
-        (
-            sample1["disp2"].to(**dd),
-            sample2["disp2"].to(**dd),
-        )
-    )
-
+    sources = [("heavy28", "pbh4_bih3"), ("other", "C6H5I-CH3SH")]
+    structure = pack_structures([load_structure(*src, dd) for src in sources])
     param = {
         "s6": torch.tensor(1.0000, **dd),
         "s8": torch.tensor(1.2576, **dd),
@@ -206,7 +196,17 @@ def test_batch(dtype: torch.dtype) -> None:
         "a2": torch.tensor(4.5865, **dd),
     }
 
-    energy = dftd3(Structure(numbers=numbers, positions=positions), param)
+    ref = pack(
+        [
+            reference_energy_per_atom(
+                load_structure(*src, {"device": DEVICE, "dtype": torch.double}),
+                param,
+            ).to(**dd)
+            for src in sources
+        ]
+    )
+
+    energy = dftd3(structure, param)
 
     assert energy.dtype == dtype
     assert pytest.approx(ref.cpu()) == energy.cpu()

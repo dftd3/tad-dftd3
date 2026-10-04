@@ -32,21 +32,26 @@ from tad_dftd3 import data, dftd3
 from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..utils import load_sample
 
 tol = 1e-8
 
 
-names = [("LiH", "SiH4"), ("LiH", "PbH4-BiH3")]
+names: list[tuple[tuple[str, str], tuple[str, str]]] = [
+    (("mb16_43", "LiH"), ("mb16_43", "SiH4")),
+    (("mb16_43", "LiH"), ("heavy28", "pbh4_bih3")),
+]
 
 
 def setup(
-    dtype: torch.dtype, names: tuple[str, str], s9: float
+    dtype: torch.dtype,
+    names: tuple[tuple[str, str], tuple[str, str]],
+    s9: float,
 ) -> tuple[Tensor, Tensor, list[Tensor], list[Tensor], dict[str, Tensor]]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    nums = [samples[n]["numbers"].to(DEVICE) for n in names]
-    pos = [samples[n]["positions"].to(**dd) for n in names]
+    nums = [load_sample(*src, dd)[0] for src in names]
+    pos = [load_sample(*src, dd)[1] for src in names]
 
     param = {
         "s6": torch.tensor(1.00000000, **dd),
@@ -69,7 +74,9 @@ def per_sample(
 
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_vmap_energy(names: tuple[str, str], s9: float) -> None:
+def test_vmap_energy(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float
+) -> None:
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
 
     def energy(n: Tensor, p: Tensor) -> Tensor:
@@ -85,7 +92,9 @@ def test_vmap_energy(names: tuple[str, str], s9: float) -> None:
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
 @pytest.mark.parametrize("jac", ["jacrev", "jacfwd"])
-def test_vmap_jac(names: tuple[str, str], s9: float, jac: str) -> None:
+def test_vmap_jac(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float, jac: str
+) -> None:
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
     jacfn = getattr(torch.func, jac)
 
@@ -102,7 +111,9 @@ def test_vmap_jac(names: tuple[str, str], s9: float, jac: str) -> None:
 
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_jacrev_jacfwd_single(names: tuple[str, str], s9: float) -> None:
+def test_jacrev_jacfwd_single(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float
+) -> None:
     """Forward and reverse mode agree on a single geometry."""
     _, _, nums, pos, param = setup(torch.double, names, s9)
 
@@ -119,7 +130,9 @@ def test_jacrev_jacfwd_single(names: tuple[str, str], s9: float) -> None:
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
 @pytest.mark.parametrize("jac", ["jacrev", "jacfwd"])
-def test_jac_of_vmap(names: tuple[str, str], s9: float, jac: str) -> None:
+def test_jac_of_vmap(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float, jac: str
+) -> None:
     """`jac(vmap(...))` over the whole batch (outer derivative)."""
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
     jacfn = getattr(torch.func, jac)
@@ -142,7 +155,10 @@ def test_jac_of_vmap(names: tuple[str, str], s9: float, jac: str) -> None:
 @pytest.mark.parametrize("outer", ["jacrev", "jacfwd"])
 @pytest.mark.parametrize("inner", ["jacrev", "jacfwd"])
 def test_vmap_hessian(
-    names: tuple[str, str], s9: float, outer: str, inner: str
+    names: tuple[tuple[str, str], tuple[str, str]],
+    s9: float,
+    outer: str,
+    inner: str,
 ) -> None:
     """Second derivatives under `vmap` for all forward/reverse mixes."""
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
@@ -179,7 +195,10 @@ def test_vmap_hessian(
     ],
 )
 def test_vmap_jac_table(
-    names: tuple[str, str], s9: float, jac: str, name: str
+    names: tuple[tuple[str, str], tuple[str, str]],
+    s9: float,
+    jac: str,
+    name: str,
 ) -> None:
     """
     Per-element gradients of a padded batch, with the table shared by all
@@ -227,7 +246,9 @@ def test_vmap_jac_table(
 
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_vmap_jacrev_changed_cutoff(names: tuple[str, str], s9: float) -> None:
+def test_vmap_jacrev_changed_cutoff(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float
+) -> None:
     """
     `vmap(jacrev)` with cutoffs short enough to cut pairs and triples of
     these molecules, so the cutoffs reach the coordination number and both
@@ -255,7 +276,9 @@ def test_vmap_jacrev_changed_cutoff(names: tuple[str, str], s9: float) -> None:
 
 @pytest.mark.parametrize("names", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_vmap_structure(names: tuple[str, str], s9: float) -> None:
+def test_vmap_structure(
+    names: tuple[tuple[str, str], tuple[str, str]], s9: float
+) -> None:
     """
     `vmap` directly over a padded batch of `Structure`s, and derivatives by
     replacing the positions in the structure.

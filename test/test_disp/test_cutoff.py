@@ -44,7 +44,7 @@ from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE
 from ..reference import reference_energy_per_atom
-from ..samples import mols
+from ..utils import load_sample
 
 # TPSS0-D3BJ-ATM parameters, so that both the two- and the three-body term
 # contribute.
@@ -82,15 +82,16 @@ comparison depends on how a distance equal to the cutoff is rounded.
 """
 
 
-def fragment_chain(name: str, dd: DD) -> tuple[Tensor, Tensor]:
+def fragment_chain(source: tuple[str, str], dd: DD) -> tuple[Tensor, Tensor]:
     """
-    Build :data:`FRAGMENT_COUNT` copies of molecule ``name`` in a row along
+    Build :data:`FRAGMENT_COUNT` copies of the molecule ``source`` in a row along
     x, :data:`FRAGMENT_SPACING` Bohr apart.
 
     Parameters
     ----------
-    name : str
-        Name of the molecule in :data:`test.samples.samples`.
+    source : tuple[str, str]
+        ``(collection, record)`` of the molecule, see
+        :func:`tad_mctc.data.structures.get_structure`.
     dd : DD
         Device and dtype of the returned positions.
 
@@ -100,9 +101,8 @@ def fragment_chain(name: str, dd: DD) -> tuple[Tensor, Tensor]:
         Atomic numbers, shape ``(FRAGMENT_COUNT * nat,)``, and positions,
         shape ``(FRAGMENT_COUNT * nat, 3)``.
     """
-    fragment = mols[name]
-    numbers = fragment["numbers"].repeat(FRAGMENT_COUNT).to(DEVICE)
-    positions = fragment["positions"].to(**dd)
+    fragment_numbers, positions = load_sample(*source, dd)
+    numbers = fragment_numbers.repeat(FRAGMENT_COUNT)
 
     offsets = FRAGMENT_SPACING * torch.arange(FRAGMENT_COUNT, **dd)
     shifts = torch.zeros((FRAGMENT_COUNT, 1, 3), **dd)
@@ -127,8 +127,10 @@ def test_defaults_match_sdftd3() -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
-@pytest.mark.parametrize("name", ["H2O", "SiH4"])
-def test_chain_matches_reference(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", [("heavy28", "h2o"), ("mb16_43", "SiH4")])
+def test_chain_matches_reference(
+    dtype: torch.dtype, source: tuple[str, str]
+) -> None:
     """A chain of separated fragments matches s-dftd3 at the defaults."""
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
@@ -140,7 +142,7 @@ def test_chain_matches_reference(dtype: torch.dtype, name: str) -> None:
     # `tad_mctc.data.radii.COV_D3`), well below that shift.
     tol = max(10 * torch.finfo(dtype).eps, 1e-8)
 
-    numbers, positions = fragment_chain(name, dd)
+    numbers, positions = fragment_chain(source, dd)
     structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -152,17 +154,17 @@ def test_chain_matches_reference(dtype: torch.dtype, name: str) -> None:
     assert pytest.approx(ref.cpu(), abs=tol, rel=tol) == energy.cpu()
 
 
-@pytest.mark.parametrize("name", ["H2O", "SiH4"])
+@pytest.mark.parametrize("source", [("heavy28", "h2o"), ("mb16_43", "SiH4")])
 @pytest.mark.parametrize("field,value", CHANGED_CUTOFFS)
 def test_changed_cutoff_matches_reference(
-    name: str, field: str, value: float
+    source: tuple[str, str], field: str, value: float
 ) -> None:
     """Each cutoff on its own is applied the way s-dftd3 applies it."""
     # float64 only: the shifts this test relies on are around 1e-10 Hartree
     # on an energy of about 1e-3, which is below float32's resolution.
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
 
-    numbers, positions = fragment_chain(name, dd)
+    numbers, positions = fragment_chain(source, dd)
     structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 
@@ -187,7 +189,7 @@ def test_dftd3_rejects_a_single_cutoff() -> None:
     """One cutoff for everything is ambiguous and has to be rejected."""
     dd: DD = {"device": DEVICE, "dtype": torch.float64}
 
-    numbers, positions = fragment_chain("H2O", dd)
+    numbers, positions = fragment_chain(("heavy28", "h2o"), dd)
     structure = Structure(numbers=numbers, positions=positions)
     par = {k: v.to(**dd) for k, v in param.items()}
 

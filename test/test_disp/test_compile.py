@@ -31,7 +31,7 @@ from tad_dftd3 import data, dftd3, disp
 from tad_dftd3.cutoff import Cutoff
 
 from ..conftest import DEVICE, compile_test, requires_compile
-from .samples import samples
+from ..utils import load_sample
 
 
 @pytest.fixture(name="dispersion3_calls")
@@ -56,15 +56,15 @@ pytestmark = pytest.mark.usefixtures("reset_dynamo")
 
 tol = 1e-8
 
-names = ["SiH4"]
+names = [("mb16_43", "SiH4")]
 
 
-def _setup(name: str, s9: float) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
+def _setup(
+    source: tuple[str, str], s9: float
+) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    numbers, positions = load_sample(*source, dd)
 
     param = {
         "s6": torch.tensor(1.00000000, **dd),
@@ -77,14 +77,14 @@ def _setup(name: str, s9: float) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
+@pytest.mark.parametrize("source", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_graph_breaks(name: str, s9: float) -> None:
+def test_graph_breaks(source: tuple[str, str], s9: float) -> None:
     """
     Compilation with graph breaks allowed. While tracing, the three-body term
     is always evaluated (scaled by `s9`), which must not change the result.
     """
-    numbers, positions, param = _setup(name, s9)
+    numbers, positions, param = _setup(source, s9)
 
     ref = dftd3(Structure(numbers=numbers, positions=positions), param)
     out = compile_test(
@@ -95,16 +95,16 @@ def test_graph_breaks(name: str, s9: float) -> None:
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
+@pytest.mark.parametrize("source", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_fullgraph(name: str, s9: float) -> None:
+def test_fullgraph(source: tuple[str, str], s9: float) -> None:
     """
     A single graph, from a cold start: a graph-breaking compile earlier in the
     same process (e.g. `test_graph_breaks`) runs the untraceable code eagerly
     and can leave state behind that lets a later `fullgraph=True` pass.
     """
 
-    numbers, positions, param = _setup(name, s9)
+    numbers, positions, param = _setup(source, s9)
 
     ref = dftd3(Structure(numbers=numbers, positions=positions), param)
     compiled = compile_test(
@@ -129,12 +129,11 @@ def test_fullgraph_vmap_jacrev(s9: float) -> None:
     """
 
     dd: DD = {"device": DEVICE, "dtype": torch.double}
-    _, _, param = _setup("SiH4", s9)
+    _, _, param = _setup(("mb16_43", "SiH4"), s9)
 
-    numbers = pack([samples[n]["numbers"].to(DEVICE) for n in ("LiH", "SiH4")])
-    positions = pack(
-        [samples[n]["positions"].to(**dd) for n in ("LiH", "SiH4")]
-    )
+    sources = [("mb16_43", "LiH"), ("mb16_43", "SiH4")]
+    numbers = pack([load_sample(*src, dd)[0] for src in sources])
+    positions = pack([load_sample(*src, dd)[1] for src in sources])
     r4r2 = data.R4R2(**dd)
 
     def energy(n: Tensor, p: Tensor, t: Tensor) -> Tensor:
@@ -153,16 +152,16 @@ def test_fullgraph_vmap_jacrev(s9: float) -> None:
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
+@pytest.mark.parametrize("source", names)
 @pytest.mark.parametrize("s9", [0.0, 1.0])
-def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
+def test_fullgraph_changed_cutoff(source: tuple[str, str], s9: float) -> None:
     """
     A single graph with cutoffs short enough to cut pairs and triples of
     this molecule: the cutoffs reach the coordination number and both
     dispersion terms.
     """
 
-    numbers, positions, param = _setup(name, s9)
+    numbers, positions, param = _setup(source, s9)
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
     structure = Structure(numbers=numbers, positions=positions)
@@ -183,15 +182,15 @@ def test_fullgraph_changed_cutoff(name: str, s9: float) -> None:
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
+@pytest.mark.parametrize("source", names)
 def test_fullgraph_skips_atm_for_float_s9(
-    name: str, dispersion3_calls: list[int]
+    source: tuple[str, str], dispersion3_calls: list[int]
 ) -> None:
     """
     A Python number `s9 = 0.0` is a constant to the trace, so the three-body
     term is not evaluated under `fullgraph=True`, unlike a tensor `s9`.
     """
-    numbers, positions, param = _setup(name, 0.0)
+    numbers, positions, param = _setup(source, 0.0)
     ref = dftd3(Structure(numbers=numbers, positions=positions), param)
 
     param_float = {**param, "s9": 0.0}
@@ -217,10 +216,10 @@ def test_fullgraph_skips_atm_for_float_s9(
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
-def test_fullgraph_float_s9(name: str) -> None:
+@pytest.mark.parametrize("source", names)
+def test_fullgraph_float_s9(source: tuple[str, str]) -> None:
     """A Python number `s9 = 1.0` gives the same energy as a tensor."""
-    numbers, positions, param = _setup(name, 1.0)
+    numbers, positions, param = _setup(source, 1.0)
     structure = Structure(numbers=numbers, positions=positions)
     ref = dftd3(structure, param)
 
@@ -239,17 +238,17 @@ def test_fullgraph_float_s9(name: str) -> None:
 
 
 @requires_compile
-@pytest.mark.parametrize("name", names)
+@pytest.mark.parametrize("source", names)
 @pytest.mark.parametrize("fullgraph", [False, True])
 def test_float_s9_as_argument(
-    name: str, fullgraph: bool, dispersion3_calls: list[int]
+    source: tuple[str, str], fullgraph: bool, dispersion3_calls: list[int]
 ) -> None:
     """
     As in the README, the `Structure` and `param` with `s9 = 0.0` are
     arguments of the compiled function, not captured: the three-body term
     is still skipped.
     """
-    numbers, positions, param = _setup(name, 0.0)
+    numbers, positions, param = _setup(source, 0.0)
     structure = Structure(numbers=numbers, positions=positions)
     ref = dftd3(structure, param)
 

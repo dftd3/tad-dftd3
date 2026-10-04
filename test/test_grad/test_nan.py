@@ -27,7 +27,7 @@ from tad_mctc.typing import DD
 from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE
-from ..samples import mols as samples
+from ..utils import load_sample
 
 tol = 1e-8
 
@@ -93,20 +93,20 @@ def test_single(dtype: torch.dtype) -> None:
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.float, torch.double])
-@pytest.mark.parametrize("name", ["LiH", "SiH4"])
-def test_batch(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", [("mb16_43", "LiH"), ("mb16_43", "SiH4")])
+def test_batch(dtype: torch.dtype, source: tuple[str, str]) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     nums = pack(
         (
             numbers.to(DEVICE),
-            samples[name]["numbers"].to(DEVICE),
+            load_sample(*source, dd)[0],
         )
     )
     pos = pack(
         (
             positions.to(**dd),
-            samples[name]["positions"].to(**dd),
+            load_sample(*source, dd)[1],
         )
     )
     par = {k: v.to(**dd) for k, v in param.items()}

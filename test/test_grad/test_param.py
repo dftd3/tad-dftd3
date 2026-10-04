@@ -28,22 +28,25 @@ from tad_mctc.typing import DD, Callable, Tensor
 from tad_dftd3 import dftd3
 
 from ..conftest import DEVICE, FAST_MODE
-from ..samples import mols as samples
+from ..utils import load_sample
 
-sample_list = ["LiH", "AmF3", "SiH4", "MB16_43_01"]
+sample_list: list[tuple[str, str]] = [
+    ("mb16_43", "LiH"),
+    ("other", "AmF3"),
+    ("mb16_43", "SiH4"),
+    ("mb16_43", "01"),
+]
 
 tol = 1e-8
 
 
-def gradchecker(dtype: torch.dtype, name: str) -> tuple[
+def gradchecker(dtype: torch.dtype, source: tuple[str, str]) -> tuple[
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
     tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    numbers, positions = load_sample(*source, dd)
 
     # variables to be differentiated
     param = (
@@ -65,47 +68,38 @@ def gradchecker(dtype: torch.dtype, name: str) -> tuple[
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name", sample_list)
-def test_gradcheck(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_gradcheck(dtype: torch.dtype, source: tuple[str, str]) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradcheck`.
     """
-    func, diffvars = gradchecker(dtype, name)
+    func, diffvars = gradchecker(dtype, source)
     assert dgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)
 
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name", sample_list)
-def test_gradgradcheck(dtype: torch.dtype, name: str) -> None:
+@pytest.mark.parametrize("source", sample_list)
+def test_gradgradcheck(dtype: torch.dtype, source: tuple[str, str]) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradgradcheck`.
     """
-    func, diffvars = gradchecker(dtype, name)
+    func, diffvars = gradchecker(dtype, source)
     assert dgradgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)
 
 
-def gradchecker_batch(dtype: torch.dtype, name1: str, name2: str) -> tuple[
+def gradchecker_batch(
+    dtype: torch.dtype, source1: tuple[str, str], source2: tuple[str, str]
+) -> tuple[
     Callable[[Tensor, Tensor, Tensor, Tensor], Tensor],  # autograd function
     tuple[Tensor, Tensor, Tensor, Tensor],  # differentiable variables
 ]:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample1, sample2 = samples[name1], samples[name2]
-    numbers = pack(
-        [
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        ]
-    )
-    positions = pack(
-        [
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        ]
-    )
+    numbers = pack([load_sample(*src, dd)[0] for src in (source1, source2)])
+    positions = pack([load_sample(*src, dd)[1] for src in (source1, source2)])
 
     # variables to be differentiated
     param = (
@@ -127,38 +121,40 @@ def gradchecker_batch(dtype: torch.dtype, name1: str, name2: str) -> tuple[
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name1", ["LiH"])
-@pytest.mark.parametrize("name2", sample_list)
-def test_gradcheck_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("source1", [("mb16_43", "LiH")])
+@pytest.mark.parametrize("source2", sample_list)
+def test_gradcheck_batch(
+    dtype: torch.dtype, source1: tuple[str, str], source2: tuple[str, str]
+) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradcheck`.
     """
-    func, diffvars = gradchecker_batch(dtype, name1, name2)
+    func, diffvars = gradchecker_batch(dtype, source1, source2)
     assert dgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)
 
 
 @pytest.mark.grad
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name1", ["LiH"])
-@pytest.mark.parametrize("name2", sample_list)
+@pytest.mark.parametrize("source1", [("mb16_43", "LiH")])
+@pytest.mark.parametrize("source2", sample_list)
 def test_gradgradcheck_batch(
-    dtype: torch.dtype, name1: str, name2: str
+    dtype: torch.dtype, source1: tuple[str, str], source2: tuple[str, str]
 ) -> None:
     """
     Check a single analytical gradient of parameters against numerical
     gradient from `torch.autograd.gradgradcheck`.
     """
-    func, diffvars = gradchecker_batch(dtype, name1, name2)
+    func, diffvars = gradchecker_batch(dtype, source1, source2)
     assert dgradgradcheck(func, diffvars, atol=tol, fast_mode=FAST_MODE)
 
 
-def _s9_setup(name: str) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
+def _s9_setup(
+    source: tuple[str, str],
+) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    numbers, positions = load_sample(*source, dd)
     param = {
         "s6": torch.tensor(1.00000000, **dd),
         "s8": torch.tensor(0.78981345, **dd),
@@ -169,13 +165,13 @@ def _s9_setup(name: str) -> tuple[Tensor, Tensor, dict[str, Tensor]]:
 
 
 @pytest.mark.grad
-@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
-def test_s9_zero_autograd(name: str) -> None:
+@pytest.mark.parametrize("source", [("mb16_43", "SiH4"), ("mb16_43", "01")])
+def test_s9_zero_autograd(source: tuple[str, str]) -> None:
     """
     At ``s9 = 0`` the three-body term vanishes, but not its derivative: the
     energy is linear in `s9`, so the derivative is the three-body energy.
     """
-    numbers, positions, param = _s9_setup(name)
+    numbers, positions, param = _s9_setup(source)
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
     structure = Structure(numbers=numbers, positions=positions)
@@ -198,10 +194,10 @@ def test_s9_zero_autograd(name: str) -> None:
 
 
 @pytest.mark.grad
-@pytest.mark.parametrize("name", ["SiH4", "MB16_43_01"])
-def test_s9_zero_functorch(name: str) -> None:
+@pytest.mark.parametrize("source", [("mb16_43", "SiH4"), ("mb16_43", "01")])
+def test_s9_zero_functorch(source: tuple[str, str]) -> None:
     """`jacrev` at ``s9 = 0`` and `vmap` over several `s9` values."""
-    numbers, positions, param = _s9_setup(name)
+    numbers, positions, param = _s9_setup(source)
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
     def energy(s9: Tensor) -> Tensor:

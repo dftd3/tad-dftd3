@@ -32,7 +32,7 @@ from tad_dftd3.damping import dispersion_atm
 
 from ..cells import cells, param_on
 from ..conftest import DEVICE
-from ..samples import mols
+from ..utils import load_structure
 
 # a cutoff below the default, which is what makes the sparse term pay off
 cutoff = Cutoff(cn=15.0, disp2=20.0, disp3=12.0)
@@ -42,21 +42,19 @@ tol = 1e-10
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
 
-def _molecule(name: str) -> Structure:
-    sample = mols[name]
-    return Structure(
-        numbers=sample["numbers"].to(DEVICE),
-        positions=sample["positions"].to(**DD64),
-    )
+def _molecule(source: tuple[str, str]) -> Structure:
+    return load_structure(*source, DD64)
 
 
 def _param() -> dict[str, torch.Tensor | float]:
     return {**param_on(DD64), "s9": torch.tensor(1.0, **DD64)}
 
 
-@pytest.mark.parametrize("name", ["PbH4-BiH3", "C6H5I-CH3SH"])
-def test_matches_dense(name: str) -> None:
-    structure = _molecule(name)
+@pytest.mark.parametrize(
+    "source", [("heavy28", "pbh4_bih3"), ("other", "C6H5I-CH3SH")]
+)
+def test_matches_dense(source: tuple[str, str]) -> None:
+    structure = _molecule(source)
     p = _param()
     nbl = build_neighborlist(structure, cutoff.disp3)
 
@@ -67,7 +65,10 @@ def test_matches_dense(name: str) -> None:
 
 def test_batch_matches_dense() -> None:
     structure = pack_structures(
-        [_molecule("PbH4-BiH3"), _molecule("C6H5I-CH3SH")]
+        [
+            _molecule(("heavy28", "pbh4_bih3")),
+            _molecule(("other", "C6H5I-CH3SH")),
+        ]
     )
     p = _param()
     nbl = build_neighborlist(structure, cutoff.disp3)
@@ -78,7 +79,7 @@ def test_batch_matches_dense() -> None:
 
 
 def test_fully_sparse_matches_dense() -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     p = _param()
     nbl = build_neighborlist(structure, cutoff.disp3)
 
@@ -88,7 +89,7 @@ def test_fully_sparse_matches_dense() -> None:
 
 
 def test_wide_list_matches_dense() -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     p = _param()
     nbl = build_neighborlist(structure, cutoff.disp3 + 4.0, skin=1.0)
 
@@ -102,7 +103,7 @@ def test_wide_list_matches_dense() -> None:
 def test_chunked_gradient_matches_dense(
     checkpoint: bool, max_triples: int
 ) -> None:
-    structure = _molecule("C6H5I-CH3SH")
+    structure = _molecule(("other", "C6H5I-CH3SH"))
     nat = structure.numbers.shape[-1]
     nbl = build_neighborlist(structure, cutoff.disp3)
     gen = torch.Generator().manual_seed(0)

@@ -22,16 +22,21 @@ import pytest
 import torch
 from tad_mctc import Structure
 from tad_mctc.batch import pack
-from tad_mctc.convert import reshape_fortran
 from tad_mctc.typing import DD, Callable, Tensor
 from torch.func import hessian, jacrev, vmap
 
 from tad_dftd3.disp import dftd3
 
 from ..conftest import DEVICE
-from .samples import samples
+from ..reference import reference_hessian
+from ..utils import load_sample, load_structure
 
-sample_list = ["LiH", "SiH4", "PbH4-BiH3", "MB16_43_01"]
+sample_list: list[tuple[str, str]] = [
+    ("mb16_43", "LiH"),
+    ("mb16_43", "SiH4"),
+    ("heavy28", "pbh4_bih3"),
+    ("mb16_43", "01"),
+]
 
 tol = 1e-8
 
@@ -47,14 +52,12 @@ def _hessian(mode: str, f: Callable[..., Tensor]) -> Callable[..., Tensor]:
 
 
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name", sample_list)
+@pytest.mark.parametrize("source", sample_list)
 @pytest.mark.parametrize("mode", ["rev", "fwd"])
-def test_single(dtype: torch.dtype, name: str, mode: str) -> None:
+def test_single(dtype: torch.dtype, source: tuple[str, str], mode: str) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample = samples[name]
-    numbers = sample["numbers"].to(DEVICE)
-    positions = sample["positions"].to(**dd)
+    numbers, positions = load_sample(*source, dd)
 
     # GFN1-xTB parameters
     param = {
@@ -65,10 +68,7 @@ def test_single(dtype: torch.dtype, name: str, mode: str) -> None:
         "a2": torch.tensor(5.00000000, **dd),
     }
 
-    ref = reshape_fortran(
-        sample["hessian"].to(**dd),
-        torch.Size(2 * (numbers.shape[-1], 3)),
-    )
+    ref = reference_hessian(load_structure(*source, dd), param)
 
     def _energy(numbers: Tensor, positions: Tensor) -> Tensor:
         """
@@ -88,24 +88,15 @@ def test_single(dtype: torch.dtype, name: str, mode: str) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.double])
-@pytest.mark.parametrize("name1", ["LiH"])
-@pytest.mark.parametrize("name2", sample_list)
-def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
+@pytest.mark.parametrize("source1", [("mb16_43", "LiH")])
+@pytest.mark.parametrize("source2", sample_list)
+def test_batch(
+    dtype: torch.dtype, source1: tuple[str, str], source2: tuple[str, str]
+) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
-    sample1, sample2 = samples[name1], samples[name2]
-    numbers = pack(
-        [
-            sample1["numbers"].to(DEVICE),
-            sample2["numbers"].to(DEVICE),
-        ]
-    )
-    positions = pack(
-        [
-            sample1["positions"].to(**dd),
-            sample2["positions"].to(**dd),
-        ]
-    )
+    numbers = pack([load_sample(*src, dd)[0] for src in (source1, source2)])
+    positions = pack([load_sample(*src, dd)[1] for src in (source1, source2)])
 
     # GFN1-xTB parameters
     param = {
@@ -118,14 +109,8 @@ def test_batch(dtype: torch.dtype, name1: str, name2: str) -> None:
 
     ref = pack(
         [
-            reshape_fortran(
-                sample1["hessian"].to(**dd),
-                torch.Size(2 * (sample1["numbers"].shape[-1], 3)),
-            ),
-            reshape_fortran(
-                sample2["hessian"].to(**dd),
-                torch.Size(2 * (sample2["numbers"].shape[-1], 3)),
-            ),
+            reference_hessian(load_structure(*src, dd), param)
+            for src in (source1, source2)
         ]
     )
 
