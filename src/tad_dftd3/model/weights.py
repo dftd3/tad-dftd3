@@ -29,11 +29,11 @@ Examples
 ...     [+1.44183152868459, +0.00000000000000, +0.36789293054775],
 ...     [-1.44183152868459, +0.00000000000000, +0.36789293054775],
 ... ], dtype=torch.double)
->>> ref = d3.reference.Reference(dtype=torch.double)
+>>> ref = d3.reference.Reference.load(dtype=torch.double)
 >>> structure = mctc.Structure(numbers=numbers, positions=positions)
 >>> cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
 >>> cn = cn_model(structure)
->>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
+>>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_log_weight)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
 >>> for row in c6.tolist():
 ...     print(" ".join(f"{v:10.7f}" for v in row))
@@ -48,48 +48,58 @@ from collections.abc import Callable
 from typing import Any
 
 import torch
-from tad_mctc import storch
-from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.typing import Tensor
 
 from ..reference import Reference
 
-__all__ = ["WeightingFunction", "gaussian_weight", "weight_references"]
+__all__ = ["WeightingFunction", "gaussian_log_weight", "weight_references"]
 
 
 WeightingFunction = Callable[[Tensor], Tensor]
-"""Function that weights the reference systems by coordination number."""
+"""
+Function that weights the reference systems by the difference of their
+coordination number to the one of the atom, as the logarithm of the
+(unnormalized) weight, so that :func:`weight_references` can normalize the
+weights without them underflowing.
+"""
 
 
-def gaussian_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
+def gaussian_log_weight(dcn: Tensor, factor: float = 4.0) -> Tensor:
     """
-    Calculate weight of indivdual reference system.
+    Logarithm of the Gaussian weight of a reference system,
+    ``-factor * dcn**2``, i.e. the weight ``exp(-factor * dcn**2)`` of D3.
 
     Parameters
     ----------
     dcn : Tensor
         Difference of coordination numbers.
     factor : float
-        Factor to calculate weight.
+        Steepness of the Gaussian. Defaults to 4.0.
 
     Returns
     -------
     Tensor
-        Weight of individual reference system.
+        Logarithm of the weight of each reference system.
     """
-
-    return torch.exp(-factor * dcn.pow(2))
+    return -factor * dcn * dcn
 
 
 def weight_references(
     numbers: Tensor,
     cn: Tensor,
     reference: Reference,
-    weighting_function: WeightingFunction = gaussian_weight,
+    weighting_function: WeightingFunction = gaussian_log_weight,
     **kwargs: Any,
 ) -> Tensor:
     """
-    Calculate the weights of the reference system.
+    Normalized weights of the reference systems of each atom.
+
+    The weights are normalized as a softmax of their logarithms, which
+    subtracts the largest before exponentiating. So nothing underflows, in
+    any precision, also not for a coordination number far from all
+    references (e.g. an atom inside a fullerene, La3N@C80), where the
+    closest reference takes all the weight, and the gradient is the exact
+    derivative everywhere.
 
     Parameters
     ----------
@@ -99,84 +109,31 @@ def weight_references(
         Coordination numbers for all atoms in the system.
     reference : Reference
         Reference systems for D3 model.
-    weighting_function : Callable
-        Function to calculate weight of individual reference systems.
+    weighting_function : WeightingFunction, optional
+        Logarithm of the weight of a reference system, see
+        :data:`WeightingFunction`. Defaults to :func:`gaussian_log_weight`.
+    **kwargs : Any
+        Passed on to `weighting_function`.
 
     Returns
     -------
     Tensor
-        Weights of all reference systems
+        Weights of all reference systems, zero for the reference slots an
+        element does not have and for padding atoms.
     """
     refcn = reference.cn[numbers]
     mask = refcn >= 0
 
-    zero = torch.tensor(0.0, device=cn.device, dtype=cn.dtype)
-    zero_double = torch.tensor(0.0, device=cn.device, dtype=torch.double)
-    one = torch.tensor(1.0, device=cn.device, dtype=cn.dtype)
-
-    # Due to the exponentiation, `norms` and `weights` may become very small.
-    # This may cause problems for the division by `norms`. It may occur that
-    # `weights` and `norms` are equal, in which case the result should be
-    # exactly one. This might, however, not be the case and ultimately cause
-    # larger deviations in the final values.
-    #
-    # This must be done in the D4 variant because the weighting functions
-    # contains higher powers, which lead to values down to 1e-300.
-    # Since there are also cases in D3, we have to evaluate this portion
-    # in double precision to retain the correct results and avoid nan's.
-    dcn = (reference.cn[numbers] - cn.unsqueeze(-1)).type(torch.double)
-    weights = torch.where(
+    log_weights = torch.where(
         mask,
-        weighting_function(dcn, **kwargs),
-        zero_double,  # not eps!
+        weighting_function(refcn - cn.unsqueeze(-1), **kwargs),
+        -torch.inf,
     )
 
-    # Previously, a small value was added to `norms` to prevent division by zero
-    # (`norms = torch.add(torch.sum(weights, dim=-1), 1e-20)`). However, even
-    # such small values can lead to relatively large deviations because the
-    # small value is not added to the weights, and hence, the case where
-    # `weights` and `norms` are equal does not yield one anymore. In fact, the
-    # test suite fails because some elements deviate up to around 1e-4.
-    # We solve this by running in double precision, adding a very small number
-    # and using multiple masks.
+    # A padding atom has no reference at all; any finite row keeps its
+    # softmax finite, and it is masked below.
+    has_reference = mask.any(dim=-1, keepdim=True)
+    log_weights = torch.where(has_reference, log_weights, 0.0)
 
-    small = torch.tensor(1e-300, device=cn.device, dtype=torch.double)
-
-    # normalize weights
-    norm = torch.where(
-        mask,
-        torch.sum(weights, dim=-1, keepdim=True),
-        small,  # double!
-    )
-
-    # back to real dtype
-    gw_temp = storch.safe_divide(weights, norm, eps=small).type(cn.dtype)
-
-    # If the tensor is not a grad tracking tensor, we can check for NaN's
-    if not is_functorch_tensor(gw_temp):
-        assert torch.isnan(gw_temp).sum() == 0
-
-    # The following section handles cases with large CNs that lead to zeros in
-    # after the exponential in the weighting function. If this happens all
-    # weights become zero, which is not desired. Instead, we set the weight of
-    # the largest reference number to one.
-    # This case can occur if the CN of the current (actual) system is too far
-    # away from the largest CN of the reference systems. An example would be an
-    # atom within a fullerene (La3N@C80).
-
-    # maximum reference CN for each atom
-    maxcn = torch.max(refcn, dim=-1, keepdim=True)[0]
-
-    # Here, we catch the potential NaN's from `gw_temp`. We cannot use `gw_temp`
-    # directly, because we have to use safe divide to not get NaN's in the
-    # backward. But `norm == 0` is equivalent. Additionally, we catch very
-    # large values occuring because of division by small values.
-    exceptional = (norm == 0) | (gw_temp > torch.finfo(cn.dtype).max)
-
-    gw = torch.where(
-        exceptional,
-        torch.where(refcn == maxcn, one, zero),
-        gw_temp,
-    )
-
-    return torch.where(mask, gw, zero)
+    weights = torch.softmax(log_weights, dim=-1)
+    return torch.where(mask, weights, torch.zeros_like(weights))

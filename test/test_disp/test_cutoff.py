@@ -192,7 +192,7 @@ def test_dftd3_rejects_a_single_cutoff() -> None:
     par = {k: v.to(**dd) for k, v in param.items()}
 
     with pytest.raises(TypeError):
-        dftd3(structure, par, cutoff=torch.tensor(50.0, **dd))
+        dftd3(structure, par, cutoff=torch.tensor(50.0, **dd))  # type: ignore[arg-type]
 
 
 @pytest.mark.large

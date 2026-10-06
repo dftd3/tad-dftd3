@@ -53,7 +53,7 @@ def _gradients(
     lattice = structure.lattice.clone().requires_grad_(True)
 
     cell = structure.replace(positions=positions, lattice=lattice)
-    energy = dftd3(cell, param_on(DD64), cutoff=cut)
+    energy = dftd3(cell, param_on(DD64), cutoff=cut or Cutoff())
     grad_pos, grad_lat = torch.autograd.grad(energy.sum(), (positions, lattice))
     return grad_pos, grad_lat
 
@@ -115,7 +115,7 @@ def test_gradient_unwrapped_positions() -> None:
 
     generator = torch.Generator().manual_seed(1)
     offsets = torch.randint(
-        -4, 5, structure.positions.shape, generator=generator
+        -4, 5, structure.positions.shape, generator=generator, device="cpu"
     )
     unwrapped = structure.positions + offsets.to(**DD64) @ structure.lattice
     moved = structure.replace(positions=unwrapped)
@@ -168,9 +168,13 @@ def test_batch_padding() -> None:
 
 def _gradcheck_inputs() -> tuple[Structure, tuple[Tensor, Tensor]]:
     """A small distorted cell, and its positions and lattice as leaves."""
-    lattice = 5.0 * torch.eye(3, dtype=torch.double)
+    lattice = 5.0 * torch.eye(3, dtype=torch.double, device="cpu")
     lattice = lattice + 0.3 * torch.rand(
-        3, 3, generator=torch.Generator().manual_seed(0), dtype=torch.double
+        3,
+        3,
+        generator=torch.Generator().manual_seed(0),
+        dtype=torch.double,
+        device="cpu",
     )
     structure = random_cell(lattice, 3, DD64, seed=13)
     assert structure.lattice is not None

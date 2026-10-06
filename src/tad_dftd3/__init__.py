@@ -86,21 +86,61 @@ from . import (
     ncoord,
     param,
     reference,
+    sparse,
 )
 from .__version__ import __version__
 from .cutoff import Cutoff
-from .disp import dftd3
+from .damping import (
+    CSOTwoBody,
+    Damping,
+    DampingParam,
+    KoideThreeBody,
+    KoideTwoBody,
+    ModifiedZeroTwoBody,
+    OptimizedPowerTwoBody,
+    RationalThreeBody,
+    RationalTwoBody,
+    ScreenedThreeBody,
+    ScreenedTwoBody,
+    ZeroProductThreeBody,
+    ZeroThreeBodyD3,
+    ZeroThreeBodyD4,
+    ZeroTwoBody,
+    ZTwoBody,
+    damping_from_name,
+)
+from .disp import D3Model, dftd3
 
-__alll__ = [
+__all__ = [
     "dftd3",
     "cutoff",
     "Cutoff",
+    "D3Model",
+    "Damping",
+    "DampingParam",
+    "CSOTwoBody",
+    "KoideThreeBody",
+    "KoideTwoBody",
+    "ModifiedZeroTwoBody",
+    "OptimizedPowerTwoBody",
+    "RationalThreeBody",
+    "RationalTwoBody",
+    "ScreenedThreeBody",
+    "ScreenedTwoBody",
+    "ZTwoBody",
+    "ZeroProductThreeBody",
+    "ZeroThreeBodyD3",
+    "ZeroThreeBodyD4",
+    "ZeroTwoBody",
+    "damping_from_name",
     "damping",
     "data",
     "defaults",
     "disp",
     "model",
     "ncoord",
+    "param",
     "reference",
+    "sparse",
     "__version__",
 ]

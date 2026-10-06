@@ -25,13 +25,14 @@ from tad_mctc import Structure
 from tad_mctc._version import __tversion__
 from tad_mctc.io.structure import pack_structures
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
+from tad_mctc.tools.testing import requires_compile
 from tad_mctc.typing import DD, Callable, Tensor
 
 from tad_dftd3 import dftd3
 from tad_dftd3.cutoff import Cutoff
 
 from ..cells import cells, param, random_cell
-from ..conftest import DEVICE, compile_test, requires_compile
+from ..conftest import DEVICE, compile_test
 
 pytestmark = pytest.mark.usefixtures("reset_dynamo")
 

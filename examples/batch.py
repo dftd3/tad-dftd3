@@ -59,11 +59,12 @@ positions = mctc.batch.pack(
         sample2["positions"],
     )
 )
-ref = d3.reference.Reference()
-# per-element tables, indexed by atomic number (not per atom)
-rcov = mctc.data.COV_D3()
-rvdw = mctc.data.VDW_PAIRWISE()
-r4r2 = d3.data.R4R2()
+ref = d3.reference.Reference.load(dtype=positions.dtype)
+# per-element tables, indexed by atomic number (not per atom), in the dtype of
+# the positions like every other tensor of the model
+rcov = mctc.data.COV_D3(dtype=positions.dtype)
+rvdw = mctc.data.VDW_PAIRWISE(dtype=positions.dtype)
+r4r2 = d3.data.R4R2(dtype=positions.dtype)
 param = {
     "a1": torch.tensor(0.49484001),
     "s8": torch.tensor(0.78981345),

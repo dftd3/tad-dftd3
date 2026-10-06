@@ -18,15 +18,14 @@ Setup for pytest.
 
 from __future__ import annotations
 
-import shutil
-import sys
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
 import pytest
 import torch
-from tad_mctc.tools import is_compile_supported
+from tad_mctc.tools import get_compile_backend
+from tad_mctc.tools.testing import fixture_reset_dynamo  # noqa: F401
 
 # avoid randomness and non-deterministic algorithms
 np.random.seed(0)
@@ -41,24 +40,7 @@ FAST_MODE: bool = True
 DEVICE: torch.device | None = None
 """Name of Device."""
 
-requires_compile = pytest.mark.skipif(
-    not is_compile_supported(),
-    reason="`torch.compile` is not supported by this Python and PyTorch.",
-)
-"""Skip marker for tests using `torch.compile`."""
-
-
-def _has_cxx_compiler() -> bool:
-    """
-    Whether the C++ compiler that TorchInductor calls is on `PATH`. On Windows
-    that is MSVC's `cl`, which a plain CI runner does not expose
-    (`InvalidCxxCompiler: Compiler: cl is not found`).
-    """
-    names = ["cl"] if sys.platform == "win32" else ["c++", "g++", "clang++"]
-    return any(shutil.which(name) is not None for name in names)
-
-
-COMPILE_BACKEND = "inductor" if _has_cxx_compiler() else "aot_eager"
+COMPILE_BACKEND = get_compile_backend()
 """
 The `torch.compile` backend for tests. The tests check that the energy traces
 as one graph, which Dynamo decides before any backend runs. Without a C++
@@ -68,16 +50,27 @@ generating C++ code.
 
 
 def compile_test(fn: Callable[..., Any], **kwargs: Any) -> Callable[..., Any]:
-    """`torch.compile` on `COMPILE_BACKEND`."""
-    return torch.compile(fn, backend=COMPILE_BACKEND, **kwargs)
+    """
+    `torch.compile` on `COMPILE_BACKEND`, called without a default device.
 
+    Under `--cuda`, the default device is set, a torch-function mode that
+    Dynamo cannot trace through `jacfwd` (PyTorch 2.10, `super().unflatten`),
+    even for ``(x**3).sum()``. The inputs are on the device already and the
+    package passes devices explicitly, so the compiled code needs no default.
+    """
+    compiled = torch.compile(fn, backend=COMPILE_BACKEND, **kwargs)
 
-@pytest.fixture(name="reset_dynamo")
-def fixture_reset_dynamo() -> Generator[None, None, None]:
-    """Isolate `torch.compile` state between tests."""
-    torch._dynamo.reset()  # pylint: disable=protected-access
-    yield
-    torch._dynamo.reset()  # pylint: disable=protected-access
+    def call(*args: Any, **kw: Any) -> Any:
+        if DEVICE is None:
+            return compiled(*args, **kw)
+
+        torch.set_default_device(None)
+        try:
+            return compiled(*args, **kw)
+        finally:
+            torch.set_default_device(DEVICE)
+
+    return call
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

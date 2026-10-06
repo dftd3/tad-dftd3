@@ -17,63 +17,77 @@ Rational (Becke-Johnson) damping function
 =========================================
 
 This module defines the rational damping function, also known as Becke-Johnson
-damping.
+damping, of the two-body term.
 
 .. math::
 
     f^n_{\text{damp}}\left(R_0^{\text{AB}}\right) =
     \dfrac{R^n_{\text{AB}}}{R^n_{\text{AB}} +
     \left( a_1 R_0^{\text{AB}} + a_2 \right)^n}
+
+The three-body damping of dftd, ``RationalThreeBody``, is the product of
+this function for :math:`n = 3` over the three pairs of a triple, on the
+damping radii of the model.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from typing import ClassVar
 
 import torch
-from tad_mctc.typing import DD, Tensor
+from tad_mctc.typing import Tensor
 
 from .. import defaults
+from .base import (
+    DFTD_RADIUS_DEFAULTS,
+    PairData,
+    ThreeBodyDamping,
+    TripleData,
+    TwoBodyDamping,
+    pow6_pow8,
+    scaled_radius,
+)
+from .param import DampingParam
 
-__all__ = ["DampingFunction", "rational_damping"]
-
-DampingFunction = Callable[
-    [int, Tensor, Tensor, Mapping[str, Tensor | float]], Tensor
-]
-"""
-Damping function ``f(order, distances, qq, param)``. Unlike the alias of
-``tad_mctc.typing``, the damping parameters may also be Python numbers.
-"""
+__all__ = ["RationalThreeBody", "RationalTwoBody"]
 
 
-def rational_damping(
-    order: int,
-    distances: Tensor,
-    qq: Tensor,
-    param: Mapping[str, Tensor | float],
-) -> Tensor:
+class RationalTwoBody(TwoBodyDamping):
     """
-    Rational damped dispersion interaction between pairs.
-
-    Parameters
-    ----------
-    order : int
-        Order of the dispersion interaction, e.g.
-        6 for dipole-dipole, 8 for dipole-quadrupole and so on.
-    distances : Tensor
-        Pairwise distances between atoms in the system.
-    qq : Tensor
-        Quotient of C8 and C6 dispersion coefficients.
-    param : Mapping[str, Tensor | float]
-        DFT-D3 damping parameters.
-
-    Returns
-    -------
-    Tensor
-        Values of the damping function.
+    Rational (Becke-Johnson) damping of the two-body term. Needs `s8`, `a1`
+    and `a2`; `s6` defaults to 1.0.
     """
-    dd: DD = {"device": distances.device, "dtype": distances.dtype}
 
-    a1 = param.get("a1", torch.tensor(defaults.A1, **dd))
-    a2 = param.get("a2", torch.tensor(defaults.A2, **dd))
-    return 1.0 / (distances.pow(order) + (a1 * torch.sqrt(qq) + a2).pow(order))
+    defaults: ClassVar[tuple[tuple[str, float], ...]] = (("s6", defaults.S6),)
+    label: ClassVar[str] = "Rational damping"
+
+    def __call__(self, pairs: PairData, param: DampingParam) -> Tensor:
+        r = pairs.distances
+        s6, s8 = self.value(param, "s6"), self.value(param, "s8")
+        r0 = scaled_radius(self, param, pairs.rdamp)
+        r6, r8 = pow6_pow8(r)
+        r0_6, r0_8 = pow6_pow8(r0)
+        return s6 / (r6 + r0_6) + s8 * pairs.qq / (r8 + r0_8)
+
+
+class RationalThreeBody(ThreeBodyDamping):
+    """
+    Rational damping of the three-body term, as dftd. Needs `s9`; `a1` and
+    `a2` default to 1 and 0. Reads the damping radii of the model.
+    """
+
+    defaults: ClassVar[tuple[tuple[str, float], ...]] = DFTD_RADIUS_DEFAULTS
+    label: ClassVar[str] = "Rational damping of the three-body term"
+
+    def __call__(self, triples: TripleData, param: DampingParam) -> Tensor:
+        def pair(r2: Tensor, rdamp: Tensor) -> Tensor:
+            r3 = r2 * torch.sqrt(r2)
+            rpoly = scaled_radius(self, param, rdamp)
+            return r3 / (r3 + rpoly**3)
+
+        return (
+            self.value(param, "s9")
+            * pair(triples.r2ij, triples.rdampij)
+            * pair(triples.r2ik, triples.rdampik)
+            * pair(triples.r2jk, triples.rdampjk)
+        )

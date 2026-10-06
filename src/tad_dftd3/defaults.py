@@ -76,6 +76,18 @@ S8 = 1.0
 S9 = 1.0
 """Scaling for dispersion coefficients (1.0)."""
 
+RS8 = 1.0
+"""Scaling of the radii of the C8 term in zero damping (1.0)."""
+
+CSO_A2 = 2.5
+"""Scaling of the critical radius in the sigmoid of CSO damping (2.5)."""
+
+CSO_RS6 = 0.0
+"""Scaling of the critical radius in the denominator of CSO damping (0.0)."""
+
+CSO_RS8 = 6.25
+"""Offset of the critical radius in the denominator of CSO damping (6.25)."""
+
 RS9 = 4.0 / 3.0
 """Scaling for van-der-Waals radii in damping function (4.0/3.0)."""
 

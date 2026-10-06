@@ -30,12 +30,12 @@ def test_canonical_tpss0_bj() -> None:
     # TPSS0-D3BJ-ATM parameters, matching test/test_disp/test_dftd3.py::test_fail
     param = get_functional_params("tpss0", damping="bj", device=DEVICE)
 
-    assert param["a1"] == pytest.approx(0.3768)
-    assert param["s8"] == pytest.approx(1.2576)
-    assert param["a2"] == pytest.approx(4.5865)
-    assert param["s6"] == pytest.approx(1.0)
-    assert param["s9"] == pytest.approx(1.0)
-    assert param["alp"] == pytest.approx(14.0)
+    assert param["a1"].cpu() == pytest.approx(0.3768)
+    assert param["s8"].cpu() == pytest.approx(1.2576)
+    assert param["a2"].cpu() == pytest.approx(4.5865)
+    assert param["s6"].cpu() == pytest.approx(1.0)
+    assert param["s9"].cpu() == pytest.approx(1.0)
+    assert param["alp"].cpu() == pytest.approx(14.0)
 
 
 @pytest.mark.parametrize(
@@ -100,3 +100,14 @@ def test_returns_tensors() -> None:
     param = get_functional_params("b3lyp", damping="bj")
     for value in param.values():
         assert isinstance(value, torch.Tensor)
+
+
+def test_zero_damping_params_rejected() -> None:
+    """Zero-damping parameters must not be silently run as BJ damping."""
+    import pytest
+
+    from tad_dftd3.damping import RationalTwoBody, as_damping_param
+
+    param = as_damping_param(get_functional_params("pbe", damping="zero"))
+    with pytest.raises(ValueError, match="requires.*a1"):
+        RationalTwoBody().value(param, "a1")

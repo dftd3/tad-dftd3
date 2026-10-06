@@ -34,20 +34,26 @@ cutoff = Cutoff(cn=15.0, disp2=20.0)
 DD64: DD = {"device": DEVICE, "dtype": torch.double}
 
 
-def test_shifts_and_list_exclusive() -> None:
+def test_list_takes_the_place_of_shifts() -> None:
+    """A list given (or built by `sparse`) for a term wins over `shifts`."""
     structure = cells["urea"]
     assert structure.lattice is not None and structure.periodic is not None
     p = param_on(DD64)
+    ref = dftd3(structure, p, cutoff=cutoff)
+
+    # covers the coordination number, but is too short for the two-body term
     shifts = build_periodic_shifts(
-        structure.lattice, structure.periodic, cutoff.disp2
+        structure.lattice, structure.periodic, cutoff.cn
     )
+    with pytest.raises(ValueError, match="cutoff"):
+        dftd3(structure, p, cutoff=cutoff, shifts=shifts)
+
     (nbl,) = build_neighborlists(structure, (cutoff.disp2,))
+    energy = dftd3(structure, p, cutoff=cutoff, shifts=shifts, nbl_disp2=nbl)
+    assert pytest.approx(ref.cpu(), abs=1e-12, rel=0) == energy.cpu()
 
-    with pytest.raises(ValueError, match="not both"):
-        dftd3(structure, p, cutoff=cutoff, shifts=shifts, nbl_disp2=nbl)
-
-    with pytest.raises(ValueError, match="replace"):
-        dftd3(structure, p, cutoff=cutoff, shifts=shifts, sparse=True)
+    energy = dftd3(structure, p, cutoff=cutoff, shifts=shifts, sparse=True)
+    assert pytest.approx(ref.cpu(), abs=1e-12, rel=0) == energy.cpu()
 
 
 def test_list_too_short_raises() -> None:

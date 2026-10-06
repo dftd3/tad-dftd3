@@ -208,7 +208,7 @@ def test_vmap_jac_table(
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    table = {
+    table = {  # type: ignore[operator]
         "rcov": radii.COV_D3,
         "rvdw": radii.VDW_PAIRWISE,
         "r4r2": data.R4R2,
@@ -216,7 +216,7 @@ def test_vmap_jac_table(
 
     def energy(n: Tensor, p: Tensor, t: Tensor) -> Tensor:
         return dftd3(
-            Structure(numbers=n, positions=p), param, **{f"{name}_table": t}
+            Structure(numbers=n, positions=p), param, **{f"{name}_table": t}  # type: ignore[arg-type]
         ).sum(-1)
 
     # `jacrev` of the unbatched energy is the reference
@@ -257,10 +257,10 @@ def test_vmap_jacrev_changed_cutoff(
     numbers, positions, nums, pos, param = setup(torch.double, names, s9)
     cutoff = Cutoff(cn=4.0, disp2=6.0, disp3=6.0)
 
-    def energy(n: Tensor, p: Tensor, c: Cutoff | None) -> Tensor:
+    def energy(n: Tensor, p: Tensor, c: Cutoff) -> Tensor:
         return dftd3(Structure(numbers=n, positions=p), param, cutoff=c).sum(-1)
 
-    def grad(c: Cutoff | None) -> Callable[[Tensor, Tensor], Tensor]:
+    def grad(c: Cutoff) -> Callable[[Tensor, Tensor], Tensor]:
         return torch.func.jacrev(lambda n, p: energy(n, p, c), argnums=1)
 
     ref = per_sample(grad(cutoff), nums, pos)
@@ -270,7 +270,9 @@ def test_vmap_jacrev_changed_cutoff(
     assert pytest.approx(ref.cpu(), abs=tol) == out.cpu()
 
     # only meaningful if the cutoffs change the result
-    default = torch.func.vmap(grad(None), in_dims=(0, 0))(numbers, positions)
+    default = torch.func.vmap(grad(Cutoff()), in_dims=(0, 0))(
+        numbers, positions
+    )
     assert not torch.allclose(out, default, atol=1e-10, rtol=0)
 
 

@@ -20,12 +20,14 @@ This module defines the reference systems for the D3 model to compute the
 C6 dispersion coefficients.
 """
 
+from __future__ import annotations
+
 import os.path as op
-from typing import Any, NoReturn
 
 import torch
 from tad_mctc.data import resolve_table
-from tad_mctc.typing import Tensor, get_default_device, get_default_dtype
+from tad_mctc.tree import Node, child
+from tad_mctc.typing import DD, Tensor, get_default_device, get_default_dtype
 
 __all__ = ["Reference"]
 
@@ -200,7 +202,7 @@ def _c6_table(
     return _C6.to(device=device, dtype=dtype)
 
 
-def _default_reference(like: Tensor) -> "Reference":
+def _default_reference(like: Tensor) -> Reference:
     """
     The default reference on the device and dtype of `like`, read-only.
 
@@ -223,53 +225,56 @@ def _default_reference(like: Tensor) -> "Reference":
     )
 
 
-class Reference:
+class Reference(Node):
     """
     Reference systems for the D3 dispersion model
+
+    A frozen :class:`~tad_mctc.tree.Node`: the tensors are pytree leaves, so
+    the reference can be moved with :meth:`to` and :meth:`type` and passed
+    through ``torch.func``. The default reference is loaded with
+    :meth:`load`.
+
+    Parameters
+    ----------
+    cn : Tensor
+        Coordination numbers for all reference systems, of shape
+        ``(n_element, n_reference)``.
+    c6 : Tensor
+        C6 coefficients for all pairs of reference systems, of shape
+        ``(n_element, n_element, n_reference, n_reference)``.
     """
 
-    c6: Tensor
-    """C6 coefficients for all pairs of reference systems"""
+    cn: Tensor = child()
+    c6: Tensor = child()
 
-    cn: Tensor
-    """Coordination numbers for all reference systems"""
-
-    __slots__ = [
-        "c6",
-        "cn",
-        "__dtype",
-        "__device",
-    ]
-
-    def __init__(
-        self,
-        cn: Tensor | None = None,
-        c6: Tensor | None = None,
+    @classmethod
+    def load(
+        cls,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
-    ):
-        if cn is None:
-            cn = _load_cn(
-                dtype=dtype if dtype is not None else get_default_dtype(),
-                device=device if device is not None else get_default_device(),
-            )
-        self.cn = cn
-        if c6 is None:
-            c6 = _load_c6(
-                dtype=dtype if dtype is not None else get_default_dtype(),
-                device=device if device is not None else get_default_device(),
-            )
-        self.c6 = c6
+    ) -> Reference:
+        """
+        The default reference systems of DFT-D3.
 
-        self.__dtype = self.c6.dtype
-        self.__device = self.c6.device
+        Parameters
+        ----------
+        device : torch.device | None, optional
+            Device of the tensors. Defaults to the default device.
+        dtype : torch.dtype | None, optional
+            Floating point type of the tensors. Defaults to the default dtype.
 
-        if self.cn.device != self.c6.device:
-            raise RuntimeError("All tensors must be on the same device!")
+        Returns
+        -------
+        Reference
+            A new reference, which does not share memory with other calls.
+        """
+        dd: DD = {
+            "device": device if device is not None else get_default_device(),
+            "dtype": dtype if dtype is not None else get_default_dtype(),
+        }
+        return cls(cn=_load_cn(**dd), c6=_load_c6(**dd))
 
-        if self.cn.dtype != self.c6.dtype:
-            raise RuntimeError("All tensors must have the same dtype!")
-
+    def _validate(self) -> None:
         if any(
             (
                 self.c6.shape[-2] != self.c6.shape[-1],
@@ -278,98 +283,14 @@ class Reference:
                 self.c6.shape[-3] != self.cn.shape[-2],
             )
         ):
-            raise RuntimeError("`c6` & `cn` size mismatch found")
-
-    @property
-    def device(self) -> torch.device:
-        """The device on which the `Reference` object resides."""
-        return self.__device
-
-    @device.setter
-    def device(self, *_: Any) -> NoReturn:
-        """
-        Instruct users to use the ".to" method if wanting to change device.
-        """
-        raise AttributeError("Move object to device using the `.to` method")
-
-    @property
-    def dtype(self) -> torch.dtype:
-        """Floating point dtype used by reference object."""
-        return self.__dtype
-
-    def to(
-        self,
-        device: torch.device | None = None,
-        dtype: torch.dtype | None = None,
-    ) -> "Reference":
-        """
-        Returns a copy of the `Reference` instance on the specified device.
-
-        This method creates and returns a new copy of the `Reference` instance
-        on the specified device "``device``".
-
-        Parameters
-        ----------
-        device : torch.device, optional
-            Device to which all associated tensors should be moved.
-        dtype : torch.dtype, optional
-            Floating point type of the tensors.
-
-        Returns
-        -------
-        Reference
-            A copy of the `Reference` instance placed on the specified device.
-
-        Notes
-        -----
-        If the `Reference` instance is already on the desired device `self`
-        will be returned.
-        """
-        if self.__device == device:
-            if dtype is not None:
-                return self.type(dtype)
-            return self
-
-        return self.__class__(
-            self.cn.to(device=device, dtype=dtype),
-            self.c6.to(device=device, dtype=dtype),
-        )
-
-    def type(self, dtype: torch.dtype) -> "Reference":
-        """
-        Returns a copy of the `Reference` instance with specified floating
-        point type. This method creates and returns a new copy of the
-        `Reference` instance with the specified dtype.
-
-        Parameters
-        ----------
-        dtype : torch.dtype
-            Floating point type of the tensors.
-
-        Returns
-        -------
-        Reference
-            A copy of the `Reference` instance with the specified dtype.
-
-        Notes
-        -----
-        If the `Reference` instance has already the desired dtype `self` will
-        be returned.
-        """
-        if self.__dtype == dtype:
-            return self
-
-        return self.__class__(
-            self.cn.type(dtype),
-            self.c6.type(dtype),
-        )
+            raise ValueError("`c6` & `cn` size mismatch found")
 
     def __str__(self) -> str:
         """Creates a string representation of the Reference object."""
         return (
             f"{self.__class__.__name__}(n_element={self.cn.shape[-2]}, "
-            f"n_reference={self.cn.shape[-1]}, dtype={self.__dtype}, "
-            f"device={self.__device})"
+            f"n_reference={self.cn.shape[-1]}, dtype={self.dtype}, "
+            f"device={self.device})"
         )
 
     def __repr__(self) -> str:

@@ -30,11 +30,11 @@ Examples
 ...     [+1.44183152868459, +0.00000000000000, +0.36789293054775],
 ...     [-1.44183152868459, +0.00000000000000, +0.36789293054775],
 ... ], dtype=torch.double)
->>> ref = d3.reference.Reference(dtype=torch.double)
+>>> ref = d3.reference.Reference.load(dtype=torch.double)
 >>> structure = mctc.Structure(numbers=numbers, positions=positions)
 >>> cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
 >>> cn = cn_model(structure)
->>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
+>>> weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_log_weight)
 >>> c6 = d3.model.atomic_c6(numbers, weights, ref)
 >>> for row in c6.tolist():
 ...     print(" ".join(f"{v:10.7f}" for v in row))

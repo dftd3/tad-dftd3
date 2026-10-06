@@ -70,14 +70,13 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     energy = dftd3(
         structure,
         param,
-        ref=reference.Reference(**dd),
+        ref=reference.Reference.load(**dd),
         rcov_table=rcov,
         rvdw_table=rvdw,
         r4r2_table=r4r2,
         cutoff=cutoff,
         counting_function=exp_count,
-        weighting_function=model.gaussian_weight,
-        damping_function=damping.rational_damping,
+        weighting_function=model.gaussian_log_weight,
     )
 
     assert energy.dtype == dtype

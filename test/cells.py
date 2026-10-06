@@ -38,7 +38,7 @@ param: dict[str, Tensor | float] = {
     "a1": torch.tensor(0.3768, dtype=torch.double),
     "a2": torch.tensor(4.5865, dtype=torch.double),
 }
-"""TPSS0-D3(BJ), without the three-body term, which is not periodic."""
+"""TPSS0-D3(BJ), without the three-body term (``s9`` missing)."""
 
 
 def param_on(dd: DD) -> dict[str, Tensor | float]:
@@ -89,10 +89,12 @@ def random_cell(
     lattice = lattice.to(**dd)
 
     generator = torch.Generator().manual_seed(seed)
-    fractional = torch.rand(nat, 3, generator=generator, dtype=torch.double)
+    fractional = torch.rand(
+        nat, 3, generator=generator, dtype=torch.double, device="cpu"
+    )
     positions = fractional.to(**dd) @ lattice
 
-    numbers = torch.randint(3, 31, (nat,), generator=generator)
+    numbers = torch.randint(3, 31, (nat,), generator=generator, device="cpu")
     return Structure(
         numbers=numbers.to(dd["device"]),
         positions=positions,

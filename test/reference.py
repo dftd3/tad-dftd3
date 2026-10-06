@@ -108,34 +108,93 @@ def _dd(structure: Structure) -> DD:
 
 
 def _build_damping_param(
-    param: Mapping[str, Tensor | float],
-) -> dftd3_interface.RationalDampingParam:
-    """Translate a tad-dftd3 ``param`` dict into a ``RationalDampingParam``,
-    shared by every function in this module.
+    param: Mapping[str, Any],
+) -> dftd3_interface.DampingParam:
+    """Translate a tad-dftd3 ``param`` dict into the damping parameters of
+    s-dftd3, shared by every function in this module. The variant is the
+    ``"damping"`` entry (``"rational"`` if there is none), as in the
+    metadata of ``get_functional_params(..., keep_meta=True)``.
 
     A missing ``"s9"`` is treated as ``0.0`` (no ATM term), matching
     ``dftd3()`` itself, which only adds the three-body term when
     ``"s9" in param and param["s9"] != 0.0``.
     """
 
-    def value_or_default(key: str, default: float) -> float:
+    def value(key: str, default: float) -> float:
         if key in param:
             return float(param[key])
         return default
 
-    return dftd3_interface.RationalDampingParam(
-        s6=value_or_default("s6", defaults.S6),
-        s8=value_or_default("s8", defaults.S8),
-        a1=value_or_default("a1", defaults.A1),
-        a2=value_or_default("a2", defaults.A2),
-        s9=value_or_default("s9", 0.0),
-        alp=value_or_default("alp", defaults.ALP),
-    )
+    def need(key: str) -> float:
+        return float(param[key])
+
+    variant = param.get("damping", "rational")
+    s6, s9 = value("s6", defaults.S6), value("s9", 0.0)
+    alp = value("alp", defaults.ALP)
+
+    if variant == "rational":
+        return dftd3_interface.RationalDampingParam(
+            s6=s6,
+            s8=value("s8", defaults.S8),
+            a1=value("a1", defaults.A1),
+            a2=value("a2", defaults.A2),
+            s9=s9,
+            alp=alp,
+        )
+    if variant == "zero":
+        return dftd3_interface.ZeroDampingParam(
+            s6=s6,
+            s8=need("s8"),
+            s9=s9,
+            rs6=need("rs6"),
+            rs8=value("rs8", defaults.RS8),
+            alp=alp,
+        )
+    if variant == "mzero":
+        return dftd3_interface.ModifiedZeroDampingParam(
+            s6=s6,
+            s8=need("s8"),
+            s9=s9,
+            rs6=need("rs6"),
+            rs8=value("rs8", defaults.RS8),
+            alp=alp,
+            bet=need("bet"),
+        )
+    if variant == "optimizedpower":
+        return dftd3_interface.OptimizedPowerDampingParam(
+            s6=s6,
+            s8=need("s8"),
+            s9=s9,
+            a1=need("a1"),
+            a2=need("a2"),
+            alp=alp,
+            bet=need("bet"),
+        )
+    if variant == "cso":
+        # The bindings name the parameters of s-dftd3 `a3` and `a4`.
+        return dftd3_interface.CSODampingParam(
+            s6=s6,
+            s9=s9,
+            a1=need("a1"),
+            a2=value("a2", defaults.CSO_A2),
+            a3=value("rs6", defaults.CSO_RS6),
+            a4=value("rs8", defaults.CSO_RS8),
+            alp=alp,
+        )
+    if variant == "z":
+        return dftd3_interface.ZDampingParam(
+            s6=s6,
+            s8=value("s8", defaults.S8),
+            s9=s9,
+            a1=need("a1"),
+            alp=alp,
+        )
+    raise ValueError(f"Unknown damping variant '{variant}'.")
 
 
 def reference_energy_per_atom(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
+    param: Mapping[str, Any],
     *,
     cutoff: Cutoff | None = None,
 ) -> Tensor:
@@ -180,7 +239,7 @@ def reference_energy_per_atom(
 
 def reference_pairwise(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
+    param: Mapping[str, Any],
     *,
     cutoff: Cutoff | None = None,
 ) -> tuple[Tensor, Tensor]:
@@ -235,7 +294,7 @@ def reference_pairwise(
 
 def reference_gradient(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
+    param: Mapping[str, Any],
     *,
     cutoff: Cutoff | None = None,
 ) -> tuple[Tensor, Tensor]:
@@ -278,7 +337,7 @@ def reference_gradient(
 
 def reference_hessian(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
+    param: Mapping[str, Any],
     *,
     cutoff: Cutoff | None = None,
 ) -> Tensor:

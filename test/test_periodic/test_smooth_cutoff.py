@@ -15,7 +15,7 @@
 Smooth two-body cutoff for periodic cells, against s-dftd3: energy, gradient
 and virial, dense and over a neighbour list, and the strain derivative by
 central differences, which with a smooth cutoff needs no distance to stay
-clear of it. The three-body term has no periodic evaluation.
+clear of it. The smooth three-body cutoff of a cell is in ``test_atm.py``.
 """
 
 from __future__ import annotations
@@ -124,7 +124,9 @@ def test_list_of_unstrained_cell_with_skin() -> None:
     )
 
     gen = torch.Generator().manual_seed(3)
-    strain = 5e-3 * torch.randn(3, 3, generator=gen, dtype=torch.double)
+    strain = 5e-3 * torch.randn(
+        3, 3, generator=gen, dtype=torch.double, device="cpu"
+    )
     strain = strain.to(DEVICE)
     deformed = structure.replace(
         positions=structure.positions + structure.positions @ strain,

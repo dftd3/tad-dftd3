@@ -16,7 +16,7 @@ r"""
 Axilrod-Teller-Muto (ATM) dispersion term
 =========================================
 
-This module provides the dispersion energy evaluation for the three-body
+This module provides the dense evaluation of the three-body
 Axilrod-Teller-Muto dispersion term.
 
 .. math::
@@ -29,6 +29,22 @@ Axilrod-Teller-Muto dispersion term.
     {\left(r_\text{AB} r_\text{BC} r_\text{AC} \right)^3} \\
     f_\text{damp} &=
     \dfrac{1}{1+ 6 \left(\overline{R}_\text{ABC}\right)^{-16}}
+
+The functions here evaluate the geometry of the term: the angular factor
+and the cutoff of every triple. The damping, with the scaling `s9`, is a
+:class:`~tad_dftd3.damping.ThreeBodyDamping` they call for every triple with
+its :class:`~tad_dftd3.damping.TripleData`, as dftd calls ``get_3b_damp``;
+D3 gives it the van-der-Waals radii of the pairs. There is one function per
+way of enumerating the triples, without any dispatch between them (that is
+done by :func:`tad_dftd3.disp.dispersion3`):
+
+- :func:`dispersion_atm`: all triples of a molecule, ``O(nat**3)`` memory.
+- :func:`dispersion_atm_periodic`: a cell, every atom of the cell with all
+  pairs of periodic images within the cutoff, as s-dftd3.
+- :func:`tad_dftd3.sparse.dispersion_atm_sparse`: the triples of a neighbour
+  list, for a molecule or a cell.
+
+The latter two share the energy of a triple, :func:`atm_term`.
 """
 
 from __future__ import annotations
@@ -36,39 +52,41 @@ from __future__ import annotations
 import torch
 from tad_mctc import storch
 from tad_mctc.batch import real_pairs, real_triples
-from tad_mctc.convert import any_to_tensor
 from tad_mctc.io.structure import Structure
-from tad_mctc.neighbor.list import NeighborList
-from tad_mctc.neighbor.triples import TripleChunk, triples_from_neighborlist
+from tad_mctc.ncoord.common import _periodic_images
+from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
 from tad_mctc.typing import DD, TableFunction, Tensor
 from torch.utils.checkpoint import checkpoint as _torch_checkpoint
 
 from .. import defaults
-from .._checks import require_molecule, takes_structure
 from ..cutoff import smooth_cutoff
-from ..data.table import element_table, reject_renamed_tables
+from ..data.table import element_table
+from .base import ThreeBodyDamping, TripleData
+from .param import DampingParam
+from .zero import ZeroThreeBodyD3
 
-__all__ = ["dispersion_atm"]
+__all__ = [
+    "atm_term",
+    "dispersion_atm",
+    "dispersion_atm_periodic",
+    "pair_radii",
+]
 
 
-@reject_renamed_tables
-@takes_structure
 def dispersion_atm(
     structure: Structure,
     c6: Tensor,
+    param: DampingParam,
     *,
+    damping: ThreeBodyDamping = ZeroThreeBodyD3(),
     rvdw_table: Tensor | TableFunction | None = None,
+    r4r2_table: Tensor | TableFunction | None = None,
     cutoff: float = defaults.D3_DISP3_CUTOFF,
     width: float = defaults.D3_DISP3_WIDTH,
-    s9: Tensor | float | None = None,
-    rs9: Tensor | float | None = None,
-    alp: Tensor | float | None = None,
-    nbl: NeighborList | None = None,
-    max_triples: int = 2_000_000,
-    checkpoint: bool = False,
 ) -> Tensor:
     """
-    Axilrod-Teller-Muto dispersion term.
+    Axilrod-Teller-Muto dispersion term of a molecule, over all triples of
+    atoms. This takes ``O(nat**3)`` memory, whatever the cutoff.
 
     Parameters
     ----------
@@ -77,39 +95,26 @@ def dispersion_atm(
         single or batched (see :func:`tad_dftd3.disp.dftd3`).
     c6 : Tensor
         Atomic C6 dispersion coefficients.
+    param : DampingParam
+        DFT-D3 damping parameters, read by `damping`.
+    damping : ThreeBodyDamping, optional
+        The damping. Defaults to zero damping.
     rvdw_table : Tensor | TableFunction | None, optional
         Van der Waals radii per element pair, indexed by atomic numbers, of
         shape ``(104, 104)``, or ``None`` for
         :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    r4r2_table : Tensor | TableFunction | None, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``, or
+        ``None`` for :func:`tad_dftd3.data.R4R2`. Both tables give the radii
+        of the pairs, see :func:`pair_radii`.
     cutoff : float, optional
-        Real-space cutoff, in Bohr. Defaults to
+        Real-space cutoff, in Bohr. A triple is dropped as a whole if one of
+        its three distances is beyond it. Defaults to
         :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
     width : float, optional
         Width of the smooth cutoff, in Bohr: a triple is scaled by the switch
         of each of its three distances, see :mod:`tad_dftd3.cutoff`. Defaults
         to zero, a hard cutoff.
-    s9 : Tensor | float, optional
-        Scaling for dispersion coefficients. Defaults to `1.0`.
-    rs9 : Tensor | float, optional
-        Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
-    alp : Tensor | float, optional
-        Exponent of zero damping function. Defaults to `14.0`.
-    nbl : NeighborList | None, optional
-        A pre-built neighbour list of `structure`, built at least at
-        `cutoff`. ``None`` (default) runs the dense, all-triples evaluation,
-        with ``O(nat**3)`` memory whatever the cutoff. With a list, the
-        triples within the cutoff are enumerated from it by
-        :func:`tad_mctc.neighbor.triples.triples_from_neighborlist`, so
-        memory follows the cutoff instead (it grows as ``cutoff**6`` per
-        atom, so a smaller `cutoff` than the default is needed for large
-        systems). A batch is a flat system numbered ``b * nat + i``.
-    max_triples : int, optional
-        Only with `nbl`. Upper bound on the triples held in memory at once
-        in the forward pass. Defaults to ``2_000_000``.
-    checkpoint : bool, optional
-        Only with `nbl`. Recompute each chunk in the backward pass instead
-        of keeping its intermediates. Any derivative order, but not
-        ``vmap``. Defaults to ``False``.
 
     Returns
     -------
@@ -119,39 +124,19 @@ def dispersion_atm(
     Raises
     ------
     ValueError
-        If `structure` is a periodic cell, for which the ATM term has no
-        evaluation.
-    TypeError
-        If `structure` is not a ``Structure``.
+        If `structure` is a periodic cell, see :func:`dispersion_atm_periodic`.
     """
-    require_molecule(structure, "three-body (ATM) term")
+    if structure.lattice is not None:
+        raise ValueError(
+            "'structure' is a periodic cell; use 'dispersion_atm_periodic'."
+        )
 
     numbers, positions = structure.numbers, structure.positions
     dd: DD = {"device": positions.device, "dtype": positions.dtype}
 
-    s9 = any_to_tensor(defaults.S9 if s9 is None else s9, **dd)
-    rs9 = any_to_tensor(defaults.RS9 if rs9 is None else rs9, **dd)
-    alp = any_to_tensor(defaults.ALP if alp is None else alp, **dd)
-
-    table = element_table(rvdw_table, "rvdw_table", positions)
-    srvdw = rs9 * table[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-
-    if nbl is not None:
-        nbl.check_compatible(structure, cutoff)
-        return _sparse_dispersion_atm(
-            structure,
-            c6,
-            srvdw,
-            cutoff,
-            width,
-            s9,
-            alp,
-            nbl,
-            max_triples=max_triples,
-            checkpoint=checkpoint,
-        )
-
     cutoff2 = cutoff * cutoff
+    radii = pair_radii(structure, rvdw_table, r4r2_table)
+    rdamp, rvdw = radii[..., 0], radii[..., 1]
 
     mask_pairs = real_pairs(numbers, mask_diagonal=True)
     mask_triples = real_triples(numbers, mask_self=True)
@@ -160,15 +145,10 @@ def dispersion_atm(
     zero = torch.tensor(0.0, **dd)
     one = torch.tensor(1.0, **dd)
 
-    # C9_ABC = s9 * sqrt(|C6_AB * C6_AC * C6_BC|)
-    c9 = s9 * storch.safe_sqrt(
+    # C9_ABC = sqrt(|C6_AB * C6_AC * C6_BC|), scaled by `s9` in the damping
+    c9 = storch.safe_sqrt(
         torch.abs(c6.unsqueeze(-1) * c6.unsqueeze(-2) * c6.unsqueeze(-3))
     )
-
-    r0ij = srvdw.unsqueeze(-1)
-    r0ik = srvdw.unsqueeze(-2)
-    r0jk = srvdw.unsqueeze(-3)
-    r0 = r0ij * r0ik * r0jk
 
     # actually faster than other alternatives
     # very slow: (pos.unsqueeze(-2) - pos.unsqueeze(-3)).pow(2).sum(-1)
@@ -191,20 +171,28 @@ def dispersion_atm(
     r5 = torch.where(mask_triples, r2 * r3, eps)
 
     # dividing by tiny numbers leads to huge numbers, which result in NaN's
-    # upon exponentiation in the subsequent step
-    mask = real_triples(numbers, mask_self=True)
-    base = r0 / torch.where(mask_triples, r1, one)
+    # upon exponentiation in the damping, so the triples it sees are finite
+    # and positive everywhere (ones where masked), see `TripleData`
+    r2pairs = torch.where(mask_pairs, distances, one)
+    triples = TripleData(
+        r=torch.where(mask_triples, r1, one),
+        r2ij=r2pairs.unsqueeze(-1),
+        r2ik=r2pairs.unsqueeze(-2),
+        r2jk=r2pairs.unsqueeze(-3),
+        rdampij=rdamp.unsqueeze(-1),
+        rdampik=rdamp.unsqueeze(-2),
+        rdampjk=rdamp.unsqueeze(-3),
+        rvdwij=rvdw.unsqueeze(-1),
+        rvdwik=rvdw.unsqueeze(-2),
+        rvdwjk=rvdw.unsqueeze(-3),
+    )
 
     # to fix the previous mask, we mask again (not strictly necessary because
     # `ang` is also masked and we later multiply with `ang`)
-    fdamp = torch.where(
-        mask_triples,
-        1.0 / (1.0 + 6.0 * base ** ((alp + 2.0) / 3.0)),
-        zero,
-    )
+    fdamp = torch.where(mask_triples, damping(triples, param), zero)
 
     s = torch.where(
-        mask,
+        mask_triples,
         (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik),
         zero,
     )
@@ -215,7 +203,7 @@ def dispersion_atm(
         * (r2ik <= cutoff2)
         * (r2jk <= cutoff2),
         0.375 * s / r5 + 1.0 / r3,
-        torch.tensor(0.0, **dd),
+        zero,
     )
 
     # smooth cutoff of each of the three distances
@@ -231,77 +219,80 @@ def dispersion_atm(
     return torch.sum(energy, dim=(-2, -1)) / 6.0
 
 
-def _pair_table(
-    table: Tensor, atom_a: Tensor, atom_b: Tensor, nat: int
+def pair_radii(
+    structure: Structure,
+    rvdw_table: Tensor | TableFunction | None,
+    r4r2_table: Tensor | TableFunction | None,
 ) -> Tensor:
     """
-    Entries ``table[..., a, b]`` of a pair table ``(..., nat, nat)`` for flat
-    atom indices ``system * nat + i``: row ``system * nat + a`` of the
-    reshaped table is ``table[system, a, :]``.
+    The two radii D3 supplies for every pair of atoms, stacked on a last axis
+    of length two, ``(..., nat, nat, 2)``: the damping radius
+    ``sqrt(3 r4r2_i r4r2_j)`` (as D4, read by the dampings ported from dftd)
+    and the van-der-Waals radius (read by the zero damping of s-dftd3). Both
+    are one for padding atoms, see :class:`~tad_dftd3.damping.TripleData`.
     """
-    return table.reshape(-1, nat)[atom_a, atom_b % nat]
+    numbers, positions = structure.numbers, structure.positions
+
+    r4r2 = element_table(r4r2_table, "r4r2_table", positions)[numbers]
+    r4r2 = _nonzero(r4r2)
+    rdamp = torch.sqrt(3.0 * r4r2.unsqueeze(-1) * r4r2.unsqueeze(-2))
+
+    table = element_table(rvdw_table, "rvdw_table", positions)
+    rvdw = _nonzero(table[numbers.unsqueeze(-1), numbers.unsqueeze(-2)])
+
+    return torch.stack((rdamp, rvdw), dim=-1)
 
 
-def _atm_chunk_energy(
-    positions: Tensor,
-    c6: Tensor,
-    srvdw: Tensor,
+def atm_term(
+    r2ij: Tensor,
+    r2ik: Tensor,
+    r2jk: Tensor,
+    radii: tuple[Tensor, Tensor, Tensor],
+    damping: ThreeBodyDamping,
+    param: DampingParam,
     cutoff: float,
     width: float,
-    s9: Tensor,
-    alp: Tensor,
-    chunk: TripleChunk,
-    nat: int,
+    valid: Tensor | None = None,
 ) -> Tensor:
     """
-    A third of the ATM energy of every triple of one chunk, which the caller
-    adds to each of the three atoms.
+    Angular part, damping (with `s9`) and switch of triples, without the
+    ``sqrt(|c6 c6 c6|)``, from their squared side lengths and the `radii` of
+    their pairs ij, ik and jk (each stacked as by :func:`pair_radii`), which
+    must be positive. Zero for a triple that is not `valid` or has a side
+    beyond `cutoff`: a triple is kept or dropped as a whole, like s-dftd3.
 
-    Fixed-index-set tensor algebra, so it differentiates to any order.
-    `positions` are the flattened ``(B * nat, 3)`` positions.
+    The sides of a dropped triple are replaced before any square root, so
+    the derivatives stay finite whatever the caller's enumeration holds.
     """
-    idx_i, idx_j, idx_k = chunk.idx_i, chunk.idx_j, chunk.idx_k
-
-    r0 = (
-        _pair_table(srvdw, idx_i, idx_j, nat)
-        * _pair_table(srvdw, idx_i, idx_k, nat)
-        * _pair_table(srvdw, idx_j, idx_k, nat)
-    )
-    c9 = s9 * storch.safe_sqrt(
-        torch.abs(
-            _pair_table(c6, idx_i, idx_j, nat)
-            * _pair_table(c6, idx_i, idx_k, nat)
-            * _pair_table(c6, idx_j, idx_k, nat)
-        )
-    )
-
-    centre = positions.index_select(0, idx_j)
-    v_ji = positions.index_select(0, idx_i) - centre
-    v_jk = positions.index_select(0, idx_k) - centre
-    v_ik = v_jk - v_ji
-
-    r2ij_raw = v_ji.pow(2).sum(-1)
-    r2ik_raw = v_ik.pow(2).sum(-1)
-    r2jk_raw = v_jk.pow(2).sum(-1)
-
-    # The triples are pruned to the cutoff already; masked again before any
-    # square root, so that this never relies on the builder alone. A triple
-    # is kept as a whole or dropped, like s-dftd3.
     cutoff2 = cutoff * cutoff
-    mask = (r2ij_raw <= cutoff2) & (r2ik_raw <= cutoff2) & (r2jk_raw <= cutoff2)
+    mask = (r2ij <= cutoff2) & (r2ik <= cutoff2) & (r2jk <= cutoff2)
+    if valid is not None:
+        mask = mask & valid
 
-    one = torch.ones_like(r2ij_raw)
-    r2ij = torch.where(mask, r2ij_raw, one)
-    r2ik = torch.where(mask, r2ik_raw, one)
-    r2jk = torch.where(mask, r2jk_raw, one)
+    one = torch.ones_like(r2ij)
+    r2ij = torch.where(mask, r2ij, one)
+    r2ik = torch.where(mask, r2ik, one)
+    r2jk = torch.where(mask, r2jk, one)
 
     r2 = r2ij * r2ik * r2jk
     r1 = torch.sqrt(r2)
     r3 = r1 * r2
     r5 = r2 * r3
 
-    base = r0 / r1
-    fdamp = 1.0 / (1.0 + 6.0 * base ** ((alp + 2.0) / 3.0))
+    rij, rik, rjk = radii
+    triples = TripleData(
+        r1,
+        r2ij,
+        r2ik,
+        r2jk,
+        rij[..., 0],
+        rik[..., 0],
+        rjk[..., 0],
+        rij[..., 1],
+        rik[..., 1],
+        rjk[..., 1],
+    )
+    fdamp = damping(triples, param)
 
     s = (r2ij + r2jk - r2ik) * (r2ij - r2jk + r2ik) * (-r2ij + r2jk + r2ik)
     ang = torch.where(mask, 0.375 * s / r5 + 1.0 / r3, torch.zeros_like(r5))
@@ -315,57 +306,224 @@ def _atm_chunk_energy(
             * smooth_cutoff(torch.sqrt(r2jk), cutoff, width)
         )
 
-    # Each triple is listed once; the dense `/ 6.0` over its six
-    # permutations is the equal share of its three atoms.
-    return ang * fdamp * c9 / 3.0
+    return ang * fdamp
 
 
-def _sparse_dispersion_atm(
+def dispersion_atm_periodic(
     structure: Structure,
     c6: Tensor,
-    srvdw: Tensor,
-    cutoff: float,
-    width: float,
-    s9: Tensor,
-    alp: Tensor,
-    nbl: NeighborList,
+    param: DampingParam,
+    shifts: PeriodicShifts | None = None,
     *,
-    max_triples: int,
-    checkpoint: bool,
+    damping: ThreeBodyDamping = ZeroThreeBodyD3(),
+    rvdw_table: Tensor | TableFunction | None = None,
+    r4r2_table: Tensor | TableFunction | None = None,
+    cutoff: float = defaults.D3_DISP3_CUTOFF,
+    width: float = defaults.D3_DISP3_WIDTH,
+    max_triples: int = 2_000_000,
+    checkpoint: bool = False,
 ) -> Tensor:
     """
-    ATM energy from the triples of a neighbour list, consumed chunk by chunk
-    (at most `max_triples` at a time) into a per-atom accumulator.
+    Axilrod-Teller-Muto dispersion term of a periodic cell: every atom ``i``
+    of the cell with every pair of atoms or images of atoms within `cutoff`
+    of it (also images of ``i`` itself), as s-dftd3.
 
-    This bounds the forward working set only. Under autograd each chunk's
-    index tensors stay alive until the backward pass, and so do its
-    intermediates unless `checkpoint` recomputes them. The number of triples
-    is data dependent, so unlike the sparse pair sums this path is not
-    claimed to survive ``vmap`` or ``torch.compile(fullgraph=True)``.
+    The energy of an atom is the sum over its triples divided by six: every
+    triple of the crystal is counted from each of its three atoms, with its
+    other two in both orders, which is its equal share of the three.
+
+    The legs from ``i`` are the images within the cutoff, picked from the
+    grid of atoms and shifts, and the pairs of them are formed in blocks of
+    at most `max_triples`. So memory follows the number of images within the
+    cutoff of an atom (``O(n_image**2)`` triples per atom), not the shift
+    table. The pick is data dependent, so this does not survive ``vmap`` or
+    ``torch.compile(fullgraph=True)``; for those, see
+    :func:`tad_dftd3.sparse.dispersion_atm_sparse`.
+
+    Parameters
+    ----------
+    structure : Structure
+        The system, a periodic cell, see :func:`tad_dftd3.disp.dftd3`.
+    c6 : Tensor
+        Atomic C6 dispersion coefficients.
+    param : DampingParam
+        DFT-D3 damping parameters, read by `damping`.
+    shifts : PeriodicShifts | None, optional
+        Periodic image shifts, built at least at `cutoff`, see
+        :func:`tad_dftd3.disp.dftd3`. Built here if missing.
+    damping, rvdw_table, r4r2_table, cutoff, width
+        See :func:`dispersion_atm`.
+    max_triples : int, optional
+        Upper bound on the triples held in memory at once in the forward
+        pass. Defaults to ``2_000_000``.
+    checkpoint : bool, optional
+        Recompute each block in the backward pass instead of keeping its
+        intermediates. Any derivative order, but not ``vmap``. Defaults to
+        ``False``.
+
+    Returns
+    -------
+    Tensor
+        Atom-resolved ATM dispersion energy.
+
+    Raises
+    ------
+    ValueError
+        If `structure` has no lattice, or `shifts` does not cover it at
+        `cutoff`.
     """
     numbers, positions = structure.numbers, structure.positions
-    nat = positions.shape[-2]
-    flat_positions = positions.reshape(-1, 3)
+    lattice, periodic = structure.lattice, structure.periodic
+    if lattice is None or periodic is None:
+        raise ValueError("'structure' has no lattice; use 'dispersion_atm'.")
 
-    counts = flat_positions.new_zeros(flat_positions.shape[0])
-    for chunk in triples_from_neighborlist(
-        nbl, structure, cutoff, chunk_size=max_triples
-    ):
-        if chunk.idx_i.shape[0] == 0:
-            continue
+    if shifts is None:
+        shifts = build_periodic_shifts(lattice, periodic, cutoff)
+    else:
+        shifts.check_compatible(structure, cutoff)
 
-        args = (flat_positions, c6, srvdw, cutoff, width, s9, alp, chunk, nat)
-        if checkpoint:
-            share = _torch_checkpoint(
-                _atm_chunk_energy, *args, use_reentrant=False
+    radii = pair_radii(structure, rvdw_table, r4r2_table)
+
+    # as for the pair terms: the atoms folded into the central cell, which
+    # the shifts are built for, the translation of each image and which
+    # `(i, j, image)` are real pairs
+    images = _periodic_images(
+        numbers, positions, lattice, shifts.shifts, periodic
+    )
+    assert images.translations is not None
+
+    nat, n_shift = positions.shape[-2], shifts.shifts.shape[0]
+    folded = images.positions.reshape(-1, nat, 3)
+    n_system = folded.shape[0]
+    translations = images.translations.reshape(-1, n_shift, 3)
+    translations = translations.expand(n_system, n_shift, 3)
+    valid = images.valid.reshape(n_system, nat, nat, n_shift)
+    valid = valid.expand(n_system, nat, nat, n_shift)
+
+    c6_systems = c6.reshape(n_system, nat, nat)
+    radii_systems = radii.reshape(n_system, nat, nat, 2)
+
+    cutoff2 = cutoff * cutoff
+    eps = torch.finfo(positions.dtype).eps
+    zero = torch.zeros((), device=positions.device, dtype=positions.dtype)
+
+    energies = []
+    for system in range(n_system):
+        c6_sys, radii_sys = c6_systems[system], radii_systems[system]
+
+        for i in range(nat):
+            # (nat, n_shift, 3): from atom `i` to every image of every atom
+            vectors = (
+                folded[system].unsqueeze(1)
+                - folded[system, i]
+                + translations[system].unsqueeze(0)
             )
-        else:
-            share = _atm_chunk_energy(*args)
+            r2 = vectors.pow(2).sum(-1)
 
-        # Three scatters: one over a concatenation of the indices would keep
-        # another `3n` int64 tensor alive for backward.
-        counts = counts.index_add(0, chunk.idx_i, share)
-        counts = counts.index_add(0, chunk.idx_j, share)
-        counts = counts.index_add(0, chunk.idx_k, share)
+            with torch.no_grad():
+                keep = valid[system, i] & (r2 <= cutoff2) & (r2 >= eps)
+                atoms, shift_idx = torch.nonzero(keep, as_tuple=True)
 
-    return counts.reshape(numbers.shape)
+            legs = vectors.reshape(-1, 3).index_select(
+                0, atoms * n_shift + shift_idx
+            )
+            c6_i = c6_sys[i].index_select(0, atoms)
+            radii_i = radii_sys[i].index_select(0, atoms)
+
+            # At least one block, empty for an atom without legs, so that the
+            # energy is still part of the graph of the positions (with a zero
+            # gradient), also if no atom has any.
+            n_leg = atoms.shape[0]
+            energy = zero
+            block = max(1, max_triples // max(n_leg, 1))
+            for start in range(0, max(n_leg, 1), block):
+                rows = slice(start, start + block)
+                args = (
+                    legs[rows],
+                    legs,
+                    atoms[rows],
+                    atoms,
+                    c6_i[rows],
+                    c6_i,
+                    radii_i[rows],
+                    radii_i,
+                    c6_sys,
+                    radii_sys,
+                    damping,
+                    param,
+                    cutoff,
+                    width,
+                )
+                if checkpoint:
+                    energy = energy + _torch_checkpoint(
+                        _periodic_block_energy, *args, use_reentrant=False
+                    )
+                else:
+                    energy = energy + _periodic_block_energy(*args)
+
+            energies.append(energy)
+
+    return torch.stack(energies).reshape(numbers.shape)
+
+
+def _periodic_block_energy(
+    vec_a: Tensor,
+    vec_b: Tensor,
+    atom_a: Tensor,
+    atom_b: Tensor,
+    c6_a: Tensor,
+    c6_b: Tensor,
+    radii_a: Tensor,
+    radii_b: Tensor,
+    c6: Tensor,
+    radii: Tensor,
+    damping: ThreeBodyDamping,
+    param: DampingParam,
+    cutoff: float,
+    width: float,
+) -> Tensor:
+    """
+    Sum of the ATM energy of the triples of one atom ``i`` of the cell with
+    each of the ``A`` images in ``a`` and each of the ``B`` in ``b``, over
+    the ``A * B`` combinations, divided by six (the dense sum runs over the
+    six orderings of a triple).
+
+    `vec_a` and `vec_b` are the vectors from ``i`` to its images, `atom_*`
+    the atoms they are images of, and `c6_*` and `radii_*` the C6 and the
+    radii (see :func:`pair_radii`) of ``i`` with them. `c6` and `radii` are
+    the tables of the system.
+    """
+    vec_jk = vec_b.unsqueeze(0) - vec_a.unsqueeze(1)
+
+    r2ij = vec_a.pow(2).sum(-1).unsqueeze(1)
+    r2ik = vec_b.pow(2).sum(-1).unsqueeze(0)
+    r2jk = vec_jk.pow(2).sum(-1)
+
+    c6_jk = c6[atom_a.unsqueeze(1), atom_b.unsqueeze(0)]
+    radii_jk = radii[atom_a.unsqueeze(1), atom_b.unsqueeze(0)]
+
+    c9 = storch.safe_sqrt(
+        torch.abs(c6_a.unsqueeze(1) * c6_b.unsqueeze(0) * c6_jk)
+    )
+
+    # An image of an atom with itself at the zero shift is excluded by the
+    # caller for the legs from `i`, but two images may still coincide.
+    eps = torch.finfo(vec_a.dtype).eps
+    term = atm_term(
+        r2ij,
+        r2ik,
+        r2jk,
+        (radii_a.unsqueeze(1), radii_b.unsqueeze(0), radii_jk),
+        damping,
+        param,
+        cutoff,
+        width,
+        r2jk >= eps,
+    )
+
+    return torch.sum(term * c9) / 6.0
+
+
+def _nonzero(x: Tensor) -> Tensor:
+    """`x`, with ones in place of zeros (the radii of padding atoms)."""
+    return torch.where(x != 0, x, torch.ones_like(x))

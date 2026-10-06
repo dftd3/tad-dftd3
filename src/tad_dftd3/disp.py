@@ -18,6 +18,21 @@ Dispersion energy
 
 This module provides the dispersion energy evaluation for the pairwise interactions.
 
+How the pairs (and triples) of a term are enumerated is chosen by what is
+passed as its `pairs`:
+
+- ``None``: all pairs of a molecule, or of a cell with every periodic image
+  within the cutoff (the image shifts are built here, eagerly);
+- a :class:`~tad_mctc.neighbor.images.PeriodicShifts`: the same for a cell,
+  with pre-built shifts, as needed under ``torch.func`` and
+  ``torch.compile``;
+- a :class:`~tad_mctc.neighbor.list.NeighborList`: the sparse evaluation of
+  :mod:`tad_dftd3.sparse`;
+- for the three-body term also a :class:`~tad_dftd3.sparse.TripleList`,
+  the triangles of a list built beforehand, to reuse over many calls (e.g.
+  the steps of a molecular dynamics) and as needed under
+  ``torch.compile(fullgraph=True)`` and ``vmap``.
+
 Example
 -------
 >>> import torch
@@ -39,7 +54,7 @@ Example
 ...     [+4.077073644, -0.342495506, -1.267841745],
 ...     [+1.404422261, -2.365753991, -1.503620411],
 ... ], dtype=torch.double).repeat(numbers.shape[0], 1, 1)
->>> ref = d3.reference.Reference(dtype=torch.double)
+>>> ref = d3.reference.Reference.load(dtype=torch.double)
 >>> param = dict( # r²SCAN-D3(BJ)
 ...     a1=torch.tensor(0.49484001, dtype=torch.double),
 ...     s8=torch.tensor(0.78981345, dtype=torch.double),
@@ -58,238 +73,361 @@ Example
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TypeAlias
 
 import torch
 from tad_mctc import Structure, storch
-from tad_mctc.autograd import is_functorch_tensor
 from tad_mctc.batch import real_pairs
-from tad_mctc.data import pse
-from tad_mctc.ncoord.common import _periodic_images, sum_over_neighborlist
-from tad_mctc.neighbor import pair_distance_squared, split_lattice
+from tad_mctc.ncoord.common import _periodic_images
 from tad_mctc.neighbor.images import PeriodicShifts, build_periodic_shifts
 from tad_mctc.neighbor.list import NeighborList, build_neighborlists
-from tad_mctc.typing import (
-    DD,
-    CountingFunction,
-    TableFunction,
-    Tensor,
-)
+from tad_mctc.tree import Node, child, context
+from tad_mctc.typing import DD, CountingFunction, TableFunction, Tensor
 
-from . import defaults, model, ncoord
-from ._checks import takes_structure
+from . import model, ncoord
 from .cutoff import Cutoff, smooth_cutoff
-from .damping import DampingFunction, dispersion_atm, rational_damping
-from .data.table import element_table, reject_renamed_tables
+from .damping import (
+    Damping,
+    DampingParam,
+    PairData,
+    ThreeBodyDamping,
+    TwoBodyDamping,
+    ZeroThreeBodyD3,
+    as_damping_param,
+    damping_from_name,
+    dispersion_atm,
+    dispersion_atm_periodic,
+)
+from .data.table import element_table
+from .model.c6 import AtomicC6
 from .model.weights import WeightingFunction
 from .reference import Reference, _default_reference
+from .sparse import TripleList, dispersion2_sparse, dispersion_atm_sparse
 
-__all__ = ["dftd3", "dispersion", "dispersion2", "dispersion3"]
+__all__ = [
+    "D3Model",
+    "Pairs",
+    "default_damping",
+    "dftd3",
+    "dispersion",
+    "dispersion2",
+    "dispersion3",
+]
 
 
-def _resolve_cutoff(cutoff: Cutoff | None) -> Cutoff:
-    """Default the caller's cutoffs; reject a single value."""
-    if cutoff is None:
-        return Cutoff()
+Pairs: TypeAlias = PeriodicShifts | NeighborList | None
+"""How the pairs of a term are enumerated, see the module docstring."""
 
-    # Up to 0.6.0 one cutoff was shared by the two- and three-body term.
-    # They now differ, as in s-dftd3, so a single value is ambiguous and
-    # must not be reinterpreted silently.
-    if not isinstance(cutoff, Cutoff):
-        raise TypeError(
-            "The 'cutoff' argument must be a 'tad_dftd3.cutoff.Cutoff' "
-            f"instance, not '{type(cutoff).__name__}'. The parts of the D3 "
-            "model use different real-space cutoffs, so a single value is "
-            "ambiguous. Use e.g. 'Cutoff(disp2=60.0, disp3=40.0)'."
+Param: TypeAlias = DampingParam | Mapping[str, Any]
+"""Damping parameters, or a dictionary of them, see :func:`dftd3`."""
+
+
+class D3Model(Node):
+    """
+    A DFT-D3 model as a value, like :data:`tad_mctc.ncoord.cn_d3` for the
+    coordination number and like s-dftd3's ``DispersionModel``, except that
+    it does not hold a structure: it is the *configuration* of the model,
+    and is called on a structure (single or batch).
+
+    ``D3Model()(structure, param)`` is :func:`dftd3`, which builds a model
+    from its keyword arguments. Another variant is obtained with
+    :meth:`replace`, e.g. ``model.replace(cutoff=Cutoff(disp2=50.0))``.
+
+    A frozen :class:`~tad_mctc.tree.Node`, compared and hashed by identity. A
+    tensor in one of the tables is a pytree leaf, so it can be differentiated
+    or batched with ``torch.func``, and moved with :meth:`to`; a table
+    function and the settings are static.
+
+    Parameters
+    ----------
+    rcov_table : Tensor | TableFunction | None, optional
+        Covalent radii per element, of shape ``(119,)``. ``None`` is
+        :func:`tad_mctc.data.radii.COV_D3`.
+    rvdw_table : Tensor | TableFunction | None, optional
+        Van der Waals radii per element pair, of shape ``(104, 104)``.
+        ``None`` is :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
+    r4r2_table : Tensor | TableFunction | None, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``.
+        ``None`` is :func:`tad_dftd3.data.R4R2`.
+    ref : Reference | None, optional
+        Reference C6 coefficients. ``None`` is the default reference on the
+        device and dtype of the structure.
+    cutoff : Cutoff, optional
+        Real-space cutoffs, one per part of the model.
+    counting_function : CountingFunction, optional
+        Counting function of the coordination number.
+    weighting_function : WeightingFunction, optional
+        Logarithm of the weight of a reference system, see
+        :data:`tad_dftd3.model.WeightingFunction`.
+    """
+
+    rcov_table: Tensor | TableFunction | None = child(default=None)
+    rvdw_table: Tensor | TableFunction | None = child(default=None)
+    r4r2_table: Tensor | TableFunction | None = child(default=None)
+    ref: Reference | None = child(default=None)
+    cutoff: Cutoff = context(default_factory=Cutoff)
+    counting_function: CountingFunction = context(default=ncoord.exp_count)
+    weighting_function: WeightingFunction = context(
+        default=model.gaussian_log_weight
+    )
+
+    def c6(
+        self,
+        structure: Structure,
+        pairs: Pairs = None,
+        *,
+        checkpoint: bool = False,
+    ) -> Tensor:
+        """
+        Atomic C6 dispersion coefficients of `structure`, of shape
+        ``(..., nat, nat)``: the dense form of :meth:`factored_c6`, whose
+        arguments these are.
+
+        Returns
+        -------
+        Tensor
+            C6 coefficients for all pairs of atoms.
+        """
+        return self.factored_c6(structure, pairs, checkpoint=checkpoint).dense()
+
+    def factored_c6(
+        self,
+        structure: Structure,
+        pairs: Pairs = None,
+        *,
+        checkpoint: bool = False,
+    ) -> AtomicC6:
+        """
+        Atomic C6 dispersion coefficients of `structure`, factored per atom
+        (see :class:`~tad_dftd3.model.AtomicC6`), as :meth:`__call__` passes
+        them to the dispersion terms.
+
+        Parameters
+        ----------
+        structure : Structure
+            The system, a molecule or a periodic cell, see :func:`dftd3`.
+        pairs : PeriodicShifts | NeighborList | None, optional
+            How the pairs of the coordination number are enumerated, see
+            :class:`tad_mctc.ncoord.common.CNModel`.
+        checkpoint : bool, optional
+            For a neighbour list, recompute each chunk of pairs of the
+            coordination number in the backward pass (mode ``"recompute"``
+            of :class:`~tad_mctc.ncoord.common.CNModel`). Defaults to
+            ``False``.
+
+        Returns
+        -------
+        AtomicC6
+            C6 coefficients for all pairs of atoms.
+        """
+        ref = self.ref
+        if ref is None:
+            ref = _default_reference(structure.positions)
+
+        cn = self.coordination_number(structure, pairs, checkpoint=checkpoint)
+        weights = model.weight_references(
+            structure.numbers, cn, ref, self.weighting_function
+        )
+        return model.factored_c6(structure.numbers, weights, ref)
+
+    def coordination_number(
+        self,
+        structure: Structure,
+        pairs: Pairs = None,
+        *,
+        checkpoint: bool = False,
+    ) -> Tensor:
+        """
+        D3 coordination number of `structure`, as :meth:`factored_c6` uses
+        it, whose arguments these are.
+
+        Returns
+        -------
+        Tensor
+            Coordination number of each atom, of the shape of
+            ``structure.numbers``.
+        """
+        cn_model = ncoord.cn_d3.replace(
+            count=self.counting_function,
+            cutoff=self.cutoff.cn,
+            rcov=element_table(
+                self.rcov_table, "rcov_table", structure.positions
+            ),
+        )
+        # `CNModel` takes the mode for a neighbour list only.
+        recompute = checkpoint and isinstance(pairs, NeighborList)
+        return cn_model(
+            structure, pairs, mode="recompute" if recompute else "graph"
         )
 
-    return cutoff
+    def __call__(
+        self,
+        structure: Structure,
+        param: Param,
+        *,
+        damping: Damping | None = None,
+        shifts: PeriodicShifts | None = None,
+        nbl_cn: NeighborList | None = None,
+        nbl_disp2: NeighborList | None = None,
+        nbl_disp3: NeighborList | TripleList | None = None,
+        sparse: bool = False,
+        max_triples: int = 2_000_000,
+        checkpoint: bool = False,
+    ) -> Tensor:
+        """
+        Atom-resolved DFT-D3 dispersion energy, see :func:`dftd3`, whose
+        arguments these are.
 
+        Returns
+        -------
+        Tensor
+            Energy of each atom, of the shape of ``structure.numbers``.
+        """
+        param = as_damping_param(param)
+        if damping is None:
+            damping = default_damping(param)
 
-def _check_inputs(structure: Structure, shifts: PeriodicShifts | None) -> None:
-    """
-    Reject elements without D3 parameters, and an inconsistent cell.
-
-    `Structure` itself checks the shapes of its fields when it is built, but
-    not that each system of a batch has its own lattice and periodic mask:
-    ``vmap`` over a batched `Structure` splits every field along its first
-    dimension, so a single ``(3, 3)`` lattice (or ``(3,)`` mask) shared by
-    the batch would arrive as one of its rows (or entries).
-    """
-    numbers = structure.numbers
-    if not is_functorch_tensor(numbers):
-        if torch.max(numbers) >= defaults.MAX_ELEMENT:
-            raise ValueError(
-                f"No D3 parameters available for Z > {defaults.MAX_ELEMENT-1} "
-                f"({pse.Z2S[defaults.MAX_ELEMENT]})."
+        if sparse:
+            nbl_cn, nbl_disp2, nbl_disp3 = self._missing_lists(
+                structure,
+                nbl_cn,
+                nbl_disp2,
+                nbl_disp3,
+                three_body=damping.three is not None,
             )
 
-    lattice = structure.lattice
-    if lattice is None:
-        if shifts is not None:
-            raise ValueError(
-                "'shifts' are periodic image shifts, but 'structure' has no "
-                "'lattice'."
-            )
-        return
-
-    # `Structure` fills in a mask whenever it has a lattice.
-    periodic = structure.periodic
-    assert periodic is not None
-    if lattice.shape[-2:] != (3, 3) or periodic.shape[-1:] != (3,):
-        raise ValueError(
-            "The lattice and the periodic mask must have shapes "
-            f"'(..., 3, 3)' and '(..., 3)', not '{tuple(lattice.shape)}' "
-            f"and '{tuple(periodic.shape)}'. Under `vmap` over a batched "
-            "'Structure', give each system its own lattice and mask, e.g. "
-            "'lattice.expand(nbatch, 3, 3)' and "
-            "'periodic.expand(nbatch, 3)'."
+        c6 = self.factored_c6(
+            structure,
+            shifts if nbl_cn is None else nbl_cn,
+            checkpoint=checkpoint,
+        )
+        return dispersion(
+            structure,
+            param,
+            c6,
+            damping=damping,
+            shifts=shifts,
+            nbl_disp2=nbl_disp2,
+            nbl_disp3=nbl_disp3,
+            rvdw_table=self.rvdw_table,
+            r4r2_table=self.r4r2_table,
+            cutoff=self.cutoff,
+            max_triples=max_triples,
+            checkpoint=checkpoint,
         )
 
+    def _missing_lists(
+        self,
+        structure: Structure,
+        nbl_cn: NeighborList | None,
+        nbl_disp2: NeighborList | None,
+        nbl_disp3: NeighborList | TripleList | None,
+        *,
+        three_body: bool,
+    ) -> tuple[NeighborList, NeighborList, NeighborList | TripleList | None]:
+        """
+        The lists of the coordination number, the two-body term and, with
+        `three_body`, the three-body term, with the missing ones built in one
+        shared search (at the largest of their cutoffs), eagerly: it is data
+        dependent.
+        """
+        terms = [(nbl_cn, self.cutoff.cn), (nbl_disp2, self.cutoff.disp2)]
+        build3 = three_body and nbl_disp3 is None
 
-def _cell_shifts(
-    cell: Structure, shifts: PeriodicShifts | None, cutoff: float
-) -> PeriodicShifts:
-    """
-    The periodic image shifts to sum over at `cutoff`: those given, after
-    checking that they cover `cell` at `cutoff`, or else built here.
+        missing = tuple(cutoff for nbl, cutoff in terms if nbl is None)
+        if build3:
+            missing += (self.cutoff.disp3,)
+        built = iter(build_neighborlists(structure, missing) if missing else ())
+        lists = [next(built) if nbl is None else nbl for nbl, _ in terms]
 
-    Building the table reads the values of the lattice (how many images the
-    cutoff reaches), so it is done eagerly, outside the graph. Under
-    ``torch.compile``, ``vmap`` or ``jacrev`` with respect to the lattice, a
-    table must be given instead (see :func:`dftd3`).
-    """
-    if shifts is not None:
-        shifts.check_compatible(cell, cutoff)
-        return shifts
-
-    # `Structure` fills in a mask whenever it has a lattice.
-    assert cell.lattice is not None and cell.periodic is not None
-    return build_periodic_shifts(cell.lattice, cell.periodic, cutoff)
-
-
-def _check_pairs(
-    structure: Structure,
-    shifts: PeriodicShifts | None,
-    nbl: NeighborList | None,
-    cutoff: float,
-) -> None:
-    """
-    Reject a neighbour list that is given together with `shifts`, or that
-    does not cover `structure` at `cutoff`.
-
-    The check reads the values of the periodic mask, so it is eager: with
-    ``torch.compile``, ``vmap`` or ``jacrev``, call it once beforehand (any
-    evaluation does) and pass the list in.
-    """
-    if nbl is None:
-        return
-
-    if shifts is not None:
-        raise ValueError(
-            "Give either periodic image 'shifts' or a neighbour list, not "
-            "both: they are two ways of enumerating the same pairs."
-        )
-
-    nbl.check_compatible(structure, cutoff)
+        return lists[0], lists[1], next(built) if build3 else nbl_disp3
 
 
-def _check_three_body(
-    param: Mapping[str, Tensor | float], structure: Structure
-) -> None:
-    """
-    Reject a three-body term for a cell, which has no periodic evaluation.
-
-    A dense periodic ATM term would sum over pairs of images per triple,
-    ``n_shift**2`` times the memory of the molecular one.
-    """
-    if structure.lattice is None:
-        return
-
-    if "s9" in param and _has_three_body(param["s9"]):
-        raise ValueError(
-            "The three-body (ATM) term has no periodic evaluation; leave "
-            "out 's9' or set it to the Python number 0.0 for a cell. A "
-            "tensor 's9' always counts as nonzero under `torch.compile`, "
-            "`vmap` and autograd, even if it is zero."
-        )
-
-
-@reject_renamed_tables
-@takes_structure
 def dftd3(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
+    param: Param,
     *,
+    damping: Damping | None = None,
     shifts: PeriodicShifts | None = None,
     nbl_cn: NeighborList | None = None,
     nbl_disp2: NeighborList | None = None,
-    nbl_disp3: NeighborList | None = None,
+    nbl_disp3: NeighborList | TripleList | None = None,
     sparse: bool = False,
+    max_triples: int = 2_000_000,
+    checkpoint: bool = False,
     ref: Reference | None = None,
     rcov_table: Tensor | TableFunction | None = None,
     rvdw_table: Tensor | TableFunction | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
-    cutoff: Cutoff | None = None,
+    cutoff: Cutoff = Cutoff(),
     counting_function: CountingFunction = ncoord.exp_count,
-    weighting_function: WeightingFunction = model.gaussian_weight,
-    damping_function: DampingFunction = rational_damping,
+    weighting_function: WeightingFunction = model.gaussian_log_weight,
 ) -> Tensor:
     """
     Evaluate DFT-D3 dispersion energy for a batch of geometries.
 
-    The element parameters `rcov_table`, `rvdw_table` and `r4r2_table` are
-    tables indexed by atomic number (entry 0 is the dummy), not per-atom
-    values, and must have the shape of their default table. Gradients with
-    respect to them come out per element, summed over all atoms and systems.
-    Up to 0.7.0 they were called `rcov`, `rvdw` and `r4r2` and took per-atom
-    values; the old names are rejected with a :class:`TypeError`.
+    **Periodic cells.** If `structure` has a ``lattice``, it is a periodic
+    cell along the axes of its ``periodic`` mask: the coordination number
+    and the two-body energy sum over every periodic image within their
+    cutoff, and the three-body term over the triples of an atom of the cell
+    with two images, as in s-dftd3. Atoms need not lie inside the cell.
 
-    If `structure` has a ``lattice``, it is a periodic cell, along the axes
-    of its ``periodic`` mask: the coordination number and the two-body
-    energy sum over every periodic image within their cutoff, as in
-    s-dftd3. Atoms need not lie inside the cell. The three-body term has no
-    periodic evaluation, so for a cell `s9` must be missing or the Python
-    number ``0.0``.
-
-    Which periodic images lie within a cutoff depends on the values of the
-    lattice, so by default the image shifts are built eagerly on each call.
-    Under ``torch.compile(fullgraph=True)``, ``vmap`` over cells, or
+    Which images lie within a cutoff depends on the values of the lattice,
+    so by default the image shifts are built eagerly on each call. Under
+    ``torch.compile(fullgraph=True)``, ``vmap`` over cells, or
     ``jacrev``/``jacfwd`` with respect to the lattice, build them once
-    beforehand and pass them as `shifts`, at the larger of the
-    coordination-number and two-body cutoffs::
+    beforehand, at the largest cutoff of the terms evaluated, and pass them
+    as `shifts`::
 
         from tad_mctc.neighbor.images import build_periodic_shifts
 
         cutoff = Cutoff()
         shifts = build_periodic_shifts(
-            structure.lattice, structure.periodic, max(cutoff.cn, cutoff.disp2)
+            structure.lattice,
+            structure.periodic,
+            max(cutoff.cn, cutoff.disp2, cutoff.disp3),
         )
 
-    The coordination number also runs over every shift of this table, so with
-    the default cutoffs (40 and 60 Bohr) it does about three times the work
-    it would with a table built at its own cutoff. Only the energy is
-    unaffected.
-
-    Instead of dense, all-pairs sums, the coordination number and the two-body
-    energy can run over pre-built, padded neighbour lists
-    (:class:`tad_mctc.neighbor.list.NeighborList`), which scale linearly with
-    the number of atoms, for molecules, batches and cells alike. With
-    ``sparse=True`` both lists are built eagerly on each call, sharing one
-    search. To reuse them, e.g. over the steps of a molecular dynamics, build
-    them once with :func:`tad_mctc.neighbor.list.build_neighborlists`, each at
-    (at least) its own cutoff, and pass them as `nbl_cn` and `nbl_disp2`::
+    **Neighbour lists.** Instead of the dense, all-pairs sums, each term can
+    run over a pre-built, padded neighbour list
+    (:class:`tad_mctc.neighbor.list.NeighborList`, see
+    :mod:`tad_dftd3.sparse`), which scales linearly with the number of
+    atoms, for molecules, batches and cells alike. A list given for a term
+    takes the place of `shifts` for that term. With ``sparse=True``, the
+    lists that are not given are built eagerly on each call, sharing one
+    search: of the coordination number, the two-body term and, if the
+    damping has one, the three-body term. The triples of the last grow as
+    ``cutoff**6`` per atom (see
+    :func:`tad_dftd3.sparse.dispersion_atm_sparse`), so for a large system a
+    ``cutoff.disp3`` below the default may be needed; the dense three-body
+    term of a molecule needs memory cubic in the number of atoms, whatever
+    the cutoff. To reuse the lists, e.g. over the steps of a molecular
+    dynamics, build them once, each at (at least) its own cutoff, with a
+    skin, and rebuild them when :meth:`~tad_mctc.neighbor.list.NeighborList.stale`
+    says so: nothing checks that the atoms have not moved too far for the
+    skin. The three-body term runs over the triangles of its list; built
+    with the list (:class:`~tad_dftd3.sparse.TripleList`) and passed in its
+    place, they are reused too::
 
         from tad_mctc.neighbor.list import build_neighborlists
+        from tad_dftd3.sparse import TripleList
 
         cutoff = Cutoff()
-        nbl_cn, nbl_disp2 = build_neighborlists(
-            structure, (cutoff.cn, cutoff.disp2), skin=1.0
-        )
+        cutoffs = (cutoff.cn, cutoff.disp2, cutoff.disp3)
 
-    A list built at a larger cutoff, or with a skin, gives the same energy.
-    The three-body term is evaluated from a list only if one is given as
-    `nbl_disp3`, see :func:`dispersion3`.
+        def build(structure):
+            nbl_cn, nbl_disp2, nbl_disp3 = build_neighborlists(
+                structure, cutoffs, skin=1.0
+            )
+            triples = TripleList.from_neighborlist(nbl_disp3)
+            return dict(nbl_cn=nbl_cn, nbl_disp2=nbl_disp2, nbl_disp3=triples)
+
+        lists = build(structure)
+        for step in trajectory:
+            if lists["nbl_cn"].stale(structure):  # all were built together
+                lists = build(structure)
+            energy = dftd3(structure, param, cutoff=cutoff, **lists)
+            ...
 
     To differentiate with respect to the positions or the lattice with
     ``torch.func``, replace them in the structure inside the function, e.g.
@@ -304,52 +442,66 @@ def dftd3(
         :func:`tad_mctc.io.structure.pack_structures`). A periodic cell
         also has a ``lattice`` (vectors as rows, in Bohr, ``(3, 3)`` or
         ``(nbatch, 3, 3)``) and its ``periodic`` axes.
-    param : Mapping[str, Tensor | float]
-        DFT-D3 damping parameters. The three-body term is skipped if `s9` is
-        missing or zero; see :func:`dispersion` for when that is decided.
+    param : DampingParam | Mapping[str, Tensor | float]
+        DFT-D3 damping parameters. A dictionary is unpacked into a
+        :class:`~tad_dftd3.damping.DampingParam`.
+    damping : Damping | None, optional
+        The damping of the two- and three-body term. Defaults to the one
+        named by ``param.damping`` (rational damping if unset), with the
+        zero-damped three-body term if `s9` is set and not the Python number
+        zero. A tensor `s9` always gets the three-body term, even at zero:
+        the choice must be static under ``torch.compile`` and ``vmap``, and
+        the derivative with respect to `s9` is the three-body energy.
     shifts : PeriodicShifts | None, optional
-        Periodic image shifts from
-        :func:`tad_mctc.neighbor.images.build_periodic_shifts`, at least at
-        the coordination-number and the two-body cutoff. Defaults to
-        building them on each call. A table covering more images than
-        needed gives the same energy. Not together with a neighbour list.
-    nbl_cn : NeighborList | None, optional
-        Neighbour list for the coordination number, built at least at its
-        cutoff. Defaults to the dense (or `shifts`) evaluation, or to a list
-        built here if `sparse`.
-    nbl_disp2 : NeighborList | None, optional
-        Neighbour list for the two-body energy, built at least at its
-        cutoff. Defaults like `nbl_cn`.
-    nbl_disp3 : NeighborList | None, optional
-        Neighbour list for the three-body term of a molecule, built at least
-        at its cutoff. Never built by `sparse`: the memory of the sparse
-        three-body term grows steeply with its cutoff (see
-        :func:`dispersion3`), so choosing it, and a `cutoff.disp3` to match,
-        is left to the caller.
+        Periodic image shifts of a cell, at least at the cutoffs of the
+        terms that do not have a neighbour list. Defaults to building them
+        on each call.
+    nbl_cn, nbl_disp2, nbl_disp3 : NeighborList | None, optional
+        Neighbour lists of the coordination number, the two-body and the
+        three-body term, each built at least at its cutoff. For the
+        three-body term, also the triangles of its list
+        (:meth:`TripleList.from_neighborlist
+        <tad_dftd3.sparse.TripleList.from_neighborlist>`), built once and
+        valid as long as the list: reused over the steps of a molecular
+        dynamics, and needed under ``torch.compile(fullgraph=True)`` or
+        ``vmap``.
     sparse : bool, optional
-        Build the neighbour lists that are not given, instead of evaluating
-        that term densely. Defaults to ``False``.
-    ref : reference.Reference, optional
+        Build the lists that are not given: of the coordination number, the
+        two-body term and, if the damping has one, the three-body term.
+        Defaults to ``False``.
+    max_triples : int, optional
+        For the three-body term of a cell or over a neighbour list, the
+        upper bound on the triples evaluated at once in the forward pass.
+        Over a list, the indices of all its triangles are held for the
+        whole call. Defaults to ``2_000_000``.
+    checkpoint : bool, optional
+        Recompute each chunk of pairs (over a neighbour list) and of
+        triples (of a cell or over a neighbour list) in the backward pass
+        instead of keeping its intermediates, so that autograd holds the
+        intermediates of one chunk at a time. Any derivative order, but not
+        ``vmap`` or ``torch.compile``. Defaults to ``False``.
+    ref : Reference | None, optional
         Reference C6 coefficients.
-    rcov_table : Tensor | TableFunction, optional
+    rcov_table : Tensor | TableFunction | None, optional
         Covalent radii per element, of shape ``(119,)``. Defaults to
-        :func:`tad_mctc.data.radii.COV_D3`. Passed to the coordination
-        number model, :data:`tad_mctc.ncoord.cn_d3`.
-    rvdw_table : Tensor | TableFunction, optional
+        :func:`tad_mctc.data.radii.COV_D3`.
+    rvdw_table : Tensor | TableFunction | None, optional
         Van der Waals radii per element pair, of shape ``(104, 104)``.
         Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
-    r4r2_table : Tensor | TableFunction, optional
+    r4r2_table : Tensor | TableFunction | None, optional
         r⁴ over r² expectation values per element, of shape ``(119,)``.
         Defaults to :func:`tad_dftd3.data.R4R2`.
     cutoff : Cutoff, optional
-        Real-space cutoffs, one per part of the model. Defaults to
-        :class:`tad_dftd3.cutoff.Cutoff`.
-    damping_function : Callable, optional
-        Damping function evaluate distance dependent contributions.
-    weighting_function : Callable, optional
-        Function to calculate weight of individual reference systems.
-    counting_function : Callable, optional
+        Real-space cutoffs, one per part of the model.
+    counting_function : CountingFunction, optional
         Calculates counting value in range 0 to 1 for each atom pair.
+    weighting_function : WeightingFunction, optional
+        Logarithm of the weight of a reference system, see
+        :data:`tad_dftd3.model.WeightingFunction`.
+
+    The element tables are indexed by atomic number (entry 0 is the dummy),
+    not per-atom values. Gradients with respect to them come out per
+    element, summed over all atoms and systems.
 
     Returns
     -------
@@ -360,488 +512,311 @@ def dftd3(
     Raises
     ------
     ValueError
-        If an element without D3 parameters is present, `rcov_table`,
-        `rvdw_table` or `r4r2_table` is not shaped like a table, `shifts`
-        is given for a molecule or does not cover the cell at the cutoffs,
-        a neighbour list does not match the structure or its cutoff, or is
-        given together with `shifts`, or a cell has a three-body term.
-    TypeError
-        If `structure` is not a ``Structure``, or one of the names of
-        0.7.0, `rcov`, `rvdw` or `r4r2`, is passed.
+        If an element table does not have the shape of its default, a
+        parameter the damping needs is not set, or `shifts` or a neighbour
+        list does not match the structure or its cutoff.
     """
-    _check_inputs(structure, shifts)
-    _check_three_body(param, structure)
-
-    numbers, positions = structure.numbers, structure.positions
-
-    cutoff = _resolve_cutoff(cutoff)
-
-    if sparse:
-        if shifts is not None:
-            raise ValueError(
-                "'sparse' builds neighbour lists, which replace the periodic "
-                "image 'shifts'; give only one of them."
-            )
-
-        # One shared search for the lists that are missing, eagerly: it is
-        # data dependent. Both are built if only one is missing, which costs
-        # no more than the larger one alone.
-        if nbl_cn is None or nbl_disp2 is None:
-            built_cn, built_disp2 = build_neighborlists(
-                structure, (cutoff.cn, cutoff.disp2)
-            )
-            nbl_cn = built_cn if nbl_cn is None else nbl_cn
-            nbl_disp2 = built_disp2 if nbl_disp2 is None else nbl_disp2
-
-    _check_pairs(structure, shifts, nbl_cn, cutoff.cn)
-    _check_pairs(structure, shifts, nbl_disp2, cutoff.disp2)
-    if ref is None:
-        # `dftd3` only reads the reference, so it need not be copied.
-        ref = _default_reference(positions)
-
-    cn_model = ncoord.cn_d3.replace(
-        count=counting_function,
-        cutoff=cutoff.cn,
-        rcov=element_table(rcov_table, "rcov_table", positions),
-    )
-    # Builds the image shifts of a cell at its own cutoff, or checks the
-    # given ones against it.
-    cn = cn_model(structure, nbl_cn if nbl_cn is not None else shifts)
-    weights = model.weight_references(numbers, cn, ref, weighting_function)
-    c6 = model.atomic_c6(numbers, weights, ref)
-
-    # The inputs are checked above, so the unchecked kernel is called.
-    return _dispersion(
-        structure,
-        param,
-        c6,
-        shifts=shifts,
-        nbl=nbl_disp2,
-        nbl_disp3=nbl_disp3,
+    return D3Model(
+        rcov_table=rcov_table,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
-        damping_function=damping_function,
+        ref=ref,
         cutoff=cutoff,
+        counting_function=counting_function,
+        weighting_function=weighting_function,
+    )(
+        structure,
+        param,
+        damping=damping,
+        shifts=shifts,
+        nbl_cn=nbl_cn,
+        nbl_disp2=nbl_disp2,
+        nbl_disp3=nbl_disp3,
+        sparse=sparse,
+        max_triples=max_triples,
+        checkpoint=checkpoint,
     )
 
 
-@reject_renamed_tables
-@takes_structure
+def default_damping(param: DampingParam) -> Damping:
+    """
+    The damping named by ``param.damping`` (rational damping if unset), with
+    the zero damping of the three-body term if `s9` is set and not the
+    Python number zero.
+
+    This is a static choice: a Python number is a constant, also to
+    ``torch.compile``, and a tensor `s9` always gets the three-body term.
+    """
+    s9 = param.s9
+    three_body = s9 is not None and (isinstance(s9, Tensor) or s9 != 0.0)
+    return damping_from_name(param.damping or "rational", three_body)
+
+
 def dispersion(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
+    param: Param,
+    c6: Tensor | AtomicC6,
     *,
+    damping: Damping | None = None,
     shifts: PeriodicShifts | None = None,
-    nbl: NeighborList | None = None,
-    nbl_disp3: NeighborList | None = None,
+    nbl_disp2: NeighborList | None = None,
+    nbl_disp3: NeighborList | TripleList | None = None,
     rvdw_table: Tensor | TableFunction | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
-    damping_function: DampingFunction = rational_damping,
-    cutoff: Cutoff | None = None,
-    **kwargs: Any,
+    cutoff: Cutoff = Cutoff(),
+    max_triples: int = 2_000_000,
+    checkpoint: bool = False,
 ) -> Tensor:
     """
-    Calculate dispersion energy between pairs of atoms.
-
-    As in :func:`dftd3`, the element parameters `rvdw_table` and
-    `r4r2_table` are tables indexed by atomic number, not per-atom values.
-
-    The three-body term is skipped if `param` has no ``"s9"`` or it is zero
-    (see :func:`_has_three_body`). To skip it under ``torch.compile``, give
-    `s9` as a Python number (``0.0``) or leave it out.
+    Dispersion energy from given C6 coefficients: the two-body term, and the
+    three-body term if `damping` has one.
 
     Parameters
     ----------
     structure : Structure
         The system, a molecule or a periodic cell, see :func:`dftd3`.
-    param : Mapping[str, Tensor | float]
-        DFT-D3 damping parameters. `s9` may be a Python number.
-    c6 : Tensor
-        Atomic C6 dispersion coefficients.
-    shifts : PeriodicShifts | None, optional
-        Periodic image shifts, at least at the two-body cutoff, see
-        :func:`dftd3`.
-    nbl : NeighborList | None, optional
-        Neighbour list for the two-body energy, built at least at its
-        cutoff, instead of the dense evaluation, see :func:`dftd3`. Not
-        together with `shifts`.
-    nbl_disp3 : NeighborList | None, optional
-        Neighbour list for the three-body term, built at least at its
-        cutoff, see :func:`dispersion3`. A molecule only.
-    rvdw_table : Tensor | TableFunction, optional
-        Van der Waals radii per element pair, of shape ``(104, 104)``.
-        Defaults to :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
-    r4r2_table : Tensor | TableFunction, optional
-        r⁴ over r² expectation values per element, of shape ``(119,)``.
-        Defaults to :func:`tad_dftd3.data.R4R2`.
-    damping_function : Callable
-        Damping function evaluate distance dependent contributions.
-        Additional arguments are passed through to the function.
+    param : DampingParam | Mapping[str, Tensor | float]
+        DFT-D3 damping parameters.
+    c6 : Tensor | AtomicC6
+        Atomic C6 dispersion coefficients, as the ``(..., nat, nat)`` matrix
+        or factored per atom (:class:`~tad_dftd3.model.AtomicC6`, as from
+        :meth:`D3Model.factored_c6`). Over a neighbour list, the factored
+        form takes no memory quadratic in the number of atoms.
+    damping : Damping | None, optional
+        The damping. Defaults to :func:`default_damping` of `param`.
+    shifts, nbl_disp2, nbl_disp3
+        How the pairs of each term are enumerated, see :func:`dftd3`.
+    rvdw_table, r4r2_table : Tensor | TableFunction | None, optional
+        Element tables, see :func:`dftd3`.
     cutoff : Cutoff, optional
-        Real-space cutoffs, one per part of the model. Defaults to
-        :class:`tad_dftd3.cutoff.Cutoff`.
+        Real-space cutoffs, one per part of the model.
+    max_triples, checkpoint
+        See :func:`dftd3`.
 
     Returns
     -------
     Tensor
         Atom-resolved DFT-D3 dispersion energy for each geometry.
-
-    Raises
-    ------
-    ValueError
-        If an element without D3 parameters is present, `rvdw_table` or
-        `r4r2_table` does not have the shape of its default table, or the
-        cell is not valid (see :func:`dftd3`).
-    TypeError
-        If `structure` is not a ``Structure``, or one of the names of
-        0.7.0, `rvdw` or `r4r2`, is passed.
     """
-    _check_inputs(structure, shifts)
-    _check_three_body(param, structure)
+    param = as_damping_param(param)
+    if damping is None:
+        damping = default_damping(param)
 
-    cutoff = _resolve_cutoff(cutoff)
-    _check_pairs(structure, shifts, nbl, cutoff.disp2)
+    # A term without a neighbour list needs the C6 matrix: built once for
+    # both, and only then.
+    matrix = c6
+    if isinstance(c6, AtomicC6) and (
+        nbl_disp2 is None or (damping.three is not None and nbl_disp3 is None)
+    ):
+        matrix = c6.dense()
 
-    return _dispersion(
+    energy = dispersion2(
         structure,
         param,
-        c6,
-        shifts=shifts,
-        nbl=nbl,
-        nbl_disp3=nbl_disp3,
+        matrix if nbl_disp2 is None else c6,
+        pairs=shifts if nbl_disp2 is None else nbl_disp2,
+        damping=damping.two,
         rvdw_table=rvdw_table,
         r4r2_table=r4r2_table,
-        damping_function=damping_function,
         cutoff=cutoff,
-        **kwargs,
+        checkpoint=checkpoint,
     )
 
-
-def _dispersion(
-    structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
-    *,
-    shifts: PeriodicShifts | None,
-    nbl: NeighborList | None,
-    nbl_disp3: NeighborList | None,
-    rvdw_table: Tensor | TableFunction | None,
-    r4r2_table: Tensor | TableFunction | None,
-    damping_function: DampingFunction,
-    cutoff: Cutoff,
-    **kwargs: Any,
-) -> Tensor:
-    """
-    :func:`dispersion` without checking its inputs, for callers that have
-    already checked them.
-    """
-    positions = structure.positions
-
-    # Resolved once here and passed on as tensors. Also rejects a wrong
-    # `rvdw_table` if the three-body term, its only user, is not evaluated.
-    rvdw = element_table(rvdw_table, "rvdw_table", positions)
-    r4r2 = element_table(r4r2_table, "r4r2_table", positions)
-
-    # two-body dispersion
-    energy = _dispersion2(
-        structure,
-        param,
-        c6,
-        shifts=shifts,
-        nbl=nbl,
-        r4r2_table=r4r2,
-        damping_function=damping_function,
-        cutoff=cutoff.disp2,
-        width=cutoff.width2,
-        **kwargs,
-    )
-
-    # three-body dispersion
-    #
-    # Not added in place: under `vmap` over `s9`, only the three-body term is
-    # batched, and the two-body energy cannot take its batch dimension.
-    if "s9" in param and _has_three_body(param["s9"]):
-        e3 = dispersion3(
+    if damping.three is not None:
+        # Not added in place: under `vmap` over `s9`, only the three-body
+        # term is batched, and the two-body energy cannot take its batch
+        # dimension.
+        energy = energy + dispersion3(
             structure,
             param,
-            c6,
-            rvdw_table=rvdw,
-            cutoff=cutoff.disp3,
-            width=cutoff.width3,
-            nbl=nbl_disp3,
+            matrix if nbl_disp3 is None else c6,
+            pairs=shifts if nbl_disp3 is None else nbl_disp3,
+            damping=damping.three,
+            rvdw_table=rvdw_table,
+            r4r2_table=r4r2_table,
+            cutoff=cutoff,
+            max_triples=max_triples,
+            checkpoint=checkpoint,
         )
-        energy = energy + e3
 
     return energy
 
 
-def _has_three_body(s9: Tensor | float | int) -> bool:
-    """
-    Whether the three-body term must be evaluated for the scaling `s9`.
-
-    A Python number is a constant, also to ``torch.compile``, and the term
-    is skipped for zero. A tensor is skipped only for ``s9 == 0`` in plain
-    eager mode. A tensor that is traced (``torch.compile``, which cannot
-    branch on it), batched (``vmap``) or differentiated (autograd or
-    ``torch.func``) needs the term even at zero: the energy is linear in
-    `s9`, so its derivative with respect to `s9` is the three-body energy
-    itself.
-    """
-    if not isinstance(s9, Tensor):
-        return s9 != 0.0
-
-    # `is_functorch_tensor` is also `True` while `torch.compile` traces, but
-    # does not cover plain autograd, hence `requires_grad`.
-    return is_functorch_tensor(s9) or s9.requires_grad or bool(s9 != 0.0)
-
-
-@reject_renamed_tables
-@takes_structure
 def dispersion2(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
+    param: Param,
+    c6: Tensor | AtomicC6,
     *,
-    shifts: PeriodicShifts | None = None,
-    nbl: NeighborList | None = None,
+    pairs: Pairs = None,
+    damping: TwoBodyDamping | None = None,
+    rvdw_table: Tensor | TableFunction | None = None,
     r4r2_table: Tensor | TableFunction | None = None,
-    damping_function: DampingFunction = rational_damping,
-    cutoff: float = defaults.D3_DISP2_CUTOFF,
-    width: float = defaults.D3_DISP2_WIDTH,
-    **kwargs: Any,
+    cutoff: Cutoff = Cutoff(),
+    checkpoint: bool = False,
 ) -> Tensor:
     """
-    Calculate dispersion energy between pairs of atoms.
+    Two-body dispersion energy.
 
-    For a periodic cell (`structure` has a ``lattice``), every atom is
-    paired with every periodic image of every atom within the `cutoff`,
-    including the images of the atom itself. This takes
-    ``O(nat**2 * n_shift)`` memory.
+    Densely, every atom of a cell is paired with every periodic image of
+    every atom within ``cutoff.disp2``, including the images of the atom
+    itself, which takes ``O(nat**2 * n_shift)`` memory; over a neighbour
+    list, see :func:`tad_dftd3.sparse.dispersion2_sparse`.
 
     Parameters
     ----------
     structure : Structure
         The system, a molecule or a periodic cell, see :func:`dftd3`.
-    param : Mapping[str, Tensor | float]
+    param : DampingParam | Mapping[str, Tensor | float]
         DFT-D3 damping parameters.
-    c6 : Tensor
-        Atomic C6 dispersion coefficients.
-    shifts : PeriodicShifts | None, optional
-        Periodic image shifts, at least at `cutoff`, see :func:`dftd3`.
-    nbl : NeighborList | None, optional
-        Neighbour list, built at least at `cutoff`, to sum over instead of
-        the dense evaluation, see :func:`dftd3`. Not together with `shifts`.
-        This takes ``O(n_pairs)`` memory instead of ``O(nat**2 * n_shift)``.
+    c6 : Tensor | AtomicC6
+        Atomic C6 dispersion coefficients, as the ``(..., nat, nat)`` matrix
+        or factored per atom (:class:`~tad_dftd3.model.AtomicC6`, as from
+        :meth:`D3Model.factored_c6`). Over a neighbour list, the factored
+        form takes no memory quadratic in the number of atoms.
+    pairs : PeriodicShifts | NeighborList | None, optional
+        How the pairs are enumerated, see the module docstring. Built at
+        least at ``cutoff.disp2``.
+    damping : TwoBodyDamping | None, optional
+        The damping. Defaults to the two-body part of
+        :func:`default_damping` of `param`.
+    rvdw_table : Tensor | TableFunction | None, optional
+        Van der Waals radii per element pair, of shape ``(104, 104)``, or
+        ``None`` for :func:`tad_mctc.data.radii.VDW_PAIRWISE`. Used by the
+        zero damping.
     r4r2_table : Tensor | TableFunction | None, optional
         r⁴ over r² expectation values per element, of shape ``(119,)``, or
         ``None`` for :func:`tad_dftd3.data.R4R2`.
-    damping_function : Callable, optional
-        Damping function evaluate distance dependent contributions.
-        Additional arguments are passed through to the function.
-    cutoff : float, optional
-        Real-space cutoff of the pairs, in Bohr. Defaults to
-        :data:`tad_dftd3.defaults.D3_DISP2_CUTOFF`.
-    width : float, optional
-        Width of the smooth cutoff, in Bohr: the contribution of a pair is
-        scaled down to zero over the last `width` below `cutoff`, see
-        :mod:`tad_dftd3.cutoff`. Defaults to zero, a hard cutoff.
+    cutoff : Cutoff, optional
+        Real-space cutoffs, of which `disp2` and `width2` are used: the
+        contribution of a pair is scaled down to zero over the last `width2`
+        below `disp2`, see :mod:`tad_dftd3.cutoff`.
+    checkpoint : bool, optional
+        For a neighbour list, recompute each chunk of pairs in the backward
+        pass instead of keeping its intermediates. Not under ``vmap`` or
+        ``torch.compile``. Defaults to ``False``.
+
+    Returns
+    -------
+    Tensor
+        Atom-resolved two-body dispersion energy.
 
     Raises
     ------
     ValueError
-        If the cell is not valid (see :func:`dftd3`).
-    TypeError
-        If `structure` is not a ``Structure``.
+        If `pairs` does not match `structure` or does not cover the cutoff.
     """
-    _check_inputs(structure, shifts)
-    _check_pairs(structure, shifts, nbl, cutoff)
+    param = as_damping_param(param)
+    if damping is None:
+        damping = default_damping(param).two
 
-    return _dispersion2(
-        structure,
-        param,
-        c6,
-        shifts=shifts,
-        nbl=nbl,
-        r4r2_table=r4r2_table,
-        damping_function=damping_function,
-        cutoff=cutoff,
-        width=width,
-        **kwargs,
-    )
-
-
-def _dispersion2(
-    structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
-    *,
-    shifts: PeriodicShifts | None,
-    nbl: NeighborList | None,
-    r4r2_table: Tensor | TableFunction | None,
-    damping_function: DampingFunction,
-    cutoff: float,
-    width: float,
-    **kwargs: Any,
-) -> Tensor:
-    """
-    :func:`dispersion2` without checking its inputs, for callers that have
-    already checked them.
-    """
-    numbers, positions = structure.numbers, structure.positions
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
-
-    r4r2 = element_table(r4r2_table, "r4r2_table", positions)
-    r4r2_atom = r4r2[numbers]
-
-    # Padding atoms look up the dummy entry 0 of the table, `r4r2 == 0`, and
-    # the gradient of `sqrt(qq)` in the damping function would then be
-    # infinite. Masking only the output does not help (0 * inf = NaN), so the
-    # input is replaced too, as is done for the distances.
-    r4r2_atom = torch.where(numbers != 0, r4r2_atom, torch.ones_like(r4r2_atom))
-
-    if nbl is not None:
-        return _sparse_dispersion2(
+    if isinstance(pairs, NeighborList):
+        return dispersion2_sparse(
             structure,
             param,
             c6,
-            r4r2_atom,
-            nbl,
-            damping_function=damping_function,
-            cutoff=cutoff,
-            width=width,
-            **kwargs,
+            pairs,
+            damping=damping,
+            rvdw_table=rvdw_table,
+            r4r2_table=r4r2_table,
+            cutoff=cutoff.disp2,
+            width=cutoff.width2,
+            checkpoint=checkpoint,
         )
 
+    return _dispersion2_dense(
+        structure,
+        param,
+        _matrix(c6),
+        pairs,
+        damping=damping,
+        rvdw_table=rvdw_table,
+        r4r2_table=r4r2_table,
+        cutoff=cutoff.disp2,
+        width=cutoff.width2,
+    )
+
+
+def _dispersion2_dense(
+    structure: Structure,
+    param: DampingParam,
+    c6: Tensor,
+    shifts: PeriodicShifts | None,
+    *,
+    damping: TwoBodyDamping,
+    rvdw_table: Tensor | TableFunction | None,
+    r4r2_table: Tensor | TableFunction | None,
+    cutoff: float,
+    width: float,
+) -> Tensor:
+    """
+    Two-body energy over all pairs of a molecule, ``(..., nat, nat)``, or of
+    a cell with every periodic image, ``(..., nat, nat, n_shift)``.
+    """
+    if shifts is not None:
+        # Also rejects shifts for a molecule, which would be ignored.
+        shifts.check_compatible(structure, cutoff)
+
+    numbers, positions = structure.numbers, structure.positions
+    rvdw = element_table(rvdw_table, "rvdw_table", positions)
+    r4r2 = element_table(r4r2_table, "r4r2_table", positions)
+
+    # Padding atoms look up the dummy entry 0 of the tables, which is zero,
+    # and a damping divides by `r4r2` (its gradient of `sqrt(qq)` would be
+    # infinite), the radius and the atomic number. Masking only the output
+    # does not help (0 * inf = NaN), so the inputs are replaced by ones too,
+    # as are the distances, and masked below.
+    r4r2_atom = _nonzero(r4r2[numbers])
     qq = 3 * r4r2_atom.unsqueeze(-1) * r4r2_atom.unsqueeze(-2)
+    rvdw_pairs = _nonzero(rvdw[numbers.unsqueeze(-1), numbers.unsqueeze(-2)])
+    znum = _nonzero(numbers.unsqueeze(-1) + numbers.unsqueeze(-2))
+    znum = znum.to(positions.dtype)
+
+    # the damping radius of D3 (and D4) for the dampings ported from dftd
+    rdamp = torch.sqrt(qq)
 
     if structure.lattice is None:
         distances, keep = _molecular_distances(numbers, positions, cutoff)
-        qq_pairs = qq
+        pairs = PairData(distances, qq, c6, rvdw_pairs, znum, rdamp)
     else:
-        image_shifts = _cell_shifts(structure, shifts, cutoff)
-        distances, keep = _periodic_distances(structure, image_shifts, cutoff)
+        if shifts is None:
+            # `Structure` fills in a mask whenever it has a lattice.
+            assert structure.periodic is not None
+            shifts = build_periodic_shifts(
+                structure.lattice, structure.periodic, cutoff
+            )
+        distances, keep = _periodic_distances(structure, shifts, cutoff)
 
-        # One entry per pair and image, all with the pair's `qq`.
-        qq_pairs = qq.unsqueeze(-1)
+        # One entry per pair and image, all with the pair's values.
+        pairs = PairData(
+            distances,
+            qq.unsqueeze(-1),
+            c6.unsqueeze(-1),
+            rvdw_pairs.unsqueeze(-1),
+            znum.unsqueeze(-1),
+            rdamp.unsqueeze(-1),
+        )
 
-    zero = torch.tensor(0.0, **dd)
-    switch = smooth_cutoff(distances, cutoff, width)
-    t6 = torch.where(
-        keep,
-        switch * damping_function(6, distances, qq_pairs, param, **kwargs),
-        zero,
-    )
-    t8 = torch.where(
-        keep,
-        switch * damping_function(8, distances, qq_pairs, param, **kwargs),
-        zero,
-    )
+    kernel = damping(pairs, param)
+    if width > 0.0:  # a static choice, the hard cutoff needs no switch
+        kernel = smooth_cutoff(distances, cutoff, width) * kernel
+    kernel = torch.where(keep, kernel, torch.zeros_like(kernel))
 
     if structure.lattice is not None:
-        # C6 and C8 are the same for every image of a pair, so the damped
-        # terms are summed over the images first and multiplied per pair.
-        t6 = t6.sum(dim=-1)
-        t8 = t8.sum(dim=-1)
+        # C6 is the same for every image of a pair, so the damped terms are
+        # summed over the images first and multiplied per pair.
+        kernel = kernel.sum(dim=-1)
 
-    c8 = c6 * qq
-    e6 = -0.5 * torch.sum(c6 * t6, dim=-1)
-    e8 = -0.5 * torch.sum(c8 * t8, dim=-1)
-
-    s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
-    s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
-    return s6 * e6 + s8 * e8
+    return -0.5 * torch.sum(c6 * kernel, dim=-1)
 
 
-def _sparse_dispersion2(
-    structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
-    r4r2_atom: Tensor,
-    nbl: NeighborList,
-    *,
-    damping_function: DampingFunction,
-    cutoff: float,
-    width: float,
-    **kwargs: Any,
-) -> Tensor:
-    """
-    Two-body energy summed over a :class:`~tad_mctc.neighbor.list.NeighborList`
-    instead of all pairs and images, for a molecule, a batch or a cell.
+def _nonzero(x: Tensor) -> Tensor:
+    """`x`, with ones in place of zeros."""
+    return torch.where(x != 0, x, torch.ones_like(x))
 
-    A batch is one flat system: atom ``i`` of system ``b`` is ``b * nat + i``
-    in the list, and the C6 of a pair is ``c6.reshape(-1, nat)[a, b % nat]``.
-    Each entry of the list stands for the pair in both directions and the
-    walk adds its contribution to both atoms, also for an atom with its own
-    image, so every entry carries the ``-0.5`` of the dense sum.
 
-    The walk is :func:`tad_mctc.ncoord.common.sum_over_neighborlist`, the one
-    behind the sparse coordination number, with its conventions: padded slots
-    point at a phantom atom appended to the positions, and all of it is
-    fixed-shape tensor algebra. The positions are the ones as given, not
-    folded into the cell: the shifts of the list include the fold.
-    """
-    positions = structure.positions
-    dd: DD = {"device": positions.device, "dtype": positions.dtype}
-
-    nat = positions.shape[-2]
-    flat_positions = positions.reshape(-1, 3)
-    total_atoms = flat_positions.shape[0]
-
-    padded_positions = torch.cat(
-        [flat_positions, flat_positions.new_zeros(1, 3)]
-    )
-    shared_lattice, system_lattices = split_lattice(structure.lattice)
-    if system_lattices is not None:
-        system_lattices = torch.cat(
-            [system_lattices, system_lattices.new_zeros(1, 3, 3)]
-        )
-
-    c6_rows = c6.reshape(-1, nat)
-    r4r2_flat = r4r2_atom.reshape(-1)
-
-    s6 = param.get("s6", torch.tensor(defaults.S6, **dd))
-    s8 = param.get("s8", torch.tensor(defaults.S8, **dd))
-
-    def pair_contributions(
-        idx_i: Tensor, idx_j: Tensor, mask: Tensor, shift: Tensor
-    ) -> tuple[Tensor, Tensor]:
-        distance_squared = pair_distance_squared(
-            idx_i,
-            idx_j,
-            shift,
-            padded_positions,
-            shared_lattice=shared_lattice,
-            system_lattices=system_lattices,
-            atoms_per_system=nat,
-        )
-
-        # The list may be wider than `cutoff` (skin, or built at a larger
-        # cutoff for reuse), so its own mask is not enough. Replaced before
-        # the square root, like the dense path: a padded slot is `sqrt(0)`
-        # otherwise, and its derivative is infinite.
-        mask = mask & (distance_squared <= cutoff * cutoff)
-        distances = torch.sqrt(torch.where(mask, distance_squared, 1.0))
-
-        # The tables know nothing about the phantom atom, so padded slots
-        # are clamped to a real index, and masked below.
-        real_i = idx_i.clamp(max=total_atoms - 1)
-        real_j = idx_j.clamp(max=total_atoms - 1)
-        c6_pair = c6_rows[real_i, real_j % nat]
-        qq = 3 * r4r2_flat[real_i] * r4r2_flat[real_j]
-
-        t6 = damping_function(6, distances, qq, param, **kwargs)
-        t8 = damping_function(8, distances, qq, param, **kwargs)
-
-        switch = smooth_cutoff(distances, cutoff, width)
-        contribution = -0.5 * c6_pair * switch * (s6 * t6 + s8 * qq * t8)
-        contribution = torch.where(
-            mask, contribution, torch.zeros_like(contribution)
-        )
-        return contribution, contribution
-
-    energy = sum_over_neighborlist(nbl, pair_contributions, flat_positions)
-    return energy.reshape(structure.numbers.shape)
+def _matrix(c6: Tensor | AtomicC6) -> Tensor:
+    """The ``(..., nat, nat)`` C6 matrix, which the dense terms need."""
+    return c6.dense() if isinstance(c6, AtomicC6) else c6
 
 
 def _molecular_distances(
@@ -907,53 +882,61 @@ def _periodic_distances(
     return distances, keep
 
 
-@reject_renamed_tables
-@takes_structure
 def dispersion3(
     structure: Structure,
-    param: Mapping[str, Tensor | float],
-    c6: Tensor,
+    param: Param,
+    c6: Tensor | AtomicC6,
     *,
+    pairs: Pairs | TripleList = None,
+    damping: ThreeBodyDamping = ZeroThreeBodyD3(),
     rvdw_table: Tensor | TableFunction | None = None,
-    cutoff: float = defaults.D3_DISP3_CUTOFF,
-    width: float = defaults.D3_DISP3_WIDTH,
-    rs9: Tensor | float | None = None,
-    nbl: NeighborList | None = None,
-    **kwargs: Any,
+    r4r2_table: Tensor | TableFunction | None = None,
+    cutoff: Cutoff = Cutoff(),
+    max_triples: int = 2_000_000,
+    checkpoint: bool = False,
 ) -> Tensor:
     """
-    Three-body dispersion term. Currently this is only a wrapper for the
-    Axilrod-Teller-Muto dispersion term, which has no periodic evaluation.
+    Three-body dispersion term, the Axilrod-Teller-Muto term. Evaluated by
+    one of :func:`tad_dftd3.damping.dispersion_atm` (molecule),
+    :func:`tad_dftd3.damping.dispersion_atm_periodic` (cell) or
+    :func:`tad_dftd3.sparse.dispersion_atm_sparse` (neighbour list).
 
     Parameters
     ----------
     structure : Structure
-        The system, a molecule (see :func:`dftd3`).
-    param : Mapping[str, Tensor | float]
-        Dictionary of dispersion parameters. Default values are used for
-        missing keys.
-    c6 : Tensor
-        Atomic C6 dispersion coefficients.
+        The system, a molecule or a periodic cell (see :func:`dftd3`).
+    param : DampingParam | Mapping[str, Tensor | float]
+        DFT-D3 damping parameters.
+    c6 : Tensor | AtomicC6
+        Atomic C6 dispersion coefficients, as the ``(..., nat, nat)`` matrix
+        or factored per atom (:class:`~tad_dftd3.model.AtomicC6`, as from
+        :meth:`D3Model.factored_c6`). Over a neighbour list, the factored
+        form takes no memory quadratic in the number of atoms.
+    pairs : PeriodicShifts | NeighborList | TripleList | None, optional
+        How the triples are enumerated, see the module docstring. Built at
+        least at ``cutoff.disp3``.
+    damping : ThreeBodyDamping, optional
+        The damping, called for every triple. Defaults to zero damping.
     rvdw_table : Tensor | TableFunction | None, optional
         Van der Waals radii per element pair, of shape ``(104, 104)``, or
         ``None`` for :func:`tad_mctc.data.radii.VDW_PAIRWISE`.
-    cutoff : float, optional
-        Real-space cutoff, in Bohr. Defaults to
-        :data:`tad_dftd3.defaults.D3_DISP3_CUTOFF`.
-    width : float, optional
-        Width of the smooth cutoff, in Bohr, see :func:`dispersion2`. A triple
-        is scaled by the switch of each of its three distances. Defaults to
-        zero, a hard cutoff.
-    rs9 : Tensor | float, optional
-        Scaling for van-der-Waals radii in damping function. Defaults to `4.0/3.0`.
-    nbl : NeighborList | None, optional
-        Neighbour list built at least at `cutoff`, to enumerate the triples
-        from instead of the dense ``O(nat**3)`` evaluation; see
-        :func:`tad_dftd3.damping.dispersion_atm`, whose `max_triples` and
-        `checkpoint` can be passed as further keyword arguments. Unlike the
-        two-body term, the memory of the sparse ATM term grows steeply with
-        the cutoff, so it pays off for a `cutoff` smaller than the default
-        or for large systems.
+    r4r2_table : Tensor | TableFunction | None, optional
+        r⁴ over r² expectation values per element, of shape ``(119,)``, or
+        ``None`` for :func:`tad_dftd3.data.R4R2`. Both tables give the radii
+        of the pairs, see :func:`tad_dftd3.damping.pair_radii`.
+    cutoff : Cutoff, optional
+        Real-space cutoffs, of which `disp3` and `width3` are used, see
+        :func:`dispersion2`. A triple is scaled by the switch of each of its
+        three distances.
+    max_triples : int, optional
+        For a cell or a neighbour list, the upper bound on the triples
+        evaluated at once in the forward pass. Over a list, the indices of
+        all its triangles are held for the whole call. Defaults to
+        ``2_000_000``.
+    checkpoint : bool, optional
+        For a cell or a neighbour list, recompute each block of triples in
+        the backward pass instead of keeping its intermediates. Defaults to
+        ``False``.
 
     Returns
     -------
@@ -963,19 +946,49 @@ def dispersion3(
     Raises
     ------
     ValueError
-        If `structure` is a periodic cell.
-    TypeError
-        If `structure` is not a ``Structure``.
+        If `pairs` does not match `structure` or does not cover the cutoff.
     """
+    param = as_damping_param(param)
+    cut, width = cutoff.disp3, cutoff.width3
+
+    if isinstance(pairs, (NeighborList, TripleList)):
+        return dispersion_atm_sparse(
+            structure,
+            c6,
+            param,
+            pairs,
+            damping=damping,
+            rvdw_table=rvdw_table,
+            r4r2_table=r4r2_table,
+            cutoff=cut,
+            width=width,
+            max_triples=max_triples,
+            checkpoint=checkpoint,
+        )
+
+    # Shifts for a molecule are rejected there.
+    if structure.lattice is not None or pairs is not None:
+        return dispersion_atm_periodic(
+            structure,
+            _matrix(c6),
+            param,
+            pairs,
+            damping=damping,
+            rvdw_table=rvdw_table,
+            r4r2_table=r4r2_table,
+            cutoff=cut,
+            width=width,
+            max_triples=max_triples,
+            checkpoint=checkpoint,
+        )
+
     return dispersion_atm(
         structure,
-        c6,
+        _matrix(c6),
+        param,
+        damping=damping,
         rvdw_table=rvdw_table,
-        cutoff=cutoff,
+        r4r2_table=r4r2_table,
+        cutoff=cut,
         width=width,
-        s9=param.get("s9"),
-        rs9=rs9,
-        alp=param.get("alp"),
-        nbl=nbl,
-        **kwargs,
     )

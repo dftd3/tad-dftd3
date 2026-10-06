@@ -238,8 +238,8 @@ Element parameters
 
 The covalent radii, the van der Waals radii and the r⁴/r² expectation
 values are element constants. Wherever they can be passed (``dftd3``,
-``dispersion``, ``dispersion2``, ``dispersion3`` and
-``damping.dispersion_atm``), they are **per-element tables** indexed by
+``D3Model``, the functions of ``disp``, ``damping.atm`` and ``sparse``), they
+are **per-element tables** indexed by
 atomic number, with entry 0 as the dummy. Each table must have the shape
 of its default:
 
@@ -257,13 +257,14 @@ with a ``ValueError``.
 Three-body term
 ---------------
 
-The Axilrod-Teller-Muto term is skipped if ``param`` has no ``"s9"`` or it is
-zero. For a tensor ``s9``, "zero" is only checked in plain eager mode: a
-traced (``torch.compile``), batched (``vmap``) or differentiated ``s9`` needs
-the term even at zero, since its derivative with respect to ``s9`` is the
-three-body energy. Its cost grows with the cube of the number of atoms, so
-to skip it under ``torch.compile`` (also with ``fullgraph=True``), give
-``s9`` as a Python number or leave it out:
+Whether the Axilrod-Teller-Muto term is evaluated is a static choice, made
+from the type of ``s9``, never from its value as a tensor: by default (no
+``damping`` given) it is skipped if ``param`` has no ``"s9"`` or ``s9`` is
+the Python number zero. A tensor ``s9`` always gets the term, even at zero,
+since ``torch.compile`` and ``vmap`` cannot branch on its value and its
+derivative with respect to ``s9`` is the three-body energy. Its cost grows
+with the cube of the number of atoms, so to skip it, give ``s9`` as a Python
+number or leave it out:
 
 .. code:: python
 
@@ -347,7 +348,8 @@ coordination-number and two-body cutoffs, and pass them as ``shifts``:
 For a batch of cells, build one table from the stacked lattices; it covers
 every cell of the batch. Under ``vmap`` over a batched ``Structure``, every
 field is split per system, so give each system its own lattice and periodic
-mask (e.g. ``lattice.expand(nbatch, 3, 3)``), not one shared by the batch. Whether a table covers the lattice is only checked in
+mask (e.g. ``lattice.expand(nbatch, 3, 3)``), not one shared by the batch,
+which fails with an ``IndexError``. Whether a table covers the lattice is only checked in
 eager mode, not under ``torch.compile``, ``vmap`` or ``jacrev``, where a table
 built for a larger cell silently misses images. If the cell shrinks (cell
 relaxation, NPT), rebuild the table, or call
@@ -356,15 +358,20 @@ relaxation, NPT), rebuild the table, or call
 By default the evaluation is dense: every atom is paired with every image of
 every atom, which takes memory proportional to ``n_atoms**2 * n_images``. For
 larger systems, use neighbour lists (see `Neighbour lists`_). The three-body
-term has no periodic evaluation, so for a cell ``s9`` must be left out or set to
-the Python number ``0.0``.
+term of a cell sums, as in s-dftd3, over the triples of an atom of the cell
+with two atoms or images within ``Cutoff.disp3`` of it. Its dense evaluation
+takes ``n_images**2`` triples per atom, which is large for a small cell at the
+default cutoff of 40 Bohr: pass a smaller ``Cutoff.disp3``, or an
+``nbl_disp3``. A shift table passed as ``shifts`` must cover the cutoff of
+every term that has no neighbour list, so also ``Cutoff.disp3`` if the
+three-body term is used.
 
 
 Neighbour lists
 ---------------
 
-The coordination number and the two-body energy can be summed over a padded,
-pre-built neighbour list (:class:`tad_mctc.neighbor.list.NeighborList`)
+The coordination number, the two-body and the three-body energy can be summed
+over a padded, pre-built neighbour list (:class:`tad_mctc.neighbor.list.NeighborList`)
 instead of all pairs. The memory then grows linearly with the number of atoms
 (for a fixed cutoff), for molecules, batches and periodic cells alike, and the
 energy and its derivatives to any order are those of the dense evaluation:
@@ -374,26 +381,65 @@ energy and its derivatives to any order are those of the dense evaluation:
     energy = d3.dftd3(structure, param, sparse=True)
 
 ``sparse=True`` builds one list per cutoff eagerly, with a single shared
-search. To reuse the lists, e.g. over the steps of a molecular dynamics, build
-them once with ``build_neighborlists`` and pass them as ``nbl_cn`` and
-``nbl_disp2``. A list built at a larger cutoff, or with a ``skin``, gives the
-same energy:
+search: of the coordination number, the two-body term and, if the damping has
+one, the three-body term. The triples of the last grow as the sixth power of
+its cutoff, so for a large system a ``disp3`` below the default of 40 Bohr may
+be needed (the dense three-body term of a molecule takes memory cubic in the
+number of atoms, whatever the cutoff). To reuse the lists, e.g. over the steps
+of a molecular dynamics, build them once with ``build_neighborlists`` and pass
+them as ``nbl_cn``, ``nbl_disp2`` and ``nbl_disp3``. A list built at a larger
+cutoff, or with a ``skin``, gives the same energy, as long as the atoms have
+not moved too far for the skin: rebuild the lists when ``stale`` says so.
+The three-body term runs over the triangles of its list, each holding its
+three sides as pairs of the list; built once with the list
+(``d3.sparse.TripleList``) and passed in its place, they are reused as well,
+which in a molecular dynamics of 3000 atoms took half the time per step of
+building them on each call:
 
 .. code-block:: python
 
     from tad_mctc.neighbor.list import build_neighborlists
 
     cutoff = d3.Cutoff()
-    nbl_cn, nbl_disp2 = build_neighborlists(
-        structure, (cutoff.cn, cutoff.disp2), skin=1.0
-    )
-    energy = d3.dftd3(structure, param, nbl_cn=nbl_cn, nbl_disp2=nbl_disp2)
+    cutoffs = (cutoff.cn, cutoff.disp2, cutoff.disp3)
 
-The three-body term of a molecule is evaluated from a list only if one is
-given as ``nbl_disp3``, built at ``cutoff.disp3``. ``sparse=True`` never builds
-it, because the memory of the sparse three-body term grows steeply with its
-cutoff: it pays off for a ``disp3`` smaller than the default of 40 Bohr, or for
-large systems.
+
+    def build(structure):
+        nbl_cn, nbl_disp2, nbl_disp3 = build_neighborlists(
+            structure, cutoffs, skin=1.0
+        )
+        triples = d3.sparse.TripleList.from_neighborlist(nbl_disp3)
+        return dict(nbl_cn=nbl_cn, nbl_disp2=nbl_disp2, nbl_disp3=triples)
+
+
+    lists = build(structure)
+    energy = d3.dftd3(structure, param, cutoff=cutoff, **lists)
+
+    # later, after the atoms have moved
+    if lists["nbl_cn"].stale(structure):
+        lists = build(structure)
+
+Under autograd, ``checkpoint=True`` recomputes each chunk of pairs and of
+triples in the backward pass instead of keeping it, and ``max_triples``
+bounds the triples of a chunk.
+
+A list given for a term (or built by ``sparse=True``) takes the place of
+``shifts`` for that term, so ``shifts`` and lists can be combined, e.g. lists
+for the pair terms and ``shifts`` for the dense three-body term of a cell. The
+single-term functions take one ``pairs`` argument instead, a
+``PeriodicShifts``, a ``NeighborList`` or ``None``. Over a list, pass the C6
+coefficients factored per atom (``d3.model.AtomicC6``): the ``(nat, nat)``
+matrix also works, but its gradient is built at full size for every chunk of
+pairs, which makes the backward pass cubic in the number of atoms:
+
+.. code-block:: python
+
+    c6 = d3.disp.D3Model().factored_c6(structure, nbl_cn)
+    d3.disp.dispersion2(structure, param, c6, pairs=nbl_disp2)
+
+The neighbour-list evaluation itself lives in ``tad_dftd3.sparse``
+(``dispersion2_sparse`` and ``dispersion_atm_sparse``), apart from the dense
+one in ``tad_dftd3.disp`` and ``tad_dftd3.damping.atm``.
 
 
 Smooth cutoffs
@@ -421,8 +467,7 @@ Migrating from 0.7.0
 - **Structure.** ``dftd3``, ``dispersion``, ``dispersion2``, ``dispersion3``
   and ``damping.dispersion_atm`` take a ``tad_mctc.Structure`` instead of
   ``numbers`` and ``positions``. A periodic cell is a ``Structure`` with a
-  ``lattice``. Passing ``numbers`` and ``positions`` raises a ``TypeError``.
-  To differentiate with ``torch.func``, replace the positions (or the
+  ``lattice``. To differentiate with ``torch.func``, replace the positions (or the
   lattice) inside the function with ``structure.replace(positions=...)``.
 
   .. code:: python
@@ -436,7 +481,7 @@ Migrating from 0.7.0
 - **Element parameters.** Up to 0.7.0, ``rcov``, ``rvdw`` and ``r4r2`` took
   per-atom (or per-pair) values, i.e. ``table[numbers]``. They are now
   per-element tables, passed as ``rcov_table``, ``rvdw_table`` and
-  ``r4r2_table``. The old names raise a ``TypeError``, so that old calls
+  ``r4r2_table``. The old names are unknown keyword arguments, so old calls
   fail instead of silently indexing per-atom values a second time.
 
   .. code:: python
@@ -448,11 +493,121 @@ Migrating from 0.7.0
 
 - **Keyword-only arguments.** All arguments of ``dispersion``,
   ``dispersion2`` and ``dispersion3`` after ``c6``, and of
-  ``damping.dispersion_atm`` after ``c6``, are keyword-only. The cutoffs of
-  ``dispersion2``, ``dispersion3`` and ``dispersion_atm`` are plain floats
-  with the defaults of ``Cutoff``.
+  ``damping.dispersion_atm`` after ``c6``, are keyword-only. ``dispersion``,
+  ``dispersion2`` and ``dispersion3`` all take ``cutoff`` as a ``Cutoff``
+  (``dispersion2`` uses its ``disp2`` and ``width2``, ``dispersion3`` its
+  ``disp3`` and ``width3``); their ``width`` argument is gone. Only the
+  low-level kernels (``damping.dispersion_atm`` and friends,
+  ``sparse.dispersion2_sparse``) keep plain float ``cutoff`` and ``width``.
 
-- **Cutoffs.** The fields of ``Cutoff`` are plain floats, not tensors.
+  ``dispersion2`` and ``dispersion3`` take how their pairs are enumerated as
+  one ``pairs`` argument (``PeriodicShifts``, ``NeighborList`` or ``None``);
+  ``dftd3`` and ``dispersion`` keep ``shifts`` and one list per term
+  (``nbl_cn``, ``nbl_disp2``, ``nbl_disp3``). ``dispersion2`` takes a
+  ``TwoBodyDamping`` and ``dispersion3`` a ``ThreeBodyDamping``.
+
+  .. code:: python
+
+      # before
+      d3.disp.dispersion2(structure, param, c6, cutoff=50.0, width=5.0, nbl=nbl)
+      # now
+      cutoff = Cutoff(disp2=50.0, width2=5.0)
+      d3.disp.dispersion2(structure, param, c6, cutoff=cutoff, pairs=nbl)
+
+- **Three-body functions.** ``damping.dispersion_atm`` no longer dispatches:
+  it is the dense term of a molecule only. A cell is
+  ``damping.dispersion_atm_periodic(structure, c6, param, shifts)``, a
+  neighbour list ``sparse.dispersion_atm_sparse(structure, c6, param, nbl)``;
+  ``max_triples`` and ``checkpoint`` are arguments of those two (and of
+  ``dispersion3``). All three take the ``param`` and a ``damping`` (a
+  ``ThreeBodyDamping``, ``ZeroThreeBodyD3()`` by default) instead of ``s9``,
+  ``rs9`` and ``alp``. Like the two-body damping and like dftd's
+  ``get_3b_damp``, the three-body damping is now called for every triple,
+  with a ``TripleData`` (distances and the van-der-Waals radii of its
+  pairs), and returns its damping factor including ``s9``; a new three-body
+  damping is a subclass with a ``__call__``.
+
+  .. code:: python
+
+      # before
+      d3.damping.dispersion_atm(structure, c6, s9=1.0, alp=14.0)
+      # now
+      d3.damping.dispersion_atm(structure, c6, d3.DampingParam(s9=1.0, alp=14.0))
+
+- **Model object.** ``D3Model`` (a ``tad_mctc.tree.Node``, like
+  ``ncoord.cn_d3``) holds the
+  configuration of the model: the element tables, reference, ``Cutoff``, and
+  the counting and weighting functions. Unlike s-dftd3's class it holds no
+  structure; it is called on one, single or batched. The damping is not part
+  of the model. ``d3.dftd3(structure, param, **options)`` builds one from its
+  keyword arguments. A tensor table is a pytree leaf, so it can be
+  differentiated or batched with ``torch.func``.
+
+  .. code:: python
+
+      model = d3.D3Model(cutoff=d3.Cutoff(disp2=50.0))
+      energy = model(structure, param)
+      c6 = model.c6(structure)
+      other = model.replace(r4r2_table=my_r4r2)
+
+- **Damping.** The damping of the two- and the three-body term are chosen
+  independently, as in ``dftd``: ``d3.Damping(two, three)``, e.g.
+  ``d3.Damping(d3.RationalTwoBody(), d3.ZeroThreeBodyD3())`` (the default if
+  the parameters set ``s9``) or ``d3.Damping(d3.RationalTwoBody())`` for no
+  three-body term. Both read one shared ``d3.DampingParam`` (a
+  ``tad_mctc.tree.Node``, so a pytree for ``torch.func``) with the fields
+  ``s6, s8, s9, a1, a2, rs6, rs8, rs9, alp``; a field that is ``None`` is not
+  set. Each damping declares defaults for some fields and raises a
+  ``ValueError`` when it reads a field that is neither set nor defaulted,
+  e.g. for zero-damping parameters (no ``a1``, ``a2``) given to the rational
+  damping, which used to run silently with default values. The two-body damping variants of s-dftd3 are
+  ``RationalTwoBody`` (BJ, and the refit BJM), ``ZeroTwoBody``,
+  ``ModifiedZeroTwoBody``, ``OptimizedPowerTwoBody``, ``CSOTwoBody`` and
+  ``ZTwoBody``. From the Fortran project dftd come the two-body
+  ``ScreenedTwoBody`` and ``KoideTwoBody`` and the three-body
+  ``RationalThreeBody``, ``ScreenedThreeBody``, ``ZeroProductThreeBody``
+  (dftd's ``zero``), ``ZeroThreeBodyD4`` (dftd's ``zero_avg``, the ATM
+  damping of D4) and
+  ``KoideThreeBody``. They read the damping radius ``sqrt(3 r4r2_i r4r2_j)``
+  (as D4) scaled to ``a1 * rdamp + a2`` (``a1`` and ``a2`` default to 1 and
+  0, as in dftd), and new fields of ``DampingParam``: ``a3``, ``a4``
+  (screened), ``sxc``, ``rsxc`` (Koide's exchange-correlation screening).
+  They are experimental: dftd is work in progress and there are no
+  reference values for them yet. ``damping_from_name("rational",
+  three_body="zero_d4")`` selects a three-body damping by name (see
+  ``damping.THREE_BODY_DAMPINGS``); ``True`` is D3's ``"zero_d3"``.
+  ``ZeroThreeBodyD3`` and ``ZeroThreeBodyD4`` are the same averaged zero
+  damping
+  (``averaged_zero_damping``), the ATM damping of s-dftd3 and of dftd4
+  respectively: D3 on ``rs9 * rvdw`` with the exponent ``(alp + 2) / 3``,
+  D4 on ``a1 * sqrt(3 r4r2_i r4r2_j) + a2`` with ``alp / 3`` (``alp = 16``),
+  so ``three_body="zero_d4"`` gives the ATM term of D4 on the C6 of D3. The
+  suffix names the convention of the damping, not the model it runs in.
+  ``DampingParam.from_functional(functional, damping="zero")``
+  remembers the variant (``param.damping``), which ``dftd3`` uses if no
+  ``damping`` is given; ``d3.damping_from_name`` builds one by name. ``rs9`` and ``alp`` moved from separate arguments
+  into the parameters.
+
+  .. code:: python
+
+      param = d3.DampingParam.from_functional("pbe", atm=False)
+      energy = d3.dftd3(structure, param)
+      energy = d3.dftd3(structure, param.replace(s8=torch.tensor(0.5)))
+      damping = d3.Damping(d3.RationalTwoBody(), d3.ZeroThreeBodyD3())
+      energy = d3.dftd3(structure, param.replace(s9=1.0), damping=damping)
+
+  The ``damping_function`` argument of ``dftd3``, ``dispersion`` and
+  ``dispersion2`` is replaced by ``damping``, and the ``**kwargs`` that were
+  passed to it are gone. A dictionary of parameters is still accepted and
+  unpacked into a ``DampingParam`` as it is: nothing is filled in, so the
+  rational damping needs ``s8``, ``a1`` and ``a2`` (before, they defaulted to
+  1.0, 0.4 and 5.0), and an unknown key raises a ``TypeError`` (before, it
+  was ignored). A missing ``s9`` means *no* three-body term, and so does a
+  Python ``0.0``; a tensor ``s9`` always has it (before, a tensor zero was
+  skipped in eager mode).
+
+- **Cutoffs.** ``cutoff`` is a ``Cutoff``, not ``None`` or a single number.
+  The fields of ``Cutoff`` are plain floats, not tensors.
   Any real number is accepted, including NumPy scalars; tensors are
   rejected. ``Cutoff`` no longer takes ``device`` or ``dtype`` and has no
   ``to`` method.
@@ -590,7 +745,7 @@ The next example shows the calculation of dispersion energies for a batch of str
             sample2["positions"],
         )
     )
-    ref = d3.reference.Reference()
+    ref = d3.reference.Reference.load()
     # per-element tables, indexed by atomic number (not per atom)
     rvdw = mctc.data.VDW_PAIRWISE()
     r4r2 = d3.data.R4R2()
@@ -604,7 +759,7 @@ The next example shows the calculation of dispersion energies for a batch of str
     # the coordination number cutoff of `dftd3` (tad-mctc defaults to 25 Bohr)
     cn_model = d3.ncoord.cn_d3.replace(cutoff=d3.defaults.D3_CN_CUTOFF)
     cn = cn_model(structure)
-    weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_weight)
+    weights = d3.model.weight_references(numbers, cn, ref, d3.model.gaussian_log_weight)
     c6 = d3.model.atomic_c6(numbers, weights, ref)
     energy = d3.disp.dispersion(
         structure,
@@ -612,7 +767,6 @@ The next example shows the calculation of dispersion energies for a batch of str
         c6,
         rvdw_table=rvdw,
         r4r2_table=r4r2,
-        damping_function=d3.disp.rational_damping,
     )
 
     torch.set_printoptions(precision=10)
@@ -667,11 +821,45 @@ applying reverse-mode automatic differentiation twice (see
 `hessian.py <examples/hessian.py>`__).
 
 
+Command line
+------------
+
+Installing the package also installs the ``tad_dftd3`` command (also run as
+``python -m tad_dftd3``), which reads a structure file (xyz, Turbomole
+``coord``, POSCAR, ... -- anything ``tad_mctc.io.read_structure`` reads; a
+multi-frame file is a batch) and prints its dispersion energy, split into
+the two- and three-body term, for the damping parameters of a functional.
+
+.. code::
+
+    tad_dftd3 --func pbe0 structure.xyz
+    tad_dftd3 --func b3lyp --damping zero --no-atm --grad coord
+    tad_dftd3 --func pbe0 --neighbor dense --cuda --omp 4 POSCAR
+
+``--grad`` adds the gradient with respect to the positions (one backward
+pass). ``--neighbor`` chooses the dense, all-pairs evaluation or the
+neighbour lists (the default), and ``--nlist-only`` only builds the lists and
+prints their size. The cutoffs of every term (``--cutoff-cn``,
+``--cutoff-disp2``, ``--cutoff-disp3``, ``--width2``, ``--width3``) and the
+memory of the backward pass (``--mode recompute``, ``--max-triples``) can be
+set as in the library.
+
+With ``--timing``, the wall time of every step is printed as it finishes
+and again as a table: reading the structure, loading the native neighbour
+search of tad-mctc, each step of the neighbour-list build (or the periodic
+image shifts of each term), the coordination number, the reference weights,
+the C6 coefficients, the two- and three-body term and the backward pass.
+
+``--compile`` compiles every step with ``torch.compile(fullgraph=True)``.
+The compilation is a timed warm-up run of its own (some seconds, again for
+every new structure size), after which the steps typically run several
+times faster, so it pays off for large systems. Combine it with ``--omp``
+set to the number of physical cores. See ``tad_dftd3 --help`` for all
+options.
+
+
 Limitations
 -----------
-
-The three-body (ATM) term is only implemented for molecules (see
-`Periodic systems`_).
 
 The code is fully vectorized for maximum efficiency.
 Therefore, all quantities are stored as full tensors, which makes calculations rather **memory intensive**.

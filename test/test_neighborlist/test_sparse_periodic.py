@@ -105,6 +105,7 @@ def test_gradient_matches_dense() -> None:
 
     def grads(sparse: bool) -> tuple[torch.Tensor, ...]:
         pos = structure.positions.clone().requires_grad_(True)
+        assert structure.lattice is not None
         lattice = structure.lattice.clone().requires_grad_(True)
         s = structure.replace(positions=pos, lattice=lattice)
         energy = dftd3(s, p, cutoff=cutoff, sparse=sparse).sum()

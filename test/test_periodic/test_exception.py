@@ -43,17 +43,18 @@ c6 = torch.ones(8, 8, dtype=torch.double, device=DEVICE)
 def test_shifts_without_lattice() -> None:
     shifts = build_periodic_shifts(lattice, periodic, cutoff.disp2)
 
-    with pytest.raises(ValueError, match="no 'lattice'"):
+    with pytest.raises(ValueError, match="lattice"):
         dftd3(molecule, param, shifts=shifts)
 
-    with pytest.raises(ValueError, match="no 'lattice'"):
-        disp.dispersion2(molecule, param, c6, shifts=shifts)
+    with pytest.raises(ValueError, match="lattice"):
+        disp.dispersion2(molecule, param, c6, pairs=shifts)
 
 
 def test_vmap_shared_lattice() -> None:
     """
     `vmap` over a batched `Structure` splits every field, so one `(3, 3)`
-    lattice shared by the batch would reach each system as one row of it.
+    lattice shared by the batch would reach each system as one row of it,
+    which fails rather than giving numbers.
     """
     batch = Structure(
         numbers=cell.numbers.expand(3, -1),
@@ -65,11 +66,11 @@ def test_vmap_shared_lattice() -> None:
     def energy(structure: Structure) -> Tensor:
         return dftd3(structure, param, shifts=shifts, cutoff=cutoff)
 
-    with pytest.raises(ValueError, match="own lattice and mask"):
+    with pytest.raises(IndexError):
         torch.func.vmap(energy)(batch)
 
     # also if only the lattice is stacked, but not the mask
-    with pytest.raises(ValueError, match="own lattice and mask"):
+    with pytest.raises(IndexError):
         torch.func.vmap(energy)(batch.replace(lattice=lattice.expand(3, 3, 3)))
 
     # stacked per system, it works, and agrees with the batched call
@@ -106,29 +107,41 @@ def test_shifts_missing_an_axis() -> None:
 
 
 @pytest.mark.parametrize("s9", [1.0, torch.tensor(1.0, dtype=torch.double)])
-def test_three_body(s9: float | Tensor) -> None:
-    """The three-body term has no periodic evaluation."""
+def test_three_body_is_evaluated(s9: float | Tensor) -> None:
+    """The three-body term of a cell is part of every entry point."""
     par = {**param, "s9": s9}
+    cut = Cutoff(cn=10.0, disp2=12.0, disp3=8.0)
 
-    with pytest.raises(ValueError, match="three-body"):
-        dftd3(cell, par)
+    energy = dftd3(cell, par, cutoff=cut)
+    off = dftd3(cell, {**param, "s9": 0.0}, cutoff=cut)
+    assert not torch.allclose(energy, off, atol=1e-10, rtol=0)
 
-    with pytest.raises(ValueError, match="three-body"):
-        disp.dispersion(cell, par, c6)
-
-    with pytest.raises(ValueError, match="three-body"):
-        disp.dispersion3(cell, par, c6)
-
-    with pytest.raises(ValueError, match="three-body"):
-        damping.dispersion_atm(cell, c6)
+    c6 = disp.D3Model(cutoff=cut).c6(cell)
+    e3 = disp.dispersion3(cell, par, c6, cutoff=cut)
+    assert pytest.approx(e3.cpu(), abs=1e-12) == (energy - off).cpu()
+    assert (
+        pytest.approx(e3.cpu(), abs=1e-12)
+        == damping.dispersion_atm_periodic(
+            cell, c6, damping.DampingParam(s9=s9), cutoff=cut.disp3
+        ).cpu()
+    )
+    assert (
+        pytest.approx(energy.cpu(), abs=1e-12)
+        == disp.dispersion(cell, par, c6, cutoff=cut).cpu()
+    )
 
 
 def test_three_body_zero_tensor_with_grad() -> None:
     """
-    A zero tensor `s9` that is differentiated needs the three-body term
-    (its derivative), so it is rejected as well.
+    A zero tensor `s9` that is differentiated needs the three-body term (its
+    derivative), which for a cell is its energy.
     """
+    cut = Cutoff(cn=10.0, disp2=12.0, disp3=8.0)
     s9 = torch.tensor(0.0, dtype=torch.double, requires_grad=True)
 
-    with pytest.raises(ValueError, match="three-body"):
-        dftd3(cell, {**param, "s9": s9})
+    energy = dftd3(cell, {**param, "s9": s9}, cutoff=cut)
+    (grad,) = torch.autograd.grad(energy.sum(), s9)
+
+    off = dftd3(cell, {**param, "s9": 0.0}, cutoff=cut)
+    full = dftd3(cell, {**param, "s9": 1.0}, cutoff=cut)
+    assert pytest.approx(grad.item(), abs=1e-12) == (full - off).sum().item()

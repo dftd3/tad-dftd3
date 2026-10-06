@@ -24,7 +24,7 @@ from tad_mctc.data import radii
 from tad_mctc.io.structure import pack_structures
 from tad_mctc.typing import DD
 
-from tad_dftd3 import Cutoff, damping, data, disp
+from tad_dftd3 import Cutoff, DampingParam, damping, data, disp
 
 from ..conftest import DEVICE
 from ..reference import reference_pairwise
@@ -78,12 +78,18 @@ def test_fail() -> None:
     with pytest.raises(RuntimeError):
         Structure(numbers=torch.tensor([1]), positions=positions)
 
-    # unsupported element
-    with pytest.raises(ValueError):
+    # unsupported element, beyond the tables: an `IndexError` on the CPU,
+    # also under `--cuda`, where the lookup would be a device-side assert,
+    # which cannot be caught and breaks the device for every later test
+    cpu = torch.device("cpu")
+    with pytest.raises(IndexError):
         disp.dispersion(
-            Structure(numbers=torch.tensor([1, 105]), positions=positions),
-            param,
-            c6,
+            Structure(
+                numbers=torch.tensor([1, 105], device=cpu),
+                positions=positions.to(cpu),
+            ),
+            {key: value.to(cpu) for key, value in param.items()},
+            c6.to(cpu),
         )
 
 
@@ -94,8 +100,8 @@ def test_fail_table(name: str) -> None:
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     c6 = torch.ones((2, 2))
 
-    table = {"rvdw_table": radii.VDW_PAIRWISE, "r4r2_table": data.R4R2}[name](
-        dtype=torch.float
+    table = {"rvdw_table": radii.VDW_PAIRWISE, "r4r2_table": data.R4R2}[name](  # type: ignore[operator]
+        dtype=torch.float, device=DEVICE
     )
     wrong = {
         "per atom": (
@@ -116,79 +122,42 @@ def test_fail_table(name: str) -> None:
             )
 
 
-def test_fail_renamed_and_positional() -> None:
-    """
-    The per-atom arguments of 0.7.0 fail loudly in every function, whether
-    passed by their old name or by position.
-    """
+def test_keyword_only() -> None:
+    """Everything after `c6` is keyword-only, as are all the tables."""
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     structure = Structure(numbers=numbers, positions=positions)
     c6 = torch.ones((2, 2))
-    r4r2 = data.R4R2(dtype=torch.float)[numbers]
-    rvdw = radii.VDW_PAIRWISE(dtype=torch.float)[
-        numbers.unsqueeze(-1), numbers.unsqueeze(-2)
-    ]
+    r4r2 = data.R4R2(dtype=torch.float)
+    rvdw = radii.VDW_PAIRWISE(dtype=torch.float)
 
-    for func in (disp.dispersion, disp.dispersion2):
-        with pytest.raises(TypeError, match="r4r2_table"):
-            func(structure, param, c6, r4r2=r4r2)
-    for func in (disp.dispersion, disp.dispersion3):
-        with pytest.raises(TypeError, match="rvdw_table"):
-            func(structure, param, c6, rvdw=rvdw)
-    with pytest.raises(TypeError, match="rvdw_table"):
-        damping.dispersion_atm(structure, c6, rvdw=rvdw)
-
-    # positional calls of 0.7.0: everything after `c6` is keyword-only
     with pytest.raises(TypeError, match="positional"):
-        disp.dispersion(
+        disp.dispersion(  # type: ignore[call-arg]
             structure,
             param,
             c6,
-            rvdw,
+            rvdw,  # type: ignore[arg-type]
             None,
         )
     with pytest.raises(TypeError, match="positional"):
-        disp.dispersion2(
+        disp.dispersion2(  # type: ignore[call-arg]
             structure,
             param,
             c6,
-            r4r2,
-            disp.rational_damping,
-            50.0,
+            r4r2,  # type: ignore[arg-type]
+            None,
+            50.0,  # type: ignore[arg-type]
         )
     with pytest.raises(TypeError, match="positional"):
-        disp.dispersion3(
+        disp.dispersion3(  # type: ignore[call-arg]
             structure,
             param,
             c6,
-            rvdw,
-            50.0,
+            rvdw,  # type: ignore[arg-type]
+            50.0,  # type: ignore[arg-type]
         )
     with pytest.raises(TypeError, match="positional"):
-        damping.dispersion_atm(structure, c6, rvdw, 50.0)
-
-
-def test_fail_numbers_positions() -> None:
-    """
-    The calls of 0.7.0, with `numbers` and `positions` instead of a
-    `Structure`, fail with a hint at the new call in every function.
-    """
-    numbers = torch.tensor([1, 1])
-    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    c6 = torch.ones((2, 2))
-
-    calls = [
-        lambda: disp.dftd3(numbers, positions, param),
-        lambda: disp.dispersion(numbers, positions, param, c6),
-        lambda: disp.dispersion2(numbers, positions, param, c6),
-        lambda: disp.dispersion3(numbers, positions, param, c6),
-        lambda: damping.dispersion_atm(numbers, positions, c6),
-        lambda: disp.dftd3(structure=numbers, param=param),
-    ]
-    for call in calls:
-        with pytest.raises(TypeError, match="Structure"):
-            call()
+        damping.dispersion_atm(structure, c6, DampingParam(), rvdw)  # type: ignore[call-arg,arg-type]
 
 
 def test_float_s9() -> None:
@@ -200,22 +169,15 @@ def test_float_s9() -> None:
     par = {k: v.to(**dd) for k, v in param.items()}
     ref = disp.dispersion(structure, par, c6)
 
-    par_float = {**par, "s9": 1.0, "alp": 14.0}
+    par_float: dict[str, Tensor | float] = {**par, "s9": 1.0, "alp": 14.0}  # type: ignore[name-defined]
     energy = disp.dispersion(structure, par_float, c6)
     assert pytest.approx(ref.cpu(), abs=1e-14) == energy.cpu()
 
     atm = damping.dispersion_atm(
-        structure,
-        c6,
-        s9=1.0,
-        rs9=4.0 / 3.0,
-        alp=14.0,
+        structure, c6, DampingParam(s9=1.0, rs9=4.0 / 3.0, alp=14.0)
     )
     atm_ref = damping.dispersion_atm(
-        structure,
-        c6,
-        s9=par["s9"],
-        alp=par["alp"],
+        structure, c6, DampingParam(s9=par["s9"], alp=par["alp"])
     )
     assert pytest.approx(atm_ref.cpu(), abs=1e-14) == atm.cpu()
 
@@ -244,7 +206,6 @@ def test_disp2_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
         c6,
         rvdw_table=rvdw,
         r4r2_table=r4r2,
-        damping_function=disp.rational_damping,
         cutoff=cutoff,
     )
 
@@ -297,10 +258,9 @@ def test_atm_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     energy = damping.dispersion_atm(
         structure,
         c6,
+        DampingParam(s9=par["s9"], alp=par["alp"]),
         rvdw_table=rvdw,
         cutoff=50.0,
-        s9=par["s9"],
-        alp=par["alp"],
     )
 
     assert energy.dtype == dtype
@@ -335,10 +295,9 @@ def test_atm_batch(
     energy = damping.dispersion_atm(
         structure,
         c6,
+        DampingParam(s9=par["s9"], alp=par["alp"]),
         rvdw_table=rvdw,
         cutoff=50.0,
-        s9=par["s9"],
-        alp=par["alp"],
     )
 
     assert energy.dtype == dtype

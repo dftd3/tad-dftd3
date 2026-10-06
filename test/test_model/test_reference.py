@@ -34,7 +34,7 @@ sample_list = ["SiH4", "PbH4-BiH3", "C6H5I-CH3SH", "MB16_43_01"]
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_reference_dtype(dtype: torch.dtype) -> None:
-    ref = reference.Reference().type(dtype)
+    ref = reference.Reference.load().type(dtype)
     assert ref.dtype == dtype
 
 
@@ -46,14 +46,14 @@ def test_reference_dtype_both(dtype: torch.dtype | None) -> None:
 
     dev = torch.device("cpu")
     dd: DDNone = {"device": dev, "dtype": dtype}
-    ref = reference.Reference(device=dev).to(**dd)
+    ref = reference.Reference.load(device=dev).to(**dd)
     assert ref.dtype == torch.tensor(1.0, dtype=dtype).dtype
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_reference_move_both(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
-    ref = reference.Reference(device=DEVICE).to(**dd)
+    ref = reference.Reference.load(device=DEVICE).to(**dd)
     assert ref.dtype == dtype
 
 
@@ -63,57 +63,37 @@ def test_reference_move_both(dtype: torch.dtype) -> None:
 def test_reference_device(device_str: str, device_str2: str) -> None:
     device = str_to_device(device_str)
     device2 = str_to_device(device_str2)
-    ref = reference.Reference(device=device2).to(device)
+    ref = reference.Reference.load(device=device2).to(device)
     assert ref.device == device
 
     with pytest.raises(AttributeError):
-        ref.device = device
+        ref.device = device  # type: ignore[misc]
 
 
 def test_reference_different_devices() -> None:
-    # Custom mock functions
-    def mock_load_cn(*_: Any, **__: Any) -> Tensor:
-        tensor = MockTensor([1, 2, 3])
-        tensor.device = torch.device("cpu")
-        return tensor
-
-    def mock_load_c6(*_: Any, **__: Any) -> Tensor:
-        tensor = MockTensor([4, 5, 6])
-        tensor.device = torch.device("cuda")
-        return tensor
-
-    with patch("tad_dftd3.reference._load_cn", new=mock_load_cn):
-        with patch("tad_dftd3.reference._load_c6", new=mock_load_c6):
-            with pytest.raises(RuntimeError) as exc:
-                # Assuming the device is not explicitly passed, so it picks
-                # from _load_cn and _load_c6
-                reference.Reference()
-
-            assert "All tensors must be on the same device!" in str(exc.value)
+    cn = reference._load_cn()  # pylint: disable=protected-access
+    c6 = reference._load_c6().to("meta")  # pylint: disable=protected-access
+    with pytest.raises(RuntimeError, match="different devices"):
+        reference.Reference(cn=cn, c6=c6)
 
 
 def test_reference_fail() -> None:
+    cn = reference._load_cn()  # pylint: disable=protected-access
     c6 = reference._load_c6()  # pylint: disable=protected-access
 
     # wrong dtype
-    with pytest.raises(RuntimeError):
-        reference.Reference(c6=c6.type(torch.float16))
-
-    # wrong device
-    if torch.cuda.is_available() is True:
-        with pytest.raises(RuntimeError):
-            reference.Reference(
-                c6=c6.to(torch.device("cuda")), device=torch.device("cpu")
-            )
+    with pytest.raises(TypeError, match="different dtypes"):
+        reference.Reference(cn=cn, c6=c6.type(torch.float16))
 
     # wrong shape
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValueError, match="size mismatch"):
         reference.Reference(
-            cn=torch.rand((4, 4), dtype=torch.float32),
-            c6=c6.type(torch.float32),
+            cn=torch.rand((4, 4), dtype=c6.dtype, device=c6.device), c6=c6
         )
 
-    ref = reference.Reference(device=torch.device("cpu"), dtype=torch.float64)
+    ref = reference.Reference.load(
+        device=torch.device("cpu"), dtype=torch.float64
+    )
     assert (
         repr(ref)
         == "Reference(n_element=104, n_reference=7, dtype=torch.float64, device=cpu)"
@@ -129,7 +109,7 @@ def test_default_reference_shares_memory() -> None:
     dd: DD = {"device": torch.device("cpu"), "dtype": torch.float64}
 
     shared = reference._default_reference(torch.empty(0, **dd))
-    copied = reference.Reference(**dd)
+    copied = reference.Reference.load(**dd)
 
     assert shared.c6.data_ptr() == reference._C6.data_ptr()
     assert copied.c6.data_ptr() != reference._C6.data_ptr()
@@ -148,7 +128,7 @@ def test_default_reference_dtype(dtype: torch.dtype) -> None:
     dd: DD = {"device": DEVICE, "dtype": dtype}
 
     shared = reference._default_reference(torch.empty(0, **dd))
-    copied = reference.Reference(**dd)
+    copied = reference.Reference.load(**dd)
 
     assert shared.dtype == dtype
     assert torch.equal(shared.c6, copied.c6)
@@ -168,7 +148,11 @@ def test_dftd3_does_not_copy_reference() -> None:
     positions = torch.tensor(
         [[0.0, 0.0, 0.0], [0.0, 0.0, 1.4]], dtype=torch.float64
     )
-    param = {"a1": torch.tensor(0.4), "a2": torch.tensor(4.6)}
+    param = {
+        "s8": torch.tensor(1.0),
+        "a1": torch.tensor(0.4),
+        "a2": torch.tensor(4.6),
+    }
 
     structure = Structure(numbers=numbers, positions=positions)
     with patch(
@@ -179,6 +163,6 @@ def test_dftd3_does_not_copy_reference() -> None:
     ref = dftd3(
         structure,
         param,
-        ref=reference.Reference(dtype=torch.float64),
+        ref=reference.Reference.load(dtype=torch.float64),
     )
-    assert pytest.approx(ref) == energy
+    assert pytest.approx(ref.cpu()) == energy.cpu()

@@ -22,16 +22,12 @@ element parameters `rcov_table`, `rvdw_table` and `r4r2_table` are given as.
 
 from __future__ import annotations
 
-import functools
-from collections.abc import Callable
-from typing import Any, TypeVar
-
 from tad_mctc.data import radii, resolve_table
 from tad_mctc.typing import TableFunction, Tensor
 
 from .r4r2 import R4R2
 
-__all__ = ["TABLES", "element_table", "reject_renamed_tables"]
+__all__ = ["TABLES", "element_table"]
 
 
 TABLES: dict[str, tuple[TableFunction, tuple[int, ...]]] = {
@@ -40,37 +36,6 @@ TABLES: dict[str, tuple[TableFunction, tuple[int, ...]]] = {
     "rvdw_table": (radii.VDW_PAIRWISE, (104, 104)),
 }
 """Default and required shape of each per-element table, by argument name."""
-
-
-_RENAMED = {name.removesuffix("_table"): name for name in TABLES}
-"""Names up to 0.7.0 (per-atom values) mapped to their successor (tables)."""
-
-F = TypeVar("F", bound=Callable[..., Any])
-
-
-def reject_renamed_tables(func: F) -> F:
-    """
-    Reject the per-atom element parameters of 0.7.0 and earlier by name.
-
-    Up to 0.7.0, ``rcov``, ``rvdw`` and ``r4r2`` took per-atom (or per-pair)
-    values. They are now tables passed as ``rcov_table``, ``rvdw_table`` and
-    ``r4r2_table``. The old names are rejected outright rather than checked
-    by shape, since per-atom values of a single system with as many atoms as
-    the table has entries would pass any shape check.
-    """
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        for old, new in _RENAMED.items():
-            if old in kwargs:
-                raise TypeError(
-                    f"'{func.__name__}' no longer takes '{old}'. Up to 0.7.0 "
-                    f"it took per-atom values, i.e. 'table[numbers]'; pass the "
-                    f"per-element table itself as '{new}' instead."
-                )
-        return func(*args, **kwargs)
-
-    return wrapper  # type: ignore[return-value]
 
 
 def element_table(

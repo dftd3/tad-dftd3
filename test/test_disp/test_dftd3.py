@@ -45,22 +45,28 @@ def _approx(expected: torch.Tensor, dtype: torch.dtype) -> object:
 
 
 def test_fail() -> None:
-    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    # On the CPU, also under `--cuda`: on CUDA, the lookup of an element
+    # beyond the tables is a device-side assert, which cannot be caught and
+    # breaks the device for every later test.
+    cpu = torch.device("cpu")
+    positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]], device=cpu)
 
     # TPSS0-D3BJ-ATM parameters
     param = {
-        "s6": torch.tensor(1.0000),
-        "s8": torch.tensor(1.2576),
-        "s9": torch.tensor(1.0000),
-        "alp": torch.tensor(14.00),
-        "a1": torch.tensor(0.3768),
-        "a2": torch.tensor(4.5865),
+        "s6": torch.tensor(1.0000, device=cpu),
+        "s8": torch.tensor(1.2576, device=cpu),
+        "s9": torch.tensor(1.0000, device=cpu),
+        "alp": torch.tensor(14.00, device=cpu),
+        "a1": torch.tensor(0.3768, device=cpu),
+        "a2": torch.tensor(4.5865, device=cpu),
     }
 
-    # unsupported element
-    with pytest.raises(ValueError):
+    # unsupported element, beyond the tables
+    with pytest.raises(IndexError):
         dftd3(
-            Structure(numbers=torch.tensor([1, 105]), positions=positions),
+            Structure(
+                numbers=torch.tensor([1, 105], device=cpu), positions=positions
+            ),
             param,
         )
 
@@ -74,12 +80,16 @@ def test_fail_per_atom(name: str) -> None:
     """Per-atom (or per-pair) values are rejected, not indexed again."""
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
-    param = {"a1": torch.tensor(0.3768), "a2": torch.tensor(4.5865)}
+    param = {
+        "s8": torch.tensor(1.0),
+        "a1": torch.tensor(0.3768),
+        "a2": torch.tensor(4.5865),
+    }
 
     tables = {
-        "rcov": radii.COV_D3(dtype=torch.float),
-        "rvdw": radii.VDW_PAIRWISE(dtype=torch.float),
-        "r4r2": data.R4R2(dtype=torch.float),
+        "rcov": radii.COV_D3(dtype=torch.float, device=DEVICE),
+        "rvdw": radii.VDW_PAIRWISE(dtype=torch.float, device=DEVICE),
+        "r4r2": data.R4R2(dtype=torch.float, device=DEVICE),
     }
     per_atom = {
         "rcov": tables["rcov"][numbers],
@@ -91,7 +101,7 @@ def test_fail_per_atom(name: str) -> None:
         dftd3(
             structure,
             param,
-            **{f"{name}_table": per_atom[name]},
+            **{f"{name}_table": per_atom[name]},  # type: ignore[arg-type]
         )
 
     # batched and truncated tables are rejected as well
@@ -101,48 +111,8 @@ def test_fail_per_atom(name: str) -> None:
             dftd3(
                 structure,
                 param,
-                **{f"{name}_table": t},
+                **{f"{name}_table": t},  # type: ignore[arg-type]
             )
-
-
-@pytest.mark.parametrize("name", ["rcov", "rvdw", "r4r2"])
-def test_fail_renamed(name: str) -> None:
-    """
-    The names of 0.7.0, which took per-atom values, are rejected outright,
-    also for the per-atom values of a system with as many atoms as the
-    table has entries, whose shape cannot tell them apart from a table.
-    """
-    nat = 104 if name == "rvdw" else 119
-    numbers = torch.ones(nat, dtype=torch.long)
-    positions = torch.rand((nat, 3)) * 20.0
-    param = {"a1": torch.tensor(0.3768), "a2": torch.tensor(4.5865)}
-
-    table = {
-        "rcov": radii.COV_D3,
-        "rvdw": radii.VDW_PAIRWISE,
-        "r4r2": data.R4R2,
-    }[name](dtype=torch.float)
-    per_atom = (
-        table[numbers.unsqueeze(-1), numbers.unsqueeze(-2)]
-        if name == "rvdw"
-        else table[numbers]
-    )
-
-    structure = Structure(numbers=numbers, positions=positions)
-    with pytest.raises(TypeError, match=f"'{name}_table'"):
-        dftd3(
-            structure,
-            param,
-            **{name: per_atom},
-        )
-
-    # also when the old name is given the table itself
-    with pytest.raises(TypeError, match=f"'{name}_table'"):
-        dftd3(
-            structure,
-            param,
-            **{name: table},
-        )
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -178,14 +148,13 @@ def test_single(dtype: torch.dtype, source: tuple[str, str]) -> None:
     energy = dftd3(
         structure,
         param,
-        ref=reference.Reference(**dd),
+        ref=reference.Reference.load(**dd),
         rcov_table=rcov,
         rvdw_table=rvdw,
         r4r2_table=r4r2,
         cutoff=cutoff,
         counting_function=exp_count,
-        weighting_function=model.gaussian_weight,
-        damping_function=damping.rational_damping,
+        weighting_function=model.gaussian_log_weight,
     )
 
     assert energy.dtype == dtype
@@ -230,6 +199,7 @@ def test_default_tables_cached() -> None:
     numbers = torch.tensor([1, 1])
     positions = torch.tensor([[0.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     param = {
+        "s8": torch.tensor(1.0),
         "s9": torch.tensor(1.0),
         "a1": torch.tensor(0.3768),
         "a2": torch.tensor(4.5865),
@@ -251,7 +221,7 @@ def test_default_tables_cached() -> None:
 def test_table_shapes() -> None:
     """The required shapes are those of the default tables."""
     for name, (default, shape) in TABLES.items():
-        assert tuple(default().shape) == shape, name
+        assert tuple(default().shape) == shape, name  # type: ignore[call-arg]
 
 
 def test_given_table_skips_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,9 +262,13 @@ def test_manual_pipeline_matches_dftd3() -> None:
         ],
         **dd,
     )
-    param = {"a1": torch.tensor(0.4, **dd), "a2": torch.tensor(4.6, **dd)}
+    param = {
+        "s8": torch.tensor(1.0, **dd),
+        "a1": torch.tensor(0.4, **dd),
+        "a2": torch.tensor(4.6, **dd),
+    }
 
-    ref = reference.Reference(**dd)
+    ref = reference.Reference.load(**dd)
     structure = Structure(numbers=numbers, positions=positions)
 
     def manual(cn: Tensor) -> Tensor:

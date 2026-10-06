@@ -25,12 +25,13 @@ import torch
 from tad_mctc import Structure
 from tad_mctc._version import __tversion__
 from tad_mctc.batch import pack
+from tad_mctc.tools.testing import requires_compile
 from tad_mctc.typing import DD, Tensor
 
 from tad_dftd3 import data, dftd3, disp
 from tad_dftd3.cutoff import Cutoff
 
-from ..conftest import DEVICE, compile_test, requires_compile
+from ..conftest import DEVICE, compile_test
 from ..utils import load_sample
 
 
@@ -192,6 +193,7 @@ def test_fullgraph_skips_atm_for_float_s9(
     """
     numbers, positions, param = _setup(source, 0.0)
     ref = dftd3(Structure(numbers=numbers, positions=positions), param)
+    dispersion3_calls.clear()  # a tensor `s9`, even zero, has the term
 
     param_float = {**param, "s9": 0.0}
     compiled = compile_test(
@@ -251,6 +253,7 @@ def test_float_s9_as_argument(
     numbers, positions, param = _setup(source, 0.0)
     structure = Structure(numbers=numbers, positions=positions)
     ref = dftd3(structure, param)
+    dispersion3_calls.clear()  # a tensor `s9`, even zero, has the term
 
     compiled = compile_test(dftd3, fullgraph=fullgraph)
     out = compiled(structure, {**param, "s9": 0.0})

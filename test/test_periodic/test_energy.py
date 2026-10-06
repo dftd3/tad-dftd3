@@ -56,7 +56,7 @@ def _check(structure: Structure, cut: Cutoff | None = cutoff) -> Tensor:
     same cutoffs (``None`` for both at their own defaults).
     """
     ref = reference_energy_per_atom(structure, param, cutoff=cut)
-    energy = dftd3(structure, param_on(DD64), cutoff=cut)
+    energy = dftd3(structure, param_on(DD64), cutoff=cut or Cutoff())
 
     assert energy.shape == structure.numbers.shape
     assert pytest.approx(ref.cpu(), abs=tol, rel=0) == energy.cpu()
@@ -109,14 +109,12 @@ def test_two_body_pairwise(name: str) -> None:
 
     # the C6 of the full model, so that s-dftd3 sees the same
     cn = ncoord.cn_d3.replace(cutoff=cutoff.cn)(structure)
-    ref = Reference(**DD64)
+    ref = Reference.load(**DD64)
     weights = model.weight_references(structure.numbers, cn, ref)
     c6 = model.atomic_c6(structure.numbers, weights, ref)
 
     two_body, _ = reference_pairwise(structure, param, cutoff=cutoff)
-    energy = disp.dispersion2(
-        structure, param_on(DD64), c6, cutoff=cutoff.disp2
-    )
+    energy = disp.dispersion2(structure, param_on(DD64), c6, cutoff=cutoff)
 
     assert pytest.approx(two_body.sum(-1).cpu(), abs=tol, rel=0) == energy.cpu()
 
@@ -132,7 +130,7 @@ def test_unwrapped_positions(name: str) -> None:
 
     generator = torch.Generator().manual_seed(0)
     offsets = torch.randint(
-        -5, 6, structure.positions.shape, generator=generator
+        -5, 6, structure.positions.shape, generator=generator, device="cpu"
     )
     unwrapped = structure.positions + offsets.to(**DD64) @ structure.lattice
 
@@ -163,7 +161,7 @@ def test_low_dimensional(periodic: list[bool], seed: int) -> None:
 
     generator = torch.Generator().manual_seed(seed)
     offsets = torch.randint(
-        -3, 4, structure.positions.shape, generator=generator
+        -3, 4, structure.positions.shape, generator=generator, device="cpu"
     )
     offsets = torch.where(mask.cpu(), offsets, torch.zeros_like(offsets))
     unwrapped = structure.positions + offsets.to(**DD64) @ structure.lattice

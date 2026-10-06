@@ -229,7 +229,7 @@ def test_vmap_jac_table(jac: str, name: str) -> None:
     numbers, positions, lattice, periodic, shifts = batch
     dd: DD = {"device": DEVICE, "dtype": torch.double}
 
-    table = {"rcov": radii.COV_D3, "r4r2": data.R4R2}[name](**dd)
+    table = {"rcov": radii.COV_D3, "r4r2": data.R4R2}[name](**dd)  # type: ignore[operator]
 
     def energy(n: Tensor, p: Tensor, lat: Tensor, t: Tensor) -> Tensor:
         return dftd3(
@@ -237,7 +237,7 @@ def test_vmap_jac_table(jac: str, name: str) -> None:
             param,
             shifts=shifts,
             cutoff=cutoff,
-            **{f"{name}_table": t},
+            **{f"{name}_table": t},  # type: ignore[arg-type]
         ).sum()
 
     rev = torch.func.jacrev(energy, argnums=3)
