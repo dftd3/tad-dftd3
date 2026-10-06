@@ -50,8 +50,11 @@ def test_matches_dense(name: str) -> None:
 
 def test_tiny_cell_self_images() -> None:
     # An atom sees its own images on both sides, all within the cutoff:
-    # the stored entry has `i == j` and must count for both directions.
-    lattice = torch.eye(3, dtype=torch.double) * 4.0
+    # the stored entry has `i == j` and must count for both directions. The
+    # edge is not a multiple of the cutoff: an image exactly at the cutoff is
+    # a rounding tie, which the dense and the sparse search may break
+    # differently.
+    lattice = torch.eye(3, dtype=torch.double) * 4.1
     structure = random_cell(lattice, 2, DD64)
     p = param_on(DD64)
 
